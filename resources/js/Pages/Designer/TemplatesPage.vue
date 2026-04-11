@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
 import StepFooter from '../../Components/designer/StepFooter.vue';
 import TemplateCard from '../../Components/designer/TemplateCard.vue';
@@ -9,17 +9,24 @@ import { useDesignerState } from '../../composables/useDesignerState';
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const state = useDesignerState();
 
-const filteredTemplates = computed(() => state.templateCategory === 'all'
+const filteredTemplates = computed(() => (!state.templateCategory || state.templateCategory === 'all')
     ? templateCatalog
     : templateCatalog.filter((item) => item.category === state.templateCategory));
-const metaLine = computed(() => [state.content.date, state.content.location].filter(Boolean).join(' · '));
+const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
+const venueLine = computed(() => {
+    if (state.objective === 'event_virtual') {
+        return state.content.platform?.trim() || state.content.contact?.trim() || '';
+    }
+
+    return state.content.location?.trim() || state.content.contact?.trim() || '';
+});
 </script>
 
 <template>
     <DesignerLayout
         title="Plantillas con preview real"
         eyebrow="Pantalla 5"
-        description="La plantilla se elige cuando ya existe contenido real. La galería es generosa y filtrable por categorías."
+        description="Elige una plantilla."
         :current-step="currentStep"
         :steps="steps"
         :dark-mode="state.darkMode"
@@ -41,7 +48,7 @@ const metaLine = computed(() => [state.content.date, state.content.location].fil
 
             <div class="max-h-[720px] overflow-y-auto pr-2">
                 <div class="alert mb-4 border border-base-300 bg-base-100/80 text-sm text-base-content/80">
-                    Desplaza para ver más plantillas. Más adelante se añadirán fondos fotográficos y diseños más ricos.
+                    Desplaza para ver más opciones.
                 </div>
 
                 <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
@@ -51,7 +58,7 @@ const metaLine = computed(() => [state.content.date, state.content.location].fil
                         :template="template"
                         :content="state.content"
                         :meta-line="metaLine"
-                        :contact-line="state.content.contact"
+                        :contact-line="venueLine"
                         :selected="state.selectedTemplateId === template.id"
                         @click="state.selectedTemplateId = template.id"
                     />

@@ -1,4 +1,4 @@
-import { reactive, watch } from 'vue';
+﻿import { reactive, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { initialDesignerState } from '../data/designer';
@@ -24,6 +24,23 @@ export function useDesignerState() {
     return designerState;
 }
 
+export function resetDesignerState() {
+    const fresh = buildInitialState(null);
+
+    if (!designerState) {
+        designerState = reactive(fresh);
+        return designerState;
+    }
+
+    Object.keys(designerState).forEach((key) => {
+        delete designerState[key];
+    });
+
+    Object.assign(designerState, fresh);
+
+    return designerState;
+}
+
 function buildInitialState(sessionState) {
     const savedTheme = localStorage.getItem('tseyor-theme');
     const base = {
@@ -34,7 +51,6 @@ function buildInitialState(sessionState) {
 
     if (!sessionState) {
         base.darkMode = savedTheme === 'dark';
-
         return base;
     }
 

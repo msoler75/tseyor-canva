@@ -13,7 +13,7 @@ const state = useDesignerState();
     <DesignerLayout
         title="Objetivo de la pieza"
         eyebrow="Pantalla 2"
-        description="Evento, curso, anuncio, genérico u otros. Esta decisión encauza tamaños, campos y plantillas."
+        description="Elige el objetivo de tu diseño."
         :current-step="currentStep"
         :steps="steps"
         :dark-mode="state.darkMode"
@@ -21,7 +21,7 @@ const state = useDesignerState();
     >
         <section class="glass soft-shadow rounded-[32px] border border-white/70 p-6 sm:p-8 dark:border-slate-700/70">
             <div class="alert mb-6 border border-base-300 bg-base-100/80 text-base-content">
-                <span>Esta decisión condiciona tamaños, campos y plantillas sugeridas en el resto del flujo.</span>
+                <span>Esto nos ayuda a recomendar tamaños, campos y plantillas.</span>
             </div>
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <ChoiceCard
@@ -36,10 +36,10 @@ const state = useDesignerState();
             </div>
             <div class="card mt-6 border border-base-300 bg-base-100/80">
                 <div class="card-body text-sm leading-6 text-base-content/80">
-                    Más adelante esta pantalla podrá afinar todavía más las categorías. Por ahora ya nos sirve para encaminar formularios, formatos y estilos visuales.
+                    Elige la opción que más se acerque a lo que quieres crear.
                 </div>
             </div>
-            <StepFooter :previous-url="navigation.previous" :next-url="navigation.next" />
+            <StepFooter :previous-url="navigation.previous" :next-url="navigation.next" :next-disabled="!state.objective" />
         </section>
     </DesignerLayout>
 </template>

@@ -35,9 +35,7 @@ watch(() => props.darkMode, syncTheme);
                 <div class="card-body gap-4 px-5 py-4">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-primary">
-                            Laravel + Inertia + Vue 3
-                        </p>
+                        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-primary">TSEYOR Canva</p>
                         <h1 class="mt-2 text-2xl font-semibold text-base-content sm:text-3xl">
                             {{ title }}
                         </h1>

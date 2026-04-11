@@ -24,8 +24,10 @@ class DesignerController extends Controller
         'export' => ['component' => 'Designer/ExportPage', 'label' => 'Exportar', 'url' => '/designer/export'],
     ];
 
-    public function welcome(): Response
+    public function welcome(Request $request): Response
     {
+        $request->session()->forget(self::SESSION_KEY);
+
         return $this->page('welcome');
     }
 
@@ -65,12 +67,12 @@ class DesignerController extends Controller
             'state' => ['required', 'array'],
             'state.darkMode' => ['required', 'boolean'],
             'state.mode' => ['required', 'string', 'in:guided,direct'],
-            'state.objective' => ['required', 'string'],
-            'state.outputType' => ['required', 'string', 'in:print,digital'],
-            'state.format' => ['required', 'string'],
-            'state.size' => ['required', 'string'],
-            'state.templateCategory' => ['required', 'string'],
-            'state.selectedTemplateId' => ['required', 'string'],
+            'state.objective' => ['nullable', 'string'],
+            'state.outputType' => ['nullable', 'string', 'in:print,digital'],
+            'state.format' => ['nullable', 'string'],
+            'state.size' => ['nullable', 'string'],
+            'state.templateCategory' => ['nullable', 'string'],
+            'state.selectedTemplateId' => ['nullable', 'string'],
             'state.autosaveMessage' => ['nullable', 'string', 'max:255'],
             'state.selectedElementId' => ['nullable', 'string'],
             'state.content' => ['required', 'array'],

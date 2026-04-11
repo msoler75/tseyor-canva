@@ -1,4 +1,4 @@
-export const modeOptions = [
+﻿export const modeOptions = [
     {
         id: 'guided',
         title: 'Modo guiado',
@@ -14,11 +14,18 @@ export const modeOptions = [
 
 export const objectiveOptions = [
     {
-        id: 'event',
-        title: 'Cartel para evento',
-        description: 'Conciertos, encuentros, jornadas o celebraciones.',
-        recommendation: 'A3 o A4 · fecha, lugar y contacto',
+        id: 'event_presential',
+        title: 'Evento presencial',
+        description: 'Conciertos, encuentros, jornadas o celebraciones con asistencia física.',
+        recommendation: 'A3 o A4 · fecha, hora, lugar y contacto',
         categoryHint: 'Plantillas vivas y promocionales',
+    },
+    {
+        id: 'event_virtual',
+        title: 'Evento virtual',
+        description: 'Directos, webinars, talleres online o encuentros por videollamada.',
+        recommendation: 'A3 o A4 · fecha, hora, URL de conexión y contacto',
+        categoryHint: 'Plantillas limpias y digitales',
     },
     {
         id: 'course',
@@ -61,7 +68,7 @@ export const formatCards = [
     { id: 'vertical', title: 'Cartel vertical', description: 'El más habitual para imprimir y colgar.', shape: 'h-36 w-24', gradient: 'from-violet-600 to-fuchsia-500' },
     { id: 'horizontal', title: 'Cartel horizontal', description: 'Útil para cabeceras y banners.', shape: 'h-24 w-36', gradient: 'from-cyan-500 to-sky-400' },
     { id: 'square', title: 'Cuadrado', description: 'Perfecto para redes o piezas cuadradas.', shape: 'h-28 w-28', gradient: 'from-amber-400 to-orange-500' },
-    { id: 'other', title: 'Otros formatos', description: 'Formatos personalizados o especiales.', shape: 'h-28 w-28', gradient: 'from-slate-300 to-slate-400' },
+    { id: 'other', title: 'No lo sé', description: 'No tienes claro el formato y quieres decidirlo más adelante.', shape: 'h-28 w-28', gradient: 'from-slate-300 to-slate-400' },
 ];
 
 export const templateFilters = ['all', 'modern', 'minimal', 'promo', 'elegant', 'corporate', 'youth', 'informative'];
@@ -89,33 +96,95 @@ export const templateCatalog = [
 ];
 
 export const objectiveRecommendations = {
-    event: {
-        print: ['A3 · cartel grande', 'A4 · estándar para colgar', 'A2 · máxima visibilidad'],
-        digital: ['Post de Facebook', 'Historia de Instagram', 'X / Twitter'],
+    event_presential: {
+        print: [
+            { id: 'a2', label: 'A2', detail: '42 × 59,4 cm', formatHint: 'vertical' },
+            { id: 'a3', label: 'A3', detail: '29,7 × 42 cm', formatHint: 'vertical' },
+            { id: 'a4', label: 'A4', detail: '21 × 29,7 cm', formatHint: 'vertical' },
+        ],
+        digital: [
+            { id: 'facebook-post', label: 'Post de Facebook', detail: '1200 × 630 px', formatHint: 'horizontal' },
+            { id: 'facebook-story', label: 'Historia de Facebook', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'instagram-post-square', label: 'Post cuadrado de Instagram', detail: '1080 × 1080 px', formatHint: 'square' },
+            { id: 'instagram-post-vertical', label: 'Post vertical de Instagram', detail: '1080 × 1350 px', formatHint: 'vertical' },
+            { id: 'instagram-story', label: 'Historia de Instagram', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'x-post', label: 'Publicación de X', detail: '1600 × 900 px', formatHint: 'horizontal' },
+            { id: 'linkedin-post', label: 'Post de LinkedIn', detail: '1200 × 627 px', formatHint: 'horizontal' },
+            { id: 'youtube-thumbnail', label: 'Miniatura de YouTube', detail: '1280 × 720 px', formatHint: 'horizontal' },
+            { id: 'youtube-short', label: 'YouTube Short', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'whatsapp-status', label: 'Estado de WhatsApp', detail: '1080 × 1920 px', formatHint: 'vertical' },
+        ],
         fields: [
-            { key: 'title', label: 'Título del evento', type: 'text' },
+            { key: 'title', label: 'Título del evento', type: 'text', helper: 'Debe ser llamativo y explicar de qué trata el evento, porque será lo primero que leerá la gente.' },
             { key: 'subtitle', label: 'Subtítulo o claim', type: 'text' },
-            { key: 'date', label: 'Fecha y hora', type: 'text' },
+            { key: 'date', label: 'Fecha', type: 'text' },
+            { key: 'time', label: 'Hora', type: 'text' },
             { key: 'location', label: 'Lugar', type: 'text' },
             { key: 'contact', label: 'Contacto', type: 'text' },
             { key: 'extra', label: 'Texto adicional', type: 'textarea' },
         ],
     },
+    event_virtual: {
+        print: [
+            { id: 'a2', label: 'A2', detail: '42 × 59,4 cm', formatHint: 'vertical' },
+            { id: 'a3', label: 'A3', detail: '29,7 × 42 cm', formatHint: 'vertical' },
+            { id: 'a4', label: 'A4', detail: '21 × 29,7 cm', formatHint: 'vertical' },
+        ],
+        digital: [
+            { id: 'facebook-post', label: 'Post de Facebook', detail: '1200 × 630 px', formatHint: 'horizontal' },
+            { id: 'facebook-story', label: 'Historia de Facebook', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'instagram-post-square', label: 'Post cuadrado de Instagram', detail: '1080 × 1080 px', formatHint: 'square' },
+            { id: 'instagram-post-vertical', label: 'Post vertical de Instagram', detail: '1080 × 1350 px', formatHint: 'vertical' },
+            { id: 'instagram-story', label: 'Historia de Instagram', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'x-post', label: 'Publicación de X', detail: '1600 × 900 px', formatHint: 'horizontal' },
+            { id: 'linkedin-post', label: 'Post de LinkedIn', detail: '1200 × 627 px', formatHint: 'horizontal' },
+            { id: 'youtube-thumbnail', label: 'Miniatura de YouTube', detail: '1280 × 720 px', formatHint: 'horizontal' },
+            { id: 'youtube-live', label: 'Portada de YouTube Live', detail: '1280 × 720 px', formatHint: 'horizontal' },
+            { id: 'youtube-short', label: 'YouTube Short', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'zoom-banner', label: 'Banner para Zoom', detail: '1920 × 1080 px', formatHint: 'horizontal' },
+        ],
+        fields: [
+            { key: 'title', label: 'Título del evento', type: 'text', helper: 'Debe ser claro y llamativo para explicar de qué trata el evento online.' },
+            { key: 'subtitle', label: 'Subtítulo o claim', type: 'text' },
+            { key: 'date', label: 'Fecha', type: 'text' },
+            { key: 'time', label: 'Hora', type: 'text' },
+            { key: 'platform', label: 'URL de conexión', type: 'text', helper: 'Pega la URL de acceso. Más adelante podrá convertirse en un código QR dentro del diseño.' },
+            { key: 'contact', label: 'Contacto o enlace', type: 'text' },
+            { key: 'extra', label: 'Texto adicional', type: 'textarea' },
+        ],
+    },
     course: {
-        print: ['A4 · recomendado', 'A3 · más visible', 'A5 · versión reparto'],
-        digital: ['LinkedIn', 'Facebook', 'Historia de Instagram'],
+        print: [
+            { id: 'a3', label: 'A3', detail: '29,7 × 42 cm', formatHint: 'vertical' },
+            { id: 'a4', label: 'A4', detail: '21 × 29,7 cm', formatHint: 'vertical' },
+            { id: 'a5', label: 'A5', detail: '14,8 × 21 cm', formatHint: 'vertical' },
+        ],
+        digital: [
+            { id: 'linkedin-post', label: 'Post de LinkedIn', detail: '1200 × 627 px', formatHint: 'horizontal' },
+            { id: 'facebook-post', label: 'Post de Facebook', detail: '1200 × 630 px', formatHint: 'horizontal' },
+            { id: 'instagram-story', label: 'Historia de Instagram', detail: '1080 × 1920 px', formatHint: 'vertical' },
+        ],
         fields: [
             { key: 'title', label: 'Nombre del curso', type: 'text' },
             { key: 'subtitle', label: 'Descripción breve', type: 'text' },
             { key: 'teacher', label: 'Profesor o ponente', type: 'text' },
-            { key: 'date', label: 'Fechas', type: 'text' },
+            { key: 'date', label: 'Fecha', type: 'text' },
+            { key: 'time', label: 'Hora', type: 'text' },
             { key: 'contact', label: 'Contacto / inscripción', type: 'text' },
             { key: 'extra', label: 'Texto adicional', type: 'textarea' },
         ],
     },
     flyer: {
-        print: ['A5 · flier clásico', 'DL · mano / mostrador', 'A6 · reparto compacto'],
-        digital: ['Story vertical', 'WhatsApp', 'Instagram post'],
+        print: [
+            { id: 'a5', label: 'A5', detail: '14,8 × 21 cm', formatHint: 'vertical' },
+            { id: 'a4', label: 'A4', detail: '21 × 29,7 cm', formatHint: 'vertical' },
+            { id: 'a3', label: 'A3', detail: '29,7 × 42 cm', formatHint: 'vertical' },
+        ],
+        digital: [
+            { id: 'instagram-story', label: 'Historia vertical', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'whatsapp-status', label: 'Estado de WhatsApp', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'instagram-post-square', label: 'Post de Instagram', detail: '1080 × 1080 px', formatHint: 'square' },
+        ],
         fields: [
             { key: 'title', label: 'Mensaje principal', type: 'text' },
             { key: 'subtitle', label: 'Subtítulo', type: 'text' },
@@ -125,8 +194,16 @@ export const objectiveRecommendations = {
         ],
     },
     shop: {
-        print: ['A4 · escaparate', 'A3 · impacto', 'A5 · mostrador'],
-        digital: ['Facebook post', 'Story promocional', 'X / Twitter'],
+        print: [
+            { id: 'a3', label: 'A3', detail: '29,7 × 42 cm', formatHint: 'vertical' },
+            { id: 'a4', label: 'A4', detail: '21 × 29,7 cm', formatHint: 'vertical' },
+            { id: 'a5', label: 'A5', detail: '14,8 × 21 cm', formatHint: 'vertical' },
+        ],
+        digital: [
+            { id: 'facebook-post', label: 'Post de Facebook', detail: '1200 × 630 px', formatHint: 'horizontal' },
+            { id: 'story-promo', label: 'Historia promocional', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'x-post', label: 'Publicación de X', detail: '1600 × 900 px', formatHint: 'horizontal' },
+        ],
         fields: [
             { key: 'title', label: 'Mensaje principal', type: 'text' },
             { key: 'subtitle', label: 'Oferta / subtítulo', type: 'text' },
@@ -136,8 +213,21 @@ export const objectiveRecommendations = {
         ],
     },
     generic: {
-        print: ['A4 · neutro', 'A5 · compacto', 'A3 · más presencia'],
-        digital: ['Post cuadrado', 'Story vertical', 'Banner horizontal'],
+        print: [
+            { id: 'a2', label: 'A2', detail: '42 × 59,4 cm', formatHint: 'vertical' },
+            { id: 'a3', label: 'A3', detail: '29,7 × 42 cm', formatHint: 'vertical' },
+            { id: 'a4', label: 'A4', detail: '21 × 29,7 cm', formatHint: 'vertical' },
+            { id: 'a5', label: 'A5', detail: '14,8 × 21 cm', formatHint: 'vertical' },
+        ],
+        digital: [
+            { id: 'post-square', label: 'Post cuadrado', detail: '1080 × 1080 px', formatHint: 'square' },
+            { id: 'story-vertical', label: 'Historia vertical', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'banner-horizontal', label: 'Banner horizontal', detail: '1600 × 900 px', formatHint: 'horizontal' },
+            { id: 'facebook-post', label: 'Post de Facebook', detail: '1200 × 630 px', formatHint: 'horizontal' },
+            { id: 'instagram-post-vertical', label: 'Post vertical de Instagram', detail: '1080 × 1350 px', formatHint: 'vertical' },
+            { id: 'linkedin-post', label: 'Post de LinkedIn', detail: '1200 × 627 px', formatHint: 'horizontal' },
+            { id: 'youtube-thumbnail', label: 'Miniatura de YouTube', detail: '1280 × 720 px', formatHint: 'horizontal' },
+        ],
         fields: [
             { key: 'title', label: 'Título', type: 'text' },
             { key: 'subtitle', label: 'Subtítulo', type: 'text' },
@@ -146,8 +236,24 @@ export const objectiveRecommendations = {
         ],
     },
     other: {
-        print: ['Manual · a definir', 'A4 · punto de partida', 'A3 · más visible'],
-        digital: ['Manual · a definir', 'Post cuadrado', 'Story vertical'],
+        print: [
+            { id: 'a2', label: 'A2', detail: '42 × 59,4 cm', formatHint: 'vertical' },
+            { id: 'a3', label: 'A3', detail: '29,7 × 42 cm', formatHint: 'vertical' },
+            { id: 'a4', label: 'A4', detail: '21 × 29,7 cm', formatHint: 'vertical' },
+            { id: 'a5', label: 'A5', detail: '14,8 × 21 cm', formatHint: 'vertical' },
+        ],
+        digital: [
+            { id: 'facebook-post', label: 'Post de Facebook', detail: '1200 × 630 px', formatHint: 'horizontal' },
+            { id: 'facebook-story', label: 'Historia de Facebook', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'instagram-post-square', label: 'Post cuadrado de Instagram', detail: '1080 × 1080 px', formatHint: 'square' },
+            { id: 'instagram-post-vertical', label: 'Post vertical de Instagram', detail: '1080 × 1350 px', formatHint: 'vertical' },
+            { id: 'instagram-story', label: 'Historia de Instagram', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'x-post', label: 'Publicación de X', detail: '1600 × 900 px', formatHint: 'horizontal' },
+            { id: 'linkedin-post', label: 'Post de LinkedIn', detail: '1200 × 627 px', formatHint: 'horizontal' },
+            { id: 'youtube-thumbnail', label: 'Miniatura de YouTube', detail: '1280 × 720 px', formatHint: 'horizontal' },
+            { id: 'youtube-short', label: 'YouTube Short', detail: '1080 × 1920 px', formatHint: 'vertical' },
+            { id: 'whatsapp-status', label: 'Estado de WhatsApp', detail: '1080 × 1920 px', formatHint: 'vertical' },
+        ],
         fields: [
             { key: 'title', label: 'Título', type: 'text' },
             { key: 'subtitle', label: 'Subtítulo', type: 'text' },
@@ -157,26 +263,32 @@ export const objectiveRecommendations = {
     },
 };
 
+export function inferFormatFromSizeOption(option) {
+    return option?.formatHint ?? null;
+}
+
 export const initialDesignerState = {
     darkMode: false,
     mode: 'guided',
-    objective: 'event',
-    outputType: 'print',
-    format: 'vertical',
-    size: 'A3 · cartel grande',
-    templateCategory: 'modern',
-    selectedTemplateId: 'template-1',
+    objective: null,
+    outputType: null,
+    format: null,
+    size: null,
+    templateCategory: 'all',
+    selectedTemplateId: null,
     autosaveMessage: 'Guardado automático',
     selectedElementId: 'title',
     content: {
-        title: 'Festival de Primavera',
-        subtitle: 'Música, tapas y talleres para toda la familia.',
-        date: '25 abril · 18:00',
-        location: 'Plaza Mayor',
-        teacher: 'María López',
-        price: 'Entrada gratuita',
-        contact: 'Info: 600 123 123',
-        extra: 'Zona gastronómica · Actividades para niños · Aforo libre',
+        title: '',
+        subtitle: '',
+        date: '',
+        time: '',
+        location: '',
+        platform: '',
+        teacher: '',
+        price: '',
+        contact: '',
+        extra: '',
     },
     elementLayout: {
         title: { x: 28, y: 72, w: 300, zIndex: 50, fontSize: 44, color: '#ffffff', shadow: true, border: false, fontFamily: 'Poppins, sans-serif', opacity: 100, fontWeight: 'bold', italic: false, uppercase: false, textAlign: 'left', letterSpacing: 0, lineHeight: 0.95, shadowPreset: 'soft', shadowColor: '#0f172a', contourWidth: 0, contourColor: '#ffffff', neonColor: '', bubbleColor: '', backgroundColor: 'transparent' },

@@ -19,6 +19,7 @@
         "@inertiajs/vue3": "^3.0.3",
         "@vitejs/plugin-vue": "^6.0.5",
         "@vue/compiler-sfc": "^3.5.32",
+        "qrcode": "^1.5.4",
         "vue": "^3.5.32"
     }
 }

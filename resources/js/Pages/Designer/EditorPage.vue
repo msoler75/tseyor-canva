@@ -46,11 +46,11 @@ const propertyTabs = [
     { id: 'arrange', icon: '↕', label: 'Posición' },
 ];
 
-const metaLine = computed(() => [state.content.date, state.content.location].filter(Boolean).join(' · '));
+const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
 const editorElements = computed(() => [
     { id: 'title', label: 'Título', text: state.content.title },
     { id: 'subtitle', label: 'Subtítulo', text: state.content.subtitle },
-    { id: 'meta', label: 'Fecha / lugar', text: metaLine.value },
+    { id: 'meta', label: 'Fecha / hora', text: metaLine.value },
     { id: 'contact', label: 'Contacto', text: state.content.contact },
     { id: 'extra', label: 'Texto adicional', text: state.content.extra },
 ].sort((a, b) => (state.elementLayout[a.id]?.zIndex ?? 0) - (state.elementLayout[b.id]?.zIndex ?? 0)));
@@ -178,7 +178,7 @@ const elementContentStyle = (id) => {
         opacity: `${(layout.opacity ?? 100) / 100}`,
         backgroundColor: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : 'transparent',
         borderRadius: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? '16px' : '0',
-        padding: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? '10px 12px' : '8px',
+        padding: '0',
         textShadow: buildTextShadow(layout),
         WebkitTextStroke: layout.border ? `${layout.contourWidth || 1}px ${layout.contourColor || '#ffffff'}` : '0',
         boxShadow: buildBubbleShadow(layout),
@@ -199,7 +199,7 @@ const getElementText = (id) => {
         case 'extra':
             return state.content[id] ?? '';
         case 'meta':
-            return [state.content.date, state.content.location].filter(Boolean).join(' · ');
+            return [state.content.date, state.content.time].filter(Boolean).join(' · ');
         default:
             return '';
     }
@@ -229,7 +229,7 @@ const commitTextEdit = () => {
         case 'meta': {
             const [datePart, ...rest] = value.split('·');
             state.content.date = (datePart ?? '').trim();
-            state.content.location = rest.join('·').trim();
+            state.content.time = rest.join('·').trim();
             break;
         }
     }
@@ -454,7 +454,7 @@ watch(editorElements, () => {
   <DesignerLayout
     title="Editor simplificado"
     eyebrow="Pantalla 6"
-    description="El lienzo ya muestra cómo se selecciona un elemento y cómo el panel superior/lateral cambia según la propiedad activa."
+    description="Selecciona un texto para editarlo."
     :current-step="currentStep"
     :steps="steps"
     :dark-mode="state.darkMode"
@@ -466,7 +466,7 @@ watch(editorElements, () => {
           <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Elemento seleccionado</p>
-              <p class="mt-1 text-sm text-base-content/75">{{ activeElementLabel }} · propiedades rápidas tipo Canva</p>
+              <p class="mt-1 text-sm text-base-content/75">{{ activeElementLabel }}</p>
             </div>
             <div class="flex flex-wrap gap-2">
               <button v-for="tab in propertyTabs" :key="tab.id" type="button" class="btn btn-sm rounded-full" :class="activePropertyPanel === tab.id ? 'btn-primary' : 'btn-outline'" @click="activePropertyPanel = tab.id">
@@ -489,7 +489,7 @@ watch(editorElements, () => {
               <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Panel contextual</p>
                 <h3 class="mt-2 text-xl font-semibold text-base-content">{{ propertyTabs.find((tab) => tab.id === activePropertyPanel)?.label }}</h3>
-                <p class="mt-2 text-sm leading-6 text-base-content/75">Selecciona una categoría arriba y aquí aparecerá el detalle de esa propiedad, como en Canva.</p>
+                <p class="mt-2 text-sm leading-6 text-base-content/75">Elige una propiedad arriba para ver sus opciones.</p>
               </div>
 
               <div v-if="!hasSelection" class="alert border border-base-300 bg-base-100/80 text-sm leading-6 text-base-content/80">
@@ -601,7 +601,7 @@ watch(editorElements, () => {
               </div>
 
               <div class="alert border border-base-300 bg-base-100/80 text-sm leading-6 text-base-content/80">
-                Doble click para editar texto. En touch, un long touch equivale a doble click. Para mover la caja usa el icono inferior y para redimensionar usa las esquinas.
+                Doble click para editar texto. En touch, mantén pulsado para editar. Usa el icono inferior para mover y las esquinas para redimensionar.
               </div>
             </div>
           </aside>
@@ -624,7 +624,7 @@ watch(editorElements, () => {
                   type="button"
                   data-editor-element="true"
                   :data-editor-id="item.id"
-                  class="absolute rounded-[18px] p-2 text-left transition"
+                  class="absolute rounded-[18px] p-0 text-left transition"
                   :style="elementBoxStyle(item.id)"
                   :class="state.selectedElementId === item.id
                     ? (drag.active && drag.elementId === item.id

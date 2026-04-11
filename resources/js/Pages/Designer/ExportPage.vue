@@ -14,7 +14,7 @@ const objectiveTitle = computed(() => objectiveOptions.find((item) => item.id ==
     <DesignerLayout
         title="Exportar"
         eyebrow="Pantalla 7"
-        description="El modo oscuro afecta a toda la experiencia de la app, también al estado de exportación."
+        description="Elige cómo descargar el diseño."
         :current-step="currentStep"
         :steps="steps"
         :dark-mode="state.darkMode"

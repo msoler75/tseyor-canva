@@ -18,6 +18,10 @@ defineProps({
         type: String,
         default: '',
     },
+    nextDisabled: {
+        type: Boolean,
+        default: false,
+    },
 });
 </script>
 
@@ -39,8 +43,16 @@ defineProps({
             >
                 {{ hint }}
             </span>
+            <button
+                v-if="nextUrl && nextDisabled"
+                type="button"
+                disabled
+                class="btn btn-primary btn-sm rounded-full"
+            >
+                {{ nextLabel }}
+            </button>
             <Link
-                v-if="nextUrl"
+                v-else-if="nextUrl"
                 :href="nextUrl"
                 class="btn btn-primary btn-sm rounded-full"
             >
