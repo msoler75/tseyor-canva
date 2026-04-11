@@ -13,6 +13,8 @@ const elementObservers = new Map();
 const editInputRef = ref(null);
 const editingElementId = ref(null);
 const editingDraft = ref('');
+const editingBoxHeight = ref(null);
+const selectedParagraphIndex = ref(0);
 const activePropertyPanel = ref('typography');
 const toolbarPosition = reactive({ x: 16, y: 16 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
@@ -31,6 +33,7 @@ const drag = reactive({
     startY: 0,
     startW: 0,
     startFontSize: 0,
+    startParagraphStyles: [],
 });
 const touchIntent = reactive({
     pointerId: null,
@@ -50,24 +53,24 @@ const backgroundOptions = [
 const fontOptions = [
     { label: 'Poppins', family: 'Poppins, sans-serif' },
     { label: 'Montserrat', family: 'Montserrat, sans-serif' },
-    { label: 'Inter', family: 'Inter, sans-serif' },
     { label: 'Raleway', family: 'Raleway, sans-serif' },
-    { label: 'Nunito', family: 'Nunito, sans-serif' },
+    { label: 'Playfair Display', family: '"Playfair Display", serif' },
+    { label: 'Pacifico', family: 'Pacifico, cursive' },
     { label: 'Work Sans', family: '"Work Sans", sans-serif' },
     { label: 'Manrope', family: 'Manrope, sans-serif' },
     { label: 'Rubik', family: 'Rubik, sans-serif' },
     { label: 'Quicksand', family: 'Quicksand, sans-serif' },
     { label: 'Ubuntu', family: 'Ubuntu, sans-serif' },
     { label: 'Oswald', family: 'Oswald, sans-serif' },
+    { label: 'Nunito', family: 'Nunito, sans-serif' },
+    { label: 'Inter', family: 'Inter, sans-serif' },
+    { label: 'Lobster', family: 'Lobster, cursive' },
     { label: 'Bebas Neue', family: '"Bebas Neue", sans-serif' },
     { label: 'Anton', family: 'Anton, sans-serif' },
     { label: 'Source Sans 3', family: '"Source Sans 3", sans-serif' },
-    { label: 'Playfair Display', family: '"Playfair Display", serif' },
     { label: 'Merriweather', family: 'Merriweather, serif' },
     { label: 'Roboto Slab', family: '"Roboto Slab", serif' },
     { label: 'Libre Baskerville', family: '"Libre Baskerville", serif' },
-    { label: 'Lobster', family: 'Lobster, cursive' },
-    { label: 'Pacifico', family: 'Pacifico, cursive' },
     { label: 'Caveat', family: 'Caveat, cursive' },
 ];
 const propertyTabs = [
@@ -100,7 +103,93 @@ const orderedLayerIds = computed(() => Object.keys(state.elementLayout).sort((a,
     return zA - zB;
 }));
 
+const paragraphStyleFields = new Set([
+    'fontSize',
+    'color',
+    'fontFamily',
+    'fontWeight',
+    'italic',
+    'uppercase',
+    'textAlign',
+    'letterSpacing',
+    'lineHeight',
+]);
+
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+const getParagraphs = (text) => String(text ?? '').replace(/\r\n/g, '\n').split('\n');
+const buildParagraphStyle = (layout, fallback = {}) => ({
+    fontSize: fallback.fontSize ?? layout.fontSize ?? 16,
+    color: fallback.color ?? layout.color ?? '#ffffff',
+    fontFamily: fallback.fontFamily ?? layout.fontFamily ?? 'Inter, sans-serif',
+    fontWeight: fallback.fontWeight ?? layout.fontWeight ?? 'regular',
+    italic: fallback.italic ?? layout.italic ?? false,
+    uppercase: fallback.uppercase ?? layout.uppercase ?? false,
+    textAlign: fallback.textAlign ?? layout.textAlign ?? 'left',
+    letterSpacing: fallback.letterSpacing ?? layout.letterSpacing ?? 0,
+    lineHeight: fallback.lineHeight ?? layout.lineHeight ?? 1.3,
+});
+const ensureParagraphStyles = (layout, text = '') => {
+    const paragraphs = getParagraphs(text);
+
+    if (!Array.isArray(layout.paragraphStyles)) {
+        layout.paragraphStyles = [];
+    }
+
+    paragraphs.forEach((_, index) => {
+        const current = layout.paragraphStyles[index];
+        const previous = layout.paragraphStyles[index - 1];
+        const normalized = buildParagraphStyle(layout, current ?? previous ?? {});
+
+        if (!current) {
+            layout.paragraphStyles[index] = normalized;
+            return;
+        }
+
+        Object.entries(normalized).forEach(([key, value]) => {
+            if (current[key] === undefined) {
+                current[key] = value;
+            }
+        });
+    });
+
+    if (layout.paragraphStyles.length > paragraphs.length) {
+        layout.paragraphStyles.splice(paragraphs.length);
+    }
+
+    return layout.paragraphStyles;
+};
+const getTextSourceForSelectedElement = () => {
+    if (!state.selectedElementId) return '';
+    return editingElementId.value === state.selectedElementId ? editingDraft.value : getElementText(state.selectedElementId);
+};
+const getParagraphStyleForElement = (id, index = 0, text = null) => {
+    const layout = state.elementLayout[id];
+    if (!layout) return null;
+
+    const sourceText = text ?? (editingElementId.value === id ? editingDraft.value : getElementText(id));
+    const styles = ensureParagraphStyles(layout, sourceText);
+
+    return styles[clamp(index, 0, Math.max(0, styles.length - 1))] ?? buildParagraphStyle(layout);
+};
+const getActiveParagraphStyle = () => {
+    if (!selectedElement.value) return null;
+
+    const styles = ensureParagraphStyles(selectedElement.value, getTextSourceForSelectedElement());
+    selectedParagraphIndex.value = clamp(selectedParagraphIndex.value, 0, Math.max(0, styles.length - 1));
+
+    return styles[selectedParagraphIndex.value] ?? buildParagraphStyle(selectedElement.value);
+};
+const selectedTextStyle = computed(() => getActiveParagraphStyle());
+const paragraphCount = computed(() => {
+    if (!selectedElement.value) return 0;
+    return ensureParagraphStyles(selectedElement.value, getTextSourceForSelectedElement()).length;
+});
+const activeParagraphLabel = computed(() => paragraphCount.value ? `Párrafo ${selectedParagraphIndex.value + 1} de ${paragraphCount.value}` : 'Párrafo 1 de 1');
+const getParagraphIndexFromCursor = (text, cursor = 0) => {
+    const safeText = String(text ?? '');
+    const safeCursor = clamp(cursor, 0, safeText.length);
+    return safeText.slice(0, safeCursor).split('\n').length - 1;
+};
 const normalizePickerColor = (value, fallback = '#ffffff') => {
     if (typeof value !== 'string') return fallback;
 
@@ -114,6 +203,12 @@ const normalizePickerColor = (value, fallback = '#ffffff') => {
     return fallback;
 };
 const setSelectedColor = (field, value) => {
+    if (paragraphStyleFields.has(field)) {
+        if (!selectedTextStyle.value) return;
+        selectedTextStyle.value[field] = value;
+        return;
+    }
+
     if (!selectedElement.value) return;
     selectedElement.value[field] = value;
 };
@@ -157,15 +252,19 @@ const elementBoxStyle = (id) => {
     };
 };
 
+const getEstimatedTextHeight = (layout, text = '') => ensureParagraphStyles(layout, text)
+    .reduce((total, style) => total + Math.max((style.fontSize ?? layout.fontSize ?? 16) * (style.lineHeight ?? 1.3), 16), 0);
+
 const selectedOverlayStyle = computed(() => {
     if (!state.selectedElementId) {
         return {};
     }
 
     const layout = state.elementLayout[state.selectedElementId];
+    const text = editingElementId.value === state.selectedElementId ? editingDraft.value : getElementText(state.selectedElementId);
     const measured = elementMeasurements[state.selectedElementId] ?? null;
     const measuredWidth = measured?.width ?? layout.w;
-    const measuredHeight = measured?.height ?? layout.fontSize * (layout.lineHeight ?? 1.3);
+    const measuredHeight = measured?.height ?? getEstimatedTextHeight(layout, text);
 
     return {
         left: `${layout.x}px`,
@@ -218,15 +317,6 @@ const elementContentStyle = (id) => {
     const layout = state.elementLayout[id];
 
     return {
-        fontSize: `${layout.fontSize}px`,
-        color: layout.color,
-        fontFamily: layout.fontFamily ?? 'Inter, sans-serif',
-        fontStyle: layout.italic ? 'italic' : 'normal',
-        fontWeight: layout.fontWeight === 'bold' ? '700' : '500',
-        textAlign: layout.textAlign ?? 'left',
-        textTransform: layout.uppercase ? 'uppercase' : 'none',
-        letterSpacing: `${layout.letterSpacing ?? 0}px`,
-        lineHeight: `${layout.lineHeight ?? 1.3}`,
         opacity: `${(layout.opacity ?? 100) / 100}`,
         backgroundColor: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : 'transparent',
         borderRadius: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? '16px' : '0',
@@ -237,26 +327,54 @@ const elementContentStyle = (id) => {
     };
 };
 
-const elementEditInputStyle = (id) => {
+const paragraphContentStyle = (id, index, text = null) => {
     const layout = state.elementLayout[id];
+    const paragraphStyle = getParagraphStyleForElement(id, index, text);
 
     return {
-        font: 'inherit',
-        color: 'inherit',
-        textAlign: layout.textAlign ?? 'left',
-        textTransform: layout.uppercase ? 'uppercase' : 'none',
-        letterSpacing: `${layout.letterSpacing ?? 0}px`,
-        lineHeight: `${layout.lineHeight ?? 1.3}`,
+        display: 'block',
+        fontSize: `${paragraphStyle?.fontSize ?? layout.fontSize}px`,
+        color: paragraphStyle?.color ?? layout.color,
+        fontFamily: paragraphStyle?.fontFamily ?? layout.fontFamily ?? 'Inter, sans-serif',
+        fontStyle: paragraphStyle?.italic ? 'italic' : 'normal',
+        fontWeight: paragraphStyle?.fontWeight === 'bold' ? '700' : '500',
+        textAlign: paragraphStyle?.textAlign ?? 'left',
+        textTransform: paragraphStyle?.uppercase ? 'uppercase' : 'none',
+        letterSpacing: `${paragraphStyle?.letterSpacing ?? 0}px`,
+        lineHeight: `${paragraphStyle?.lineHeight ?? 1.3}`,
+        textShadow: buildTextShadow(layout),
+        WebkitTextStroke: layout.border ? `${layout.contourWidth || 1}px ${layout.contourColor || '#ffffff'}` : '0',
+        whiteSpace: 'pre-wrap',
+    };
+};
+
+const elementEditInputStyle = (id) => {
+    const layout = state.elementLayout[id];
+    const paragraphStyle = id === state.selectedElementId ? selectedTextStyle.value : getParagraphStyleForElement(id, 0);
+
+    return {
+        fontSize: `${paragraphStyle?.fontSize ?? layout.fontSize}px`,
+        color: paragraphStyle?.color ?? layout.color,
+        fontFamily: paragraphStyle?.fontFamily ?? layout.fontFamily ?? 'Inter, sans-serif',
+        fontStyle: paragraphStyle?.italic ? 'italic' : 'normal',
+        fontWeight: paragraphStyle?.fontWeight === 'bold' ? '700' : '500',
+        textAlign: paragraphStyle?.textAlign ?? 'left',
+        textTransform: paragraphStyle?.uppercase ? 'uppercase' : 'none',
+        letterSpacing: `${paragraphStyle?.letterSpacing ?? 0}px`,
+        lineHeight: `${paragraphStyle?.lineHeight ?? 1.3}`,
         textShadow: buildTextShadow(layout),
         WebkitTextStroke: layout.border ? `${layout.contourWidth || 1}px ${layout.contourColor || '#ffffff'}` : '0',
         opacity: `${(layout.opacity ?? 100) / 100}`,
+        minHeight: editingElementId.value === id && editingBoxHeight.value
+            ? `${Math.max(editingBoxHeight.value, (paragraphStyle?.fontSize ?? layout.fontSize) * (paragraphStyle?.lineHeight ?? layout.lineHeight ?? 1.3))}px`
+            : undefined,
+        overflow: 'hidden',
     };
 };
 
 const setDragDocumentState = (active) => {
     document.documentElement.style.userSelect = active ? 'none' : '';
     document.documentElement.style.touchAction = active ? 'none' : '';
-    document.body.style.overflow = active ? 'hidden' : '';
 };
 
 const startToolbarDrag = (event) => {
@@ -285,19 +403,43 @@ const getElementText = (id) => {
     }
 };
 
+const selectParagraph = (id, index = 0) => {
+    state.selectedElementId = id;
+    selectedParagraphIndex.value = index;
+};
+
+const syncEditingParagraphState = () => {
+    if (!editingElementId.value || !selectedElement.value) return;
+
+    ensureParagraphStyles(selectedElement.value, editingDraft.value);
+
+    const input = editInputRef.value;
+    if (input && typeof input.selectionStart === 'number') {
+        selectedParagraphIndex.value = clamp(
+            getParagraphIndexFromCursor(editingDraft.value, input.selectionStart),
+            0,
+            Math.max(0, paragraphCount.value - 1)
+        );
+    }
+};
+
 const beginTextEdit = async (id) => {
     state.selectedElementId = id;
-    editingElementId.value = id;
+    editingBoxHeight.value = elementMeasurements[id]?.height ?? null;
     editingDraft.value = getElementText(id);
+    ensureParagraphStyles(state.elementLayout[id], editingDraft.value);
+    selectedParagraphIndex.value = 0;
+    editingElementId.value = id;
     clearLongPress();
     await nextTick();
+    syncEditingParagraphState();
     editInputRef.value?.focus();
     editInputRef.value?.select?.();
 };
 
 const commitTextEdit = () => {
     if (!editingElementId.value) return;
-    const value = editingDraft.value.trim();
+    const value = String(editingDraft.value ?? '').replace(/\r\n/g, '\n');
 
     switch (editingElementId.value) {
         case 'title':
@@ -315,12 +457,16 @@ const commitTextEdit = () => {
     }
 
     editingElementId.value = null;
+    editingBoxHeight.value = null;
 };
 
-const cancelTextEdit = () => { editingElementId.value = null; };
+const cancelTextEdit = () => {
+    editingElementId.value = null;
+    editingBoxHeight.value = null;
+};
 const onEditorKeydown = (event) => {
     if (event.key === 'Escape') return cancelTextEdit();
-    if (event.key === 'Enter' && !event.shiftKey) {
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         commitTextEdit();
     }
@@ -384,6 +530,7 @@ const startResize = (event, id, handle) => {
     drag.startY = layout.y;
     drag.startW = layout.w;
     drag.startFontSize = layout.fontSize;
+    drag.startParagraphStyles = ensureParagraphStyles(layout, getElementText(id)).map((style) => ({ ...style }));
     clearLongPress();
     setDragDocumentState(true);
 
@@ -417,12 +564,33 @@ const moveDrag = (event) => {
         const deltaX = event.clientX - drag.startClientX;
         const deltaY = event.clientY - drag.startClientY;
         const handle = drag.handle ?? 'se';
+        const isSideHandle = handle === 'e' || handle === 'w';
         const horizontalDelta = handle.includes('e') ? deltaX : -deltaX;
+
+        if (isSideHandle) {
+            const nextWidth = clamp(Math.round(drag.startW + horizontalDelta), 120, 340);
+            layout.w = nextWidth;
+
+            if (handle === 'w') {
+                layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, rect.width - nextWidth - 8)));
+            } else {
+                layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, rect.width - nextWidth - 8)));
+            }
+
+            return;
+        }
+
         const widthDelta = horizontalDelta + (deltaY * 0.35);
         const nextWidth = clamp(Math.round(drag.startW + widthDelta), 120, 340);
+        const scale = nextWidth / Math.max(drag.startW, 1);
 
         layout.w = nextWidth;
-        layout.fontSize = clamp(Math.round(drag.startFontSize * (nextWidth / drag.startW)), 14, 72);
+        layout.fontSize = clamp(Math.round(drag.startFontSize * scale), 14, 72);
+        layout.paragraphStyles = (drag.startParagraphStyles?.length ? drag.startParagraphStyles : ensureParagraphStyles(layout, getElementText(drag.elementId)).map((style) => ({ ...style })))
+            .map((style) => ({
+                ...style,
+                fontSize: clamp(Math.round((style.fontSize ?? drag.startFontSize) * scale), 8, 200),
+            }));
 
         if (handle.includes('w')) layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, rect.width - nextWidth - 8)));
         else layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, rect.width - nextWidth - 8)));
@@ -458,9 +626,9 @@ const endDrag = (event) => {
 
 const cycleAlignment = () => {
     const order = ['left', 'center', 'right', 'justify'];
-    if (!selectedElement.value) return;
-    const index = order.indexOf(selectedElement.value.textAlign ?? 'left');
-    selectedElement.value.textAlign = order[(index + 1) % order.length];
+    if (!selectedTextStyle.value) return;
+    const index = order.indexOf(selectedTextStyle.value.textAlign ?? 'left');
+    selectedTextStyle.value.textAlign = order[(index + 1) % order.length];
 };
 
 const currentAlignmentIcon = computed(() => {
@@ -471,7 +639,7 @@ const currentAlignmentIcon = computed(() => {
         justify: 'ph:text-align-justify',
     };
 
-    return icons[selectedElement.value?.textAlign ?? 'left'];
+    return icons[selectedTextStyle.value?.textAlign ?? 'left'];
 });
 
 const changeLayer = (mode) => {
@@ -497,8 +665,10 @@ const changeLayer = (mode) => {
 };
 
 const clearSelection = () => {
+  if (editingElementId.value) {
+    commitTextEdit();
+  }
     state.selectedElementId = null;
-    cancelTextEdit();
 };
 
 const handleCanvasPointerDown = (event) => {
@@ -510,11 +680,14 @@ const handleCanvasPointerDown = (event) => {
 const handleGlobalPointerDown = (event) => {
     if (drag.active || !state.selectedElementId) return;
 
-    const interactiveTarget = event.target.closest(
-        '[data-editor-element="true"],[data-editor-control="true"],button,input,textarea,select,label,a,[role="button"]'
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const preserveSelectionTarget = target.closest(
+        '[data-editor-element="true"],[data-editor-control="true"],[data-editor-keep-selection="true"],nav,header,[role="navigation"]'
     );
 
-    if (interactiveTarget) {
+    if (preserveSelectionTarget) {
         return;
     }
 
@@ -543,6 +716,12 @@ onBeforeUnmount(() => {
 watch(editorElements, () => {
     refreshElementObservers();
 }, { deep: true });
+
+watch(editingDraft, () => {
+    if (editingElementId.value) {
+        syncEditingParagraphState();
+    }
+});
 </script>
 
 <template>
@@ -559,10 +738,11 @@ watch(editorElements, () => {
       <div class="overflow-hidden rounded-[32px] border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div
           v-if="hasSelection"
+          data-editor-keep-selection="true"
           class="pointer-events-none absolute z-[7000]"
           :style="{ left: toolbarPosition.x + 'px', top: toolbarPosition.y + 'px' }"
         >
-          <div class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90">
+          <div data-editor-keep-selection="true" class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90">
             <div class="card-body p-1.5">
                 <div class="flex flex-wrap items-center gap-3">
                     <button type="button" class="order-first btn btn-ghost text-lg cursor-grab active:cursor-grabbing" @pointerdown="startToolbarDrag">⋮⋮</button>
@@ -571,20 +751,21 @@ watch(editorElements, () => {
                         <span v-if="tab.label" class="text-sm text-base-100-accent" :class="tab.labelClass">{{ tab.label }}</span>
                         <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl"/>
                     </button>
-                    <input v-model="selectedElement.fontSize" type="number" min="8" max="200" step="1" class="input input-bordered join-item w-12 text-center order-first" />
-                    <button type="button" class="btn text-lg" :class="selectedElement.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.fontWeight = selectedElement.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
-                    <button type="button" class="btn text-lg italic" :class="selectedElement.italic ? 'btn-primary' : 'btn-outline'" @click="selectedElement.italic = !selectedElement.italic">I</button>
-                    <button type="button" class="btn text-lg w-12" :class="selectedElement.uppercase ? 'btn-primary' : 'btn-outline'" @click="selectedElement.uppercase = !selectedElement.uppercase">Aa</button>
+                    <input v-model="selectedTextStyle.fontSize" type="number" min="8" max="200" step="1" class="input input-bordered join-item w-12 text-center order-first" />
+                    <button type="button" class="btn text-lg" :class="selectedTextStyle.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
+                    <button type="button" class="btn text-lg italic" :class="selectedTextStyle.italic ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.italic = !selectedTextStyle.italic">I</button>
+                    <button type="button" class="btn text-lg w-12" :class="selectedTextStyle.uppercase ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.uppercase = !selectedTextStyle.uppercase">Aa</button>
                     <button type="button" class="btn text-lg btn-outline" @click="cycleAlignment">
                         <Icon :icon="currentAlignmentIcon" class="scale-150"/>
                     </button>
+                    <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">{{ activeParagraphLabel }}</span>
                 </div>
             </div>
           </div>
         </div>
 
         <div class="grid gap-0 xl:grid-cols-[320px_1fr]">
-          <aside class="border-b border-base-300 bg-base-100 p-5 xl:border-b-0 xl:border-r">
+          <aside data-editor-keep-selection="true" class="border-b border-base-300 bg-base-100 p-5 xl:border-b-0 xl:border-r">
             <div class="space-y-5">
               <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Panel contextual</p>
@@ -605,16 +786,17 @@ watch(editorElements, () => {
                     </span>
                   </div>
                   <p class="mt-1 text-xs text-base-content/60">Lista simple: una fuente por línea y mostrada con su propio tipo de letra.</p>
+                  <p class="mt-2 text-xs font-medium text-primary/80">Estos ajustes se aplican al {{ activeParagraphLabel.toLowerCase() }}.</p>
                   <div class="mt-3 max-h-80 overflow-y-auto border-y border-base-300/70">
                     <button
                       v-for="font in fontOptions"
                       :key="font.family"
                       type="button"
                       class="block w-full border-b border-base-300/70 px-1 py-3 text-left transition last:border-b-0"
-                      :class="selectedElement.fontFamily === font.family
+                      :class="selectedTextStyle.fontFamily === font.family
                         ? 'bg-primary/10 text-primary'
                         : 'bg-transparent text-base-content hover:bg-base-200/50'"
-                      @click="selectedElement.fontFamily = font.family"
+                      @click="selectedTextStyle.fontFamily = font.family"
                     >
                       <span class="block text-xl leading-tight" :style="{ fontFamily: font.family }">{{ font.label }}</span>
                     </button>
@@ -622,15 +804,15 @@ watch(editorElements, () => {
                   <div class="mt-4 space-y-3">
                     <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interletrado</label>
                     <div class="flex items-center gap-3">
-                      <input v-model="selectedElement.letterSpacing" type="range" min="-5" max="40" step="1" class="range range-primary flex-1" />
-                      <input v-model="selectedElement.letterSpacing" type="number" min="-5" max="40" step="1" class="input input-bordered input-sm w-20" />
+                      <input v-model="selectedTextStyle.letterSpacing" type="range" min="-5" max="40" step="1" class="range range-primary flex-1" />
+                      <input v-model="selectedTextStyle.letterSpacing" type="number" min="-5" max="40" step="1" class="input input-bordered input-sm w-20" />
                     </div>
                   </div>
                   <div class="mt-4 space-y-3">
                     <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interlineado</label>
                     <div class="flex items-center gap-3">
-                      <input v-model="selectedElement.lineHeight" type="range" min="0.6" max="3" step="0.1" class="range range-primary flex-1" />
-                      <input v-model="selectedElement.lineHeight" type="number" min="0.6" max="3" step="0.1" class="input input-bordered input-sm w-20" />
+                      <input v-model="selectedTextStyle.lineHeight" type="range" min="0.6" max="3" step="0.1" class="range range-primary flex-1" />
+                      <input v-model="selectedTextStyle.lineHeight" type="number" min="0.6" max="3" step="0.1" class="input input-bordered input-sm w-20" />
                     </div>
                   </div>
                 </div>
@@ -645,19 +827,20 @@ watch(editorElements, () => {
                         <p class="text-xs text-base-content/60">Paleta ampliada y color personalizado.</p>
                       </div>
                       <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                        {{ selectedElement.color }}
+                        {{ selectedTextStyle.color }}
                       </span>
                     </div>
+                    <p class="mt-2 text-xs font-medium text-primary/80">El color se aplica al {{ activeParagraphLabel.toLowerCase() }}.</p>
                     <div class="mt-4 grid grid-cols-6 gap-2">
                       <button
                         v-for="color in colorOptions"
                         :key="color"
                         type="button"
                         class="h-9 w-9 rounded-full transition hover:scale-105"
-                        :class="selectedElement.color === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                        :class="selectedTextStyle.color === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
                         :style="{ backgroundColor: color }"
                         :title="color"
-                        @click="selectedElement.color = color"
+                        @click="selectedTextStyle.color = color"
                       ></button>
                     </div>
                     <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
@@ -666,11 +849,11 @@ watch(editorElements, () => {
                         <input
                           type="color"
                           class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                          :value="normalizePickerColor(selectedElement.color, '#ffffff')"
+                          :value="normalizePickerColor(selectedTextStyle.color, '#ffffff')"
                           @input="setSelectedColor('color', $event.target.value)"
                         />
                         <input
-                          :value="selectedElement.color"
+                          :value="selectedTextStyle.color"
                           type="text"
                           placeholder="#7c3aed"
                           class="input input-bordered input-sm flex-1"
@@ -684,6 +867,7 @@ watch(editorElements, () => {
 
               <div v-else-if="activePropertyPanel === 'effects'" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4 space-y-4">
+                  <p class="text-xs font-medium text-primary/80">Estos efectos se aplican a todo el objeto de texto.</p>
                   <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
                     <div class="flex items-center justify-between gap-3">
                       <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Sombra</p>
@@ -890,7 +1074,7 @@ watch(editorElements, () => {
               </div>
 
               <div class="alert border border-base-300 bg-base-100/80 text-sm leading-6 text-base-content/80">
-                Doble click para editar texto. En touch, mantén pulsado para editar. Usa el icono inferior para mover y las esquinas para redimensionar.
+                Doble click para editar texto. Enter crea un nuevo parrafo; al hacer clic fuera, el texto se guarda automaticamente. Ctrl+Enter tambien confirma y Esc cancela. En touch, mantén pulsado para editar. Usa el icono inferior para mover y las esquinas para redimensionar.
               </div>
             </div>
           </aside>
@@ -918,7 +1102,7 @@ watch(editorElements, () => {
                         ? 'border-2 border-dashed border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'
                         : 'border-2 border-dashed border-cyan-300 bg-white/8 shadow-[0_0_0_3px_rgba(103,232,249,.18)]')
                     : 'z-10 border border-transparent hover:border-white/20'"
-                  @click="state.selectedElementId = item.id"
+                  @click="selectParagraph(item.id, 0)"
                   @dblclick="beginTextEdit(item.id)"
                   @pointerdown="startTouchEditIntent($event, item.id)"
                 >
@@ -929,15 +1113,30 @@ watch(editorElements, () => {
                     v-model="editingDraft"
                     class="block min-h-[3.5rem] w-full resize-none border-none bg-transparent p-0 placeholder:text-white/55 focus:bg-transparent focus:outline-none"
                     :style="elementEditInputStyle(item.id)"
+                    @input="syncEditingParagraphState"
+                    @click="syncEditingParagraphState"
+                    @keyup="syncEditingParagraphState"
+                    @select="syncEditingParagraphState"
                     @blur="commitTextEdit"
                     @keydown="onEditorKeydown"
                   ></textarea>
-                  <span v-else class="block">{{ item.text }}</span>
+                  <template v-else>
+                    <span
+                      v-for="(paragraph, index) in getParagraphs(item.text)"
+                      :key="`${item.id}-${index}`"
+                      class="block cursor-text whitespace-pre-wrap"
+                      :style="paragraphContentStyle(item.id, index, item.text)"
+                      @pointerdown.stop="selectParagraph(item.id, index)"
+                      @click.stop="selectParagraph(item.id, index)"
+                    >{{ paragraph || '\u00A0' }}</span>
+                  </template>
                   </div>
                 </button>
 
                 <div v-if="state.selectedElementId" data-editor-control="true" class="pointer-events-none absolute" :style="selectedOverlayStyle">
                   <span class="pointer-events-none absolute -top-10 left-0 rounded-full bg-cyan-300 px-3 py-1 text-xs font-semibold text-slate-950">{{ activeElementLabel }} seleccionado</span>
+                  <span data-editor-control="true" class="pointer-events-auto absolute -left-2 top-1/2 z-30 h-8 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'w')"></span>
+                  <span data-editor-control="true" class="pointer-events-auto absolute -right-2 top-1/2 z-30 h-8 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'e')"></span>
                   <span data-editor-control="true" class="pointer-events-auto absolute -left-2 -top-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'nw')"></span>
                   <span data-editor-control="true" class="pointer-events-auto absolute -right-2 -top-2 z-30 h-4 w-4 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'ne')"></span>
                   <span data-editor-control="true" class="pointer-events-auto absolute -bottom-2 -left-2 z-30 h-4 w-4 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'sw')"></span>
