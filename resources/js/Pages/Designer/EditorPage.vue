@@ -1,4 +1,5 @@
 ﻿<script setup>
+import { Icon } from '@iconify/vue';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
 import StepFooter from '../../Components/designer/StepFooter.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
@@ -13,6 +14,8 @@ const editInputRef = ref(null);
 const editingElementId = ref(null);
 const editingDraft = ref('');
 const activePropertyPanel = ref('typography');
+const toolbarPosition = reactive({ x: 16, y: 16 });
+const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
 let longPressTimer = null;
 const drag = reactive({
     active: false,
@@ -39,11 +42,11 @@ const colorOptions = ['#ffffff', '#c4b5fd', '#f9a8d4', '#67e8f9', '#fde68a', '#1
 const backgroundOptions = ['transparent', '#ffffff', '#111827', '#7c3aed', '#0ea5e9', '#10b981', '#fef3c7', '#fecdd3'];
 const fontOptions = ['Poppins, sans-serif', 'Montserrat, sans-serif', 'Inter, sans-serif', 'Georgia, serif'];
 const propertyTabs = [
-    { id: 'typography', icon: 'T', label: 'Fuente' },
-    { id: 'color', icon: '●', label: 'Color' },
-    { id: 'effects', icon: '✦', label: 'Efectos' },
-    { id: 'opacity', icon: '◐', label: 'Transparencia' },
-    { id: 'arrange', icon: '↕', label: 'Posición' },
+    { id: 'typography', label: 'Fuente' , class: 'order-first'},
+    { id: 'color', label: 'A', labelClass:'border-b-5 border-blue-500 text-xl',class: 'order-first' },
+    { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
+    { id: 'effects', label: 'Efectos', class: 'order-last' },
+    { id: 'arrange', label: 'Posición' , class: 'order-last'},
 ];
 
 const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
@@ -69,6 +72,10 @@ const orderedLayerIds = computed(() => Object.keys(state.elementLayout).sort((a,
 }));
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+const clampToolbar = () => {
+    toolbarPosition.x = clamp(toolbarPosition.x, 8, 700);
+    toolbarPosition.y = clamp(toolbarPosition.y, 8, 180);
+};
 
 const buildTextShadow = (layout) => {
     const shadows = [];
@@ -189,6 +196,18 @@ const setDragDocumentState = (active) => {
     document.documentElement.style.userSelect = active ? 'none' : '';
     document.documentElement.style.touchAction = active ? 'none' : '';
     document.body.style.overflow = active ? 'hidden' : '';
+};
+
+const startToolbarDrag = (event) => {
+    toolbarDrag.active = true;
+    toolbarDrag.pointerId = event.pointerId;
+    toolbarDrag.startX = event.clientX;
+    toolbarDrag.startY = event.clientY;
+    toolbarDrag.originX = toolbarPosition.x;
+    toolbarDrag.originY = toolbarPosition.y;
+    setDragDocumentState(true);
+    event.currentTarget?.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
 };
 
 const getElementText = (id) => {
@@ -313,6 +332,14 @@ const startResize = (event, id, handle) => {
 };
 
 const moveDrag = (event) => {
+    if (toolbarDrag.active && toolbarDrag.pointerId === event.pointerId) {
+        toolbarPosition.x = toolbarDrag.originX + (event.clientX - toolbarDrag.startX);
+        toolbarPosition.y = toolbarDrag.originY + (event.clientY - toolbarDrag.startY);
+        clampToolbar();
+        if (event.cancelable) event.preventDefault();
+        return;
+    }
+
     if (!drag.active || drag.pointerId !== event.pointerId || !drag.elementId || !canvasRef.value) {
         if (touchIntent.pointerId === event.pointerId) {
             const moved = Math.hypot(event.clientX - touchIntent.startX, event.clientY - touchIntent.startY);
@@ -351,6 +378,13 @@ const moveDrag = (event) => {
 };
 
 const endDrag = (event) => {
+    if (toolbarDrag.active && toolbarDrag.pointerId === event.pointerId) {
+        toolbarDrag.active = false;
+        toolbarDrag.pointerId = null;
+        setDragDocumentState(false);
+        return;
+    }
+
     if (drag.pointerId !== null && event.pointerId !== undefined && drag.pointerId !== event.pointerId) return;
     drag.active = false;
     drag.mode = 'move';
@@ -370,10 +404,10 @@ const cycleAlignment = () => {
 
 const currentAlignmentIcon = computed(() => {
     const icons = {
-        left: '⟸',
-        center: '≡',
-        right: '⟹',
-        justify: '☰',
+        left: 'ph:text-align-left',
+        center: 'ph:text-align-center',
+        right: 'ph:text-align-right',
+        justify: 'ph:text-align-justify',
     };
 
     return icons[selectedElement.value?.textAlign ?? 'left'];
@@ -460,25 +494,30 @@ watch(editorElements, () => {
     :dark-mode="state.darkMode"
     @toggle-dark="state.darkMode = !state.darkMode"
   >
-    <section class="glass soft-shadow rounded-[32px] border border-white/70 p-6 sm:p-8 dark:border-slate-700/70">
+    <section class="relative glass soft-shadow rounded-[32px] border border-white/70 p-6 sm:p-8 dark:border-slate-700/70">
       <div class="overflow-hidden rounded-[32px] border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        <div class="border-b border-base-300 bg-base-100 px-4 py-3">
-          <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Elemento seleccionado</p>
-              <p class="mt-1 text-sm text-base-content/75">{{ activeElementLabel }}</p>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <button v-for="tab in propertyTabs" :key="tab.id" type="button" class="btn btn-sm rounded-full" :class="activePropertyPanel === tab.id ? 'btn-primary' : 'btn-outline'" @click="activePropertyPanel = tab.id">
-                <span class="text-sm font-black">{{ tab.icon }}</span>
-                <span>{{ tab.label }}</span>
+        <div
+          v-if="hasSelection"
+          class="pointer-events-none absolute z-[7000]"
+          :style="{ left: toolbarPosition.x + 'px', top: toolbarPosition.y + 'px' }"
+        >
+          <div class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90">
+            <div class="card-body p-3">
+          <div class="flex flex-wrap items-center gap-4">
+              <button type="button" class="order-first btn btn-ghost btn-sm cursor-grab active:cursor-grabbing rounded-full" @pointerdown="startToolbarDrag">⋮⋮</button>
+              <button v-for="tab in propertyTabs" :key="tab.id" type="button" class="btn border-0 py-1 px-2" :class="[activePropertyPanel === tab.id ? 'btn-primary' : 'btn-outline',
+              tab.class
+              ]" @click="activePropertyPanel = tab.id">
+                <span v-if="tab.label" class="text-sm text-base-100-accent" :class="tab.labelClass">{{ tab.label }}</span>
+                <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl"/>
               </button>
-              <template v-if="hasSelection">
-                <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.fontWeight = selectedElement.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
-                <button type="button" class="btn btn-sm rounded-full italic" :class="selectedElement.italic ? 'btn-primary' : 'btn-outline'" @click="selectedElement.italic = !selectedElement.italic">I</button>
-                <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.uppercase ? 'btn-primary' : 'btn-outline'" @click="selectedElement.uppercase = !selectedElement.uppercase">Aa</button>
-                <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.textAlign ? 'btn-primary' : 'btn-outline'" @click="cycleAlignment">{{ currentAlignmentIcon }}</button>
-              </template>
+                <input v-model="selectedElement.fontSize" type="number" min="8" max="200" step="1" class="input input-bordered join-item w-12 text-center" />
+                <button type="button" class="btn btn-lg" :class="selectedElement.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.fontWeight = selectedElement.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
+                <button type="button" class="btn btn-lg italic" :class="selectedElement.italic ? 'btn-primary' : 'btn-outline'" @click="selectedElement.italic = !selectedElement.italic">I</button>
+                <button type="button" class="btn btn-lg" :class="selectedElement.uppercase ? 'btn-primary' : 'btn-outline'" @click="selectedElement.uppercase = !selectedElement.uppercase">Aa</button>
+                <button type="button" class="btn btn-lg btn-outline" @click="cycleAlignment">
+                    <Icon :icon="currentAlignmentIcon" class="scale-150"/></button>
+          </div>
             </div>
           </div>
         </div>
@@ -607,10 +646,8 @@ watch(editorElements, () => {
           </aside>
 
           <div class="canvas-grid min-h-[680px] bg-slate-100 p-6 dark:bg-slate-950 sm:p-10">
-            <div class="mx-auto max-w-[400px] rounded-[32px] bg-white p-4 shadow-2xl dark:bg-slate-900">
-              <div ref="canvasRef" class="relative h-[620px] overflow-hidden rounded-[28px] bg-gradient-to-br from-indigo-800 via-violet-700 to-fuchsia-600 p-7 text-white select-none touch-none" @pointerdown="handleCanvasPointerDown">
-                <p class="text-[11px] uppercase tracking-[0.24em] text-white/70">Diseño activo</p>
-
+            <div class="mx-auto max-w-[400px] bg-white p-4 shadow-2xl dark:bg-slate-900">
+              <div ref="canvasRef" class="relative h-[620px] overflow-hidden bg-gradient-to-br from-indigo-800 via-violet-700 to-fuchsia-600 p-7 text-white select-none touch-none" @pointerdown="handleCanvasPointerDown">
                 <button
                   type="button"
                   class="absolute inset-0 z-0 cursor-default bg-transparent"
