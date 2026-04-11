@@ -38,12 +38,41 @@ const touchIntent = reactive({
     startY: 0,
 });
 
-const colorOptions = ['#ffffff', '#c4b5fd', '#f9a8d4', '#67e8f9', '#fde68a', '#1f2937', '#7c3aed', '#0ea5e9', '#10b981', '#f97316'];
-const backgroundOptions = ['transparent', '#ffffff', '#111827', '#7c3aed', '#0ea5e9', '#10b981', '#fef3c7', '#fecdd3'];
-const fontOptions = ['Poppins, sans-serif', 'Montserrat, sans-serif', 'Inter, sans-serif', 'Georgia, serif'];
+const colorOptions = [
+    '#ffffff', '#f8fafc', '#111827', '#0f172a', '#7c3aed', '#8b5cf6', '#6366f1', '#3b82f6',
+    '#0ea5e9', '#06b6d4', '#14b8a6', '#10b981', '#22c55e', '#84cc16', '#eab308', '#f59e0b',
+    '#f97316', '#ef4444', '#f43f5e', '#ec4899', '#d946ef', '#c4b5fd', '#f9a8d4', '#67e8f9', '#fde68a',
+];
+const backgroundOptions = [
+    'transparent', '#ffffff', '#f8fafc', '#e2e8f0', '#111827', '#0f172a', '#7c3aed', '#8b5cf6',
+    '#0ea5e9', '#14b8a6', '#22c55e', '#f59e0b', '#f43f5e', '#fef3c7', '#fecdd3', '#ddd6fe',
+];
+const fontOptions = [
+    { label: 'Poppins', family: 'Poppins, sans-serif' },
+    { label: 'Montserrat', family: 'Montserrat, sans-serif' },
+    { label: 'Inter', family: 'Inter, sans-serif' },
+    { label: 'Raleway', family: 'Raleway, sans-serif' },
+    { label: 'Nunito', family: 'Nunito, sans-serif' },
+    { label: 'Work Sans', family: '"Work Sans", sans-serif' },
+    { label: 'Manrope', family: 'Manrope, sans-serif' },
+    { label: 'Rubik', family: 'Rubik, sans-serif' },
+    { label: 'Quicksand', family: 'Quicksand, sans-serif' },
+    { label: 'Ubuntu', family: 'Ubuntu, sans-serif' },
+    { label: 'Oswald', family: 'Oswald, sans-serif' },
+    { label: 'Bebas Neue', family: '"Bebas Neue", sans-serif' },
+    { label: 'Anton', family: 'Anton, sans-serif' },
+    { label: 'Source Sans 3', family: '"Source Sans 3", sans-serif' },
+    { label: 'Playfair Display', family: '"Playfair Display", serif' },
+    { label: 'Merriweather', family: 'Merriweather, serif' },
+    { label: 'Roboto Slab', family: '"Roboto Slab", serif' },
+    { label: 'Libre Baskerville', family: '"Libre Baskerville", serif' },
+    { label: 'Lobster', family: 'Lobster, cursive' },
+    { label: 'Pacifico', family: 'Pacifico, cursive' },
+    { label: 'Caveat', family: 'Caveat, cursive' },
+];
 const propertyTabs = [
     { id: 'typography', label: 'Fuente' , class: 'order-first'},
-    { id: 'color', label: 'A', labelClass:'border-b-5 border-blue-500 text-xl',class: 'order-first' },
+    { id: 'color', label: 'A', labelClass:'border-b-5 border-blue-500 text-xl',class: '' },
     { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
     { id: 'effects', label: 'Efectos', class: 'order-last' },
     { id: 'arrange', label: 'Posición' , class: 'order-last'},
@@ -72,6 +101,22 @@ const orderedLayerIds = computed(() => Object.keys(state.elementLayout).sort((a,
 }));
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+const normalizePickerColor = (value, fallback = '#ffffff') => {
+    if (typeof value !== 'string') return fallback;
+
+    const trimmed = value.trim();
+
+    if (/^#[\da-f]{6}$/i.test(trimmed)) return trimmed;
+    if (/^#[\da-f]{3}$/i.test(trimmed)) {
+        return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`;
+    }
+
+    return fallback;
+};
+const setSelectedColor = (field, value) => {
+    if (!selectedElement.value) return;
+    selectedElement.value[field] = value;
+};
 const clampToolbar = () => {
     toolbarPosition.x = clamp(toolbarPosition.x, 8, 700);
     toolbarPosition.y = clamp(toolbarPosition.y, 8, 180);
@@ -189,6 +234,22 @@ const elementContentStyle = (id) => {
         textShadow: buildTextShadow(layout),
         WebkitTextStroke: layout.border ? `${layout.contourWidth || 1}px ${layout.contourColor || '#ffffff'}` : '0',
         boxShadow: buildBubbleShadow(layout),
+    };
+};
+
+const elementEditInputStyle = (id) => {
+    const layout = state.elementLayout[id];
+
+    return {
+        font: 'inherit',
+        color: 'inherit',
+        textAlign: layout.textAlign ?? 'left',
+        textTransform: layout.uppercase ? 'uppercase' : 'none',
+        letterSpacing: `${layout.letterSpacing ?? 0}px`,
+        lineHeight: `${layout.lineHeight ?? 1.3}`,
+        textShadow: buildTextShadow(layout),
+        WebkitTextStroke: layout.border ? `${layout.contourWidth || 1}px ${layout.contourColor || '#ffffff'}` : '0',
+        opacity: `${(layout.opacity ?? 100) / 100}`,
     };
 };
 
@@ -502,22 +563,22 @@ watch(editorElements, () => {
           :style="{ left: toolbarPosition.x + 'px', top: toolbarPosition.y + 'px' }"
         >
           <div class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90">
-            <div class="card-body p-3">
-          <div class="flex flex-wrap items-center gap-4">
-              <button type="button" class="order-first btn btn-ghost btn-sm cursor-grab active:cursor-grabbing rounded-full" @pointerdown="startToolbarDrag">⋮⋮</button>
-              <button v-for="tab in propertyTabs" :key="tab.id" type="button" class="btn border-0 py-1 px-2" :class="[activePropertyPanel === tab.id ? 'btn-primary' : 'btn-outline',
-              tab.class
-              ]" @click="activePropertyPanel = tab.id">
-                <span v-if="tab.label" class="text-sm text-base-100-accent" :class="tab.labelClass">{{ tab.label }}</span>
-                <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl"/>
-              </button>
-                <input v-model="selectedElement.fontSize" type="number" min="8" max="200" step="1" class="input input-bordered join-item w-12 text-center" />
-                <button type="button" class="btn btn-lg" :class="selectedElement.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.fontWeight = selectedElement.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
-                <button type="button" class="btn btn-lg italic" :class="selectedElement.italic ? 'btn-primary' : 'btn-outline'" @click="selectedElement.italic = !selectedElement.italic">I</button>
-                <button type="button" class="btn btn-lg" :class="selectedElement.uppercase ? 'btn-primary' : 'btn-outline'" @click="selectedElement.uppercase = !selectedElement.uppercase">Aa</button>
-                <button type="button" class="btn btn-lg btn-outline" @click="cycleAlignment">
-                    <Icon :icon="currentAlignmentIcon" class="scale-150"/></button>
-          </div>
+            <div class="card-body p-1.5">
+                <div class="flex flex-wrap items-center gap-3">
+                    <button type="button" class="order-first btn btn-ghost text-lg cursor-grab active:cursor-grabbing" @pointerdown="startToolbarDrag">⋮⋮</button>
+                    <button v-for="tab in propertyTabs" :key="tab.id" type="button" class="btn border-0 py-1 px-2" :class="[activePropertyPanel === tab.id ? 'btn-primary' : 'btn-outline', tab.class]"
+                        @click="activePropertyPanel = tab.id">
+                        <span v-if="tab.label" class="text-sm text-base-100-accent" :class="tab.labelClass">{{ tab.label }}</span>
+                        <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl"/>
+                    </button>
+                    <input v-model="selectedElement.fontSize" type="number" min="8" max="200" step="1" class="input input-bordered join-item w-12 text-center order-first" />
+                    <button type="button" class="btn text-lg" :class="selectedElement.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.fontWeight = selectedElement.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
+                    <button type="button" class="btn text-lg italic" :class="selectedElement.italic ? 'btn-primary' : 'btn-outline'" @click="selectedElement.italic = !selectedElement.italic">I</button>
+                    <button type="button" class="btn text-lg w-12" :class="selectedElement.uppercase ? 'btn-primary' : 'btn-outline'" @click="selectedElement.uppercase = !selectedElement.uppercase">Aa</button>
+                    <button type="button" class="btn text-lg btn-outline" @click="cycleAlignment">
+                        <Icon :icon="currentAlignmentIcon" class="scale-150"/>
+                    </button>
+                </div>
             </div>
           </div>
         </div>
@@ -537,9 +598,26 @@ watch(editorElements, () => {
 
               <div v-else-if="activePropertyPanel === 'typography'" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4">
-                  <p class="text-sm font-semibold text-base-content">Tipo de fuente</p>
-                  <div class="mt-3 flex flex-wrap gap-2">
-                    <button v-for="font in fontOptions" :key="font" type="button" class="btn btn-outline btn-sm rounded-full" :class="selectedElement.fontFamily === font ? 'btn-primary' : ''" @click="selectedElement.fontFamily = font">{{ font.split(',')[0] }}</button>
+                  <div class="flex items-center justify-between gap-3">
+                    <p class="text-sm font-semibold text-base-content">Tipo de fuente</p>
+                    <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                      {{ fontOptions.length }} fuentes
+                    </span>
+                  </div>
+                  <p class="mt-1 text-xs text-base-content/60">Lista simple: una fuente por línea y mostrada con su propio tipo de letra.</p>
+                  <div class="mt-3 max-h-80 overflow-y-auto border-y border-base-300/70">
+                    <button
+                      v-for="font in fontOptions"
+                      :key="font.family"
+                      type="button"
+                      class="block w-full border-b border-base-300/70 px-1 py-3 text-left transition last:border-b-0"
+                      :class="selectedElement.fontFamily === font.family
+                        ? 'bg-primary/10 text-primary'
+                        : 'bg-transparent text-base-content hover:bg-base-200/50'"
+                      @click="selectedElement.fontFamily = font.family"
+                    >
+                      <span class="block text-xl leading-tight" :style="{ fontFamily: font.family }">{{ font.label }}</span>
+                    </button>
                   </div>
                   <div class="mt-4 space-y-3">
                     <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interletrado</label>
@@ -559,59 +637,231 @@ watch(editorElements, () => {
               </div>
 
               <div v-else-if="activePropertyPanel === 'color'" class="card border border-base-300 bg-base-100/80">
-                <div class="card-body p-4">
-                  <p class="text-sm font-semibold text-base-content">Color del texto</p>
-                  <div class="mt-4 grid grid-cols-5 gap-3">
-                    <button v-for="color in colorOptions" :key="color" type="button" class="h-10 w-10 rounded-full ring-2 ring-slate-200 dark:ring-slate-700" :style="{ backgroundColor: color }" @click="selectedElement.color = color"></button>
+                <div class="card-body p-4 space-y-4">
+                  <div>
+                    <div class="flex items-center justify-between gap-3">
+                      <div>
+                        <p class="text-sm font-semibold text-base-content">Color del texto</p>
+                        <p class="text-xs text-base-content/60">Paleta ampliada y color personalizado.</p>
+                      </div>
+                      <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                        {{ selectedElement.color }}
+                      </span>
+                    </div>
+                    <div class="mt-4 grid grid-cols-6 gap-2">
+                      <button
+                        v-for="color in colorOptions"
+                        :key="color"
+                        type="button"
+                        class="h-9 w-9 rounded-full transition hover:scale-105"
+                        :class="selectedElement.color === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                        :style="{ backgroundColor: color }"
+                        :title="color"
+                        @click="selectedElement.color = color"
+                      ></button>
+                    </div>
+                    <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
+                      <div class="flex items-center gap-2">
+                        <input
+                          type="color"
+                          class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                          :value="normalizePickerColor(selectedElement.color, '#ffffff')"
+                          @input="setSelectedColor('color', $event.target.value)"
+                        />
+                        <input
+                          :value="selectedElement.color"
+                          type="text"
+                          placeholder="#7c3aed"
+                          class="input input-bordered input-sm flex-1"
+                          @input="setSelectedColor('color', $event.target.value)"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div v-else-if="activePropertyPanel === 'effects'" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4 space-y-4">
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Sombra</p>
+                  <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
+                    <div class="flex items-center justify-between gap-3">
+                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Sombra</p>
+                      <span class="text-[11px] text-base-content/60">{{ selectedElement.shadow ? (selectedElement.shadowColor || '#0f172a') : 'desactivada' }}</span>
+                    </div>
                     <div class="mt-2 flex flex-wrap gap-2">
                       <button type="button" class="btn btn-outline btn-sm rounded-full" :class="selectedElement.shadow && selectedElement.shadowPreset === 'soft' ? 'btn-primary' : ''" @click="selectedElement.shadow = true; selectedElement.shadowPreset = 'soft'">Suave</button>
                       <button type="button" class="btn btn-outline btn-sm rounded-full" :class="selectedElement.shadow && selectedElement.shadowPreset === 'hard' ? 'btn-primary' : ''" @click="selectedElement.shadow = true; selectedElement.shadowPreset = 'hard'">Dura</button>
                       <button type="button" class="btn btn-outline btn-sm rounded-full" :class="selectedElement.shadow && selectedElement.shadowPreset === 'lifted' ? 'btn-primary' : ''" @click="selectedElement.shadow = true; selectedElement.shadowPreset = 'lifted'">Elevada</button>
                       <button type="button" class="btn btn-outline btn-sm rounded-full" @click="selectedElement.shadow = false">Sin sombra</button>
                     </div>
-                    <div class="mt-3 flex flex-wrap gap-2">
-                      <button v-for="color in colorOptions" :key="'shadow-' + color" type="button" class="h-8 w-8 rounded-full ring-2 ring-slate-200 dark:ring-slate-700" :style="{ backgroundColor: color }" @click="selectedElement.shadowColor = color"></button>
+                    <div class="mt-3 grid grid-cols-6 gap-2">
+                      <button
+                        v-for="color in colorOptions"
+                        :key="'shadow-' + color"
+                        type="button"
+                        class="h-8 w-8 rounded-full transition hover:scale-105"
+                        :class="selectedElement.shadow && selectedElement.shadowColor === color ? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                        :style="{ backgroundColor: color }"
+                        :title="color"
+                        @click="selectedElement.shadow = true; selectedElement.shadowColor = color"
+                      ></button>
+                    </div>
+                    <div class="mt-3 flex items-center gap-2">
+                      <input
+                        type="color"
+                        class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                        :value="normalizePickerColor(selectedElement.shadowColor || '#0f172a', '#0f172a')"
+                        @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
+                      />
+                      <input
+                        :value="selectedElement.shadowColor || '#0f172a'"
+                        type="text"
+                        placeholder="#0f172a"
+                        class="input input-bordered input-sm flex-1"
+                        @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
+                      />
                     </div>
                   </div>
 
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Contorno</p>
+                  <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
+                    <div class="flex items-center justify-between gap-3">
+                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Contorno</p>
+                      <span class="text-[11px] text-base-content/60">{{ selectedElement.border ? `${selectedElement.contourWidth || 0}px` : 'apagado' }}</span>
+                    </div>
                     <div class="mt-2 flex flex-wrap gap-2">
                       <button type="button" class="btn btn-outline btn-sm rounded-full" @click="selectedElement.border = !selectedElement.border">{{ selectedElement.border ? 'Quitar' : 'Activar' }}</button>
                       <button type="button" class="btn btn-outline btn-sm rounded-full" @click="selectedElement.contourWidth = clamp((selectedElement.contourWidth || 0) - 1, 0, 12)">Grosor -</button>
                       <button type="button" class="btn btn-outline btn-sm rounded-full" @click="selectedElement.contourWidth = clamp((selectedElement.contourWidth || 0) + 1, 0, 12)">Grosor +</button>
                     </div>
-                    <div class="mt-3 flex flex-wrap gap-2">
-                      <button v-for="color in colorOptions" :key="'contour-' + color" type="button" class="h-8 w-8 rounded-full ring-2 ring-slate-200 dark:ring-slate-700" :style="{ backgroundColor: color }" @click="selectedElement.contourColor = color"></button>
+                    <div class="mt-3 grid grid-cols-6 gap-2">
+                      <button
+                        v-for="color in colorOptions"
+                        :key="'contour-' + color"
+                        type="button"
+                        class="h-8 w-8 rounded-full transition hover:scale-105"
+                        :class="selectedElement.border && selectedElement.contourColor === color ? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                        :style="{ backgroundColor: color }"
+                        :title="color"
+                        @click="selectedElement.border = true; selectedElement.contourColor = color"
+                      ></button>
+                    </div>
+                    <div class="mt-3 flex items-center gap-2">
+                      <input
+                        type="color"
+                        class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                        :value="normalizePickerColor(selectedElement.contourColor || '#ffffff', '#ffffff')"
+                        @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
+                      />
+                      <input
+                        :value="selectedElement.contourColor || '#ffffff'"
+                        type="text"
+                        placeholder="#ffffff"
+                        class="input input-bordered input-sm flex-1"
+                        @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
+                      />
                     </div>
                   </div>
 
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Neón</p>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                      <button v-for="color in colorOptions" :key="'neon-' + color" type="button" class="h-8 w-8 rounded-full ring-2 ring-slate-200 dark:ring-slate-700" :style="{ backgroundColor: color }" @click="selectedElement.neonColor = color"></button>
+                  <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
+                    <div class="flex items-center justify-between gap-3">
+                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Neón</p>
+                      <button type="button" class="btn btn-ghost btn-xs rounded-full" @click="selectedElement.neonColor = ''">Sin neón</button>
+                    </div>
+                    <div class="mt-3 grid grid-cols-6 gap-2">
+                      <button
+                        v-for="color in colorOptions"
+                        :key="'neon-' + color"
+                        type="button"
+                        class="h-8 w-8 rounded-full transition hover:scale-105"
+                        :class="selectedElement.neonColor === color ? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                        :style="{ backgroundColor: color }"
+                        :title="color"
+                        @click="selectedElement.neonColor = color"
+                      ></button>
+                    </div>
+                    <div class="mt-3 flex items-center gap-2">
+                      <input
+                        type="color"
+                        class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                        :value="normalizePickerColor(selectedElement.neonColor || '#7c3aed', '#7c3aed')"
+                        @input="setSelectedColor('neonColor', $event.target.value)"
+                      />
+                      <input
+                        :value="selectedElement.neonColor"
+                        type="text"
+                        placeholder="#7c3aed"
+                        class="input input-bordered input-sm flex-1"
+                        @input="setSelectedColor('neonColor', $event.target.value)"
+                      />
                     </div>
                   </div>
 
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Burbuja</p>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                      <button v-for="color in backgroundOptions" :key="'bubble-' + color" type="button" class="h-8 w-8 rounded-full ring-2 ring-slate-200 dark:ring-slate-700" :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }" @click="selectedElement.bubbleColor = color"></button>
+                  <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
+                    <div class="flex items-center justify-between gap-3">
+                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Burbuja</p>
+                      <button type="button" class="btn btn-ghost btn-xs rounded-full" @click="selectedElement.bubbleColor = 'transparent'">Sin burbuja</button>
+                    </div>
+                    <div class="mt-3 grid grid-cols-6 gap-2">
+                      <button
+                        v-for="color in backgroundOptions"
+                        :key="'bubble-' + color"
+                        type="button"
+                        class="h-8 w-8 rounded-full transition hover:scale-105"
+                        :class="selectedElement.bubbleColor === color ? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                        :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
+                        :title="color"
+                        @click="selectedElement.bubbleColor = color"
+                      ></button>
+                    </div>
+                    <div class="mt-3 flex items-center gap-2">
+                      <input
+                        type="color"
+                        class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                        :value="normalizePickerColor(selectedElement.bubbleColor, '#7c3aed')"
+                        @input="setSelectedColor('bubbleColor', $event.target.value)"
+                      />
+                      <input
+                        :value="selectedElement.bubbleColor"
+                        type="text"
+                        placeholder="transparent o #7c3aed"
+                        class="input input-bordered input-sm flex-1"
+                        @input="setSelectedColor('bubbleColor', $event.target.value)"
+                      />
                     </div>
                   </div>
 
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Fondo</p>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                      <button v-for="color in backgroundOptions" :key="'bg-' + color" type="button" class="h-8 w-8 rounded-full ring-2 ring-slate-200 dark:ring-slate-700" :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }" @click="selectedElement.backgroundColor = color"></button>
+                  <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
+                    <div class="flex items-center justify-between gap-3">
+                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Fondo</p>
+                      <button type="button" class="btn btn-ghost btn-xs rounded-full" @click="selectedElement.backgroundColor = 'transparent'">Sin fondo</button>
+                    </div>
+                    <div class="mt-3 grid grid-cols-6 gap-2">
+                      <button
+                        v-for="color in backgroundOptions"
+                        :key="'bg-' + color"
+                        type="button"
+                        class="h-8 w-8 rounded-full transition hover:scale-105"
+                        :class="selectedElement.backgroundColor === color ? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                        :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
+                        :title="color"
+                        @click="selectedElement.backgroundColor = color"
+                      ></button>
+                    </div>
+                    <div class="mt-3 flex items-center gap-2">
+                      <input
+                        type="color"
+                        class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                        :value="normalizePickerColor(selectedElement.backgroundColor, '#ffffff')"
+                        @input="setSelectedColor('backgroundColor', $event.target.value)"
+                      />
+                      <input
+                        :value="selectedElement.backgroundColor"
+                        type="text"
+                        placeholder="transparent o #0ea5e9"
+                        class="input input-bordered input-sm flex-1"
+                        @input="setSelectedColor('backgroundColor', $event.target.value)"
+                      />
                     </div>
                   </div>
                 </div>
@@ -673,7 +923,15 @@ watch(editorElements, () => {
                   @pointerdown="startTouchEditIntent($event, item.id)"
                 >
                   <div class="relative" :style="elementContentStyle(item.id)">
-                  <textarea v-if="editingElementId === item.id" ref="editInputRef" v-model="editingDraft" class="textarea textarea-ghost block min-h-[3.5rem] w-full resize-none border-none bg-transparent p-0 font-inherit text-inherit placeholder:text-white/55 focus:bg-transparent focus:outline-none" :style="{ textAlign: selectedElement.textAlign ?? 'left' }" @blur="commitTextEdit" @keydown="onEditorKeydown"></textarea>
+                  <textarea
+                    v-if="editingElementId === item.id"
+                    ref="editInputRef"
+                    v-model="editingDraft"
+                    class="block min-h-[3.5rem] w-full resize-none border-none bg-transparent p-0 placeholder:text-white/55 focus:bg-transparent focus:outline-none"
+                    :style="elementEditInputStyle(item.id)"
+                    @blur="commitTextEdit"
+                    @keydown="onEditorKeydown"
+                  ></textarea>
                   <span v-else class="block">{{ item.text }}</span>
                   </div>
                 </button>

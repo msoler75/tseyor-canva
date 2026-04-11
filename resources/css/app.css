@@ -1,4 +1,26 @@
 @import 'tailwindcss';
+@import "@fontsource/inter";
+@import "@fontsource/poppins";
+@import "@fontsource/montserrat";
+@import "@fontsource/playfair-display";
+@import "@fontsource/oswald";
+@import "@fontsource/raleway";
+@import "@fontsource/nunito";
+@import "@fontsource/roboto-slab";
+@import "@fontsource/lobster";
+@import "@fontsource/pacifico";
+@import "@fontsource/bebas-neue";
+@import "@fontsource/source-sans-3";
+@import "@fontsource/merriweather";
+@import "@fontsource/anton";
+@import "@fontsource/caveat";
+@import "@fontsource/libre-baskerville";
+@import "@fontsource/work-sans";
+@import "@fontsource/rubik";
+@import "@fontsource/manrope";
+@import "@fontsource/ubuntu";
+@import "@fontsource/quicksand";
+
 @plugin "daisyui" {
     themes: light --default, dark;
 }
@@ -10,7 +32,7 @@
 @source '../**/*.vue';
 
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
 }
 
