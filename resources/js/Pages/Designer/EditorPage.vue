@@ -98,6 +98,20 @@ const backgroundOptions = [
     'transparent', '#ffffff', '#f8fafc', '#e2e8f0', '#111827', '#0f172a', '#7c3aed', '#8b5cf6',
     '#0ea5e9', '#14b8a6', '#22c55e', '#f59e0b', '#f43f5e', '#fef3c7', '#fecdd3', '#ddd6fe',
 ];
+const textEffectOptions = [
+  { id: 'shadow1', label: 'Sombra 1' },
+  { id: 'shadow2', label: 'Sombra 2' },
+  { id: 'shadow', label: 'Sombreado' },
+  { id: 'glow', label: 'Brillante' },
+  { id: 'echo', label: 'Eco' },
+  { id: 'outline', label: 'Contorno' },
+  { id: 'background', label: 'Fondo' },
+  { id: 'misaligned', label: 'Desalineado' },
+  { id: 'hollow', label: 'Sin relleno' },
+  { id: 'neon', label: 'Neon' },
+  { id: 'distort', label: 'Distorsion' },
+];
+const textEffectCardFontFamily = '"Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif';
 const shapeGradientOptions = [
   { id: 'g1', start: '#0ea5e9', end: '#8b5cf6' },
   { id: 'g2', start: '#22c55e', end: '#0ea5e9' },
@@ -373,6 +387,28 @@ const activeElementLabel = computed(() => {
 });
 const selectedElementType = computed(() => editorElements.value.find((item) => item.id === state.selectedElementId)?.type ?? null);
 const hasTextSelection = computed(() => hasSelection.value && selectedElementType.value === 'text');
+const activeTextEffectId = computed(() => {
+  if (!hasTextSelection.value || !selectedElement.value) return 'none';
+
+  const mode = selectedElement.value.textEffectMode;
+  if (mode) return mode;
+
+  if (selectedElement.value.hollowText) return 'hollow';
+  if (selectedElement.value.backgroundColor && selectedElement.value.backgroundColor !== 'transparent') return 'background';
+  if (selectedElement.value.border) return 'outline';
+  if (selectedElement.value.shadow && selectedElement.value.shadowPreset === 'echo') return 'echo';
+  if (selectedElement.value.neonColor) return 'neon';
+  if (selectedElement.value.shadow) return 'shadow';
+
+  return 'none';
+});
+const textEffectRows = computed(() => {
+  const rows = [];
+  for (let index = 0; index < textEffectOptions.length; index += 3) {
+    rows.push(textEffectOptions.slice(index, index + 3));
+  }
+  return rows;
+});
 const selectedPropertyTabs = computed(() => {
   if (isGroupSelection.value || hasMultiSelection.value) return [];
   if (!hasSelection.value) return textPropertyTabs;
@@ -563,6 +599,19 @@ const normalizePickerColor = (value, fallback = '#ffffff') => {
 
     return fallback;
 };
+const blendHexWithWhite = (hexColor, amountPercent = 40) => {
+  if (typeof hexColor !== 'string') return '#ffffff';
+
+  const normalized = normalizePickerColor(hexColor, '#ffffff');
+  const amount = clamp(Number(amountPercent), 0, 100) / 100;
+  const channel = (index) => Number.parseInt(normalized.slice(index, index + 2), 16);
+  const mix = (value) => Math.round(value + (255 - value) * amount).toString(16).padStart(2, '0');
+
+  const r = mix(channel(1));
+  const g = mix(channel(3));
+  const b = mix(channel(5));
+  return `#${r}${g}${b}`;
+};
 const setSelectedColor = (field, value) => {
     if (paragraphStyleFields.has(field)) {
         applyParagraphStyleField(field, value);
@@ -571,6 +620,203 @@ const setSelectedColor = (field, value) => {
 
     if (!selectedElement.value) return;
     selectedElement.value[field] = value;
+};
+const getTextEffectStrokeWidth = (layout) => {
+  const mode = layout?.textEffectMode;
+  const isTextEffectStrokeMode = mode === 'outline' || mode === 'hollow' || mode === 'misaligned';
+
+  if (!isTextEffectStrokeMode) {
+    return clamp(Number(layout?.contourWidth ?? 2), 1, 12);
+  }
+
+  return (clamp(Number(layout?.contourWidth ?? 0), 0, 100) / 100) * 12;
+};
+const setTextEffect = (effectId) => {
+  if (!selectedElement.value || !hasTextSelection.value) return;
+
+  const layout = selectedElement.value;
+  const nextEffectId = activeTextEffectId.value === effectId ? 'none' : effectId;
+  layout.textEffectMode = nextEffectId;
+
+  if (nextEffectId === 'none') {
+    layout.shadow = false;
+    layout.border = false;
+    layout.neonColor = '';
+    layout.bubbleColor = 'transparent';
+    layout.backgroundColor = 'transparent';
+    layout.hollowText = false;
+    return;
+  }
+
+  layout.hollowText = false;
+
+  if (nextEffectId === 'shadow1') {
+    layout.shadow = true;
+    layout.shadowPreset = 'hard';
+    layout.shadowColor = layout.shadowColor || '#000000';
+    layout.shadowAngle = 135;
+    layout.shadowOffset = 10;
+    layout.shadowBlur = 0;
+    layout.shadowOpacity = 20;
+    layout.border = false;
+    layout.neonColor = '';
+    layout.backgroundColor = 'transparent';
+  } else if (nextEffectId === 'shadow2') {
+    layout.shadow = true;
+    layout.shadowPreset = 'soft';
+    layout.shadowColor = layout.shadowColor || '#000000';
+    layout.shadowAngle = 145;
+    layout.shadowOffset = 12;
+    layout.shadowBlur = 6;
+    layout.shadowOpacity = 35;
+    layout.border = false;
+    layout.neonColor = '';
+    layout.backgroundColor = 'transparent';
+  } else if (nextEffectId === 'shadow') {
+    layout.shadow = true;
+    layout.shadowPreset = 'soft';
+    layout.shadowColor = layout.shadowColor || '#0f172a';
+    layout.shadowAngle = 135;
+    layout.shadowOffset = 22;
+    layout.shadowBlur = 15;
+    layout.shadowOpacity = 55;
+    layout.border = false;
+    layout.neonColor = '';
+    layout.backgroundColor = 'transparent';
+  } else if (nextEffectId === 'glow') {
+    layout.shadow = false;
+    layout.neonColor = layout.neonColor || '#8b5cf6';
+    layout.neonIntensity = layout.neonIntensity ?? 65;
+    layout.border = false;
+    layout.backgroundColor = 'transparent';
+  } else if (nextEffectId === 'echo') {
+    layout.shadow = true;
+    layout.shadowPreset = 'echo';
+    layout.shadowColor = layout.shadowColor || '#0f172a';
+    layout.shadowAngle = 60;
+    layout.shadowOffset = 15;
+    layout.shadowBlur = 0;
+    layout.shadowOpacity = 40;
+    layout.neonColor = '';
+    layout.border = false;
+    layout.backgroundColor = 'transparent';
+  } else if (nextEffectId === 'outline') {
+    layout.shadow = false;
+    layout.border = true;
+    layout.contourColor = layout.contourColor || '#7c3aed';
+    layout.contourWidth = 17;
+    layout.neonColor = '';
+    layout.backgroundColor = 'transparent';
+  } else if (nextEffectId === 'background') {
+    layout.shadow = false;
+    layout.border = false;
+    layout.neonColor = '';
+    layout.backgroundColor = layout.backgroundColor && layout.backgroundColor !== 'transparent'
+      ? layout.backgroundColor
+      : '#ddd6fe';
+    layout.backgroundRoundness = layout.backgroundRoundness ?? 50;
+    layout.backgroundPadding = 5;
+    layout.backgroundOpacity = layout.backgroundOpacity ?? 70;
+  } else if (nextEffectId === 'misaligned') {
+    layout.shadow = true;
+    layout.shadowPreset = 'soft';
+    layout.shadowColor = layout.shadowColor || '#7c3aed';
+    layout.shadowAngle = 45;
+    layout.shadowOffset = 33;
+    layout.shadowOpacity = 20;
+    layout.shadowBlur = 0;
+    layout.misalignedThickness = 2;
+    layout.contourWidth = 2;
+    layout.contourColor = layout.contourColor || '#7c3aed';
+    layout.neonColor = '';
+    layout.border = true;
+    layout.hollowText = true;
+    layout.backgroundColor = 'transparent';
+  } else if (nextEffectId === 'hollow') {
+    layout.shadow = false;
+    layout.border = true;
+    layout.hollowText = true;
+    layout.contourColor = layout.contourColor || '#7c3aed';
+    layout.contourWidth = 2;
+    layout.neonColor = '';
+    layout.backgroundColor = 'transparent';
+  } else if (nextEffectId === 'neon') {
+    layout.shadow = false;
+    layout.border = false;
+    layout.neonColor = '';
+    layout.neonIntensity = layout.neonIntensity ?? 80;
+    layout.backgroundColor = 'transparent';
+  } else if (nextEffectId === 'distort') {
+    layout.shadow = true;
+    layout.shadowPreset = 'hard';
+    layout.shadowColor = '#f0f';
+    layout.shadowAngle = 0;
+    layout.shadowOffset = 15;
+    layout.shadowBlur = 0;
+    layout.shadowOpacity = 0;
+    layout.shadowIntensity = 0;
+    layout.neonColor = '#0ff';
+    layout.neonIntensity = 0;
+    layout.border = false;
+    layout.backgroundColor = 'transparent';
+  }
+};
+const textEffectPreviewStyle = (effectId) => {
+  const base = {
+    color: '#7c3aed',
+    fontSize: '2.25rem',
+    fontWeight: '700',
+    lineHeight: '1',
+    display: 'inline-block',
+    padding: '0.12rem 0.24rem',
+    borderRadius: '0.75rem',
+    textShadow: 'none',
+    WebkitTextStroke: '0',
+    backgroundColor: 'transparent',
+    transform: 'none',
+  };
+
+  if (effectId === 'shadow1') {
+    return { ...base, textShadow: '4px 4px 0 #00000099' };
+  }
+  if (effectId === 'shadow2') {
+    return { ...base, textShadow: '3px 4px 5px #000000aa' };
+  }
+  if (effectId === 'shadow') {
+    return { ...base, textShadow: '0 10px 16px #8b5cf680' };
+  }
+  if (effectId === 'glow') {
+    return { ...base, textShadow: '0 0 8px #c4b5fd, 0 0 18px #a855f7' };
+  }
+  if (effectId === 'echo') {
+    return { ...base, textShadow: '2px 2px 0 #a855f7, 5px 5px 0 #c084fc' };
+  }
+  if (effectId === 'outline') {
+    return { ...base, color: '#7c3aed80', WebkitTextStroke: '2px #7c3aed' };
+  }
+  if (effectId === 'background') {
+    return { ...base, backgroundColor: '#ddd6fe' };
+  }
+  if (effectId === 'misaligned') {
+    return {
+      ...base,
+      fontWeight: '500',
+      color: 'transparent',
+      WebkitTextStroke: '2px #7c3aed',
+      textShadow: '4px 5px 0 #7c3aed33',
+    };
+  }
+  if (effectId === 'hollow') {
+    return { ...base, fontWeight: '500', color: 'transparent', WebkitTextStroke: '2px #7c3aed' };
+  }
+  if (effectId === 'neon') {
+    return { ...base, color: '#f5f3ff', textShadow: '0 0 8px #c4b5fd, 0 0 18px #a855f7, 0 0 30px #7c3aed' };
+  }
+  if (effectId === 'distort') {
+    return { ...base, textShadow: '-2px 0 0 #f0f, 2px 0 0 #0ff' };
+  }
+
+  return base;
 };
   const applyGradientPreset = (target, start, end) => {
     if (target === 'background') {
@@ -604,20 +850,109 @@ const clampToolbar = () => {
     // Sin restricciones de movimiento - libertad de arrastre completa
 };
 
-const buildTextShadow = (layout) => {
+const buildTextShadow = (layout, textColor = null) => {
     const shadows = [];
+    const shadowOffset = clamp(Number(layout.shadowOffset ?? 20), 0, 100);
+    const shadowBlur = clamp(Number(layout.shadowBlur ?? 25), 0, 100);
+    const shadowOpacity = clamp(Number(layout.shadowOpacity ?? 65), 0, 100);
+    const shadowAngle = ((Number(layout.shadowAngle ?? 135) % 360) + 360) % 360;
+    const neonIntensity = clamp(Number(layout.neonIntensity ?? 55), 0, 100);
 
-    if (layout.shadow) {
-        const color = layout.shadowColor || '#0f172a';
-        const preset = layout.shadowPreset || 'soft';
+    const toShadowOffset = (distance) => {
+      const rad = (shadowAngle * Math.PI) / 180;
+      return {
+        x: Math.round(Math.cos(rad) * distance),
+        y: Math.round(Math.sin(rad) * distance),
+      };
+    };
 
-        if (preset === 'hard') shadows.push(`4px 4px 0 ${color}`);
-        else if (preset === 'lifted') shadows.push(`0 14px 24px ${color}`);
-        else shadows.push(`0 10px 24px ${color}`);
+    const applyAlphaToHex = (color, alphaPercent) => {
+      if (typeof color !== 'string') return color;
+      const value = color.trim();
+      const alpha = clamp(100 - alphaPercent, 0, 100);
+
+      if (/^#[\da-f]{3}$/i.test(value)) {
+        const r = value[1];
+        const g = value[2];
+        const b = value[3];
+        const a = Math.round((alpha / 100) * 255).toString(16).padStart(2, '0');
+        return `#${r}${r}${g}${g}${b}${b}${a}`;
+      }
+
+      if (/^#[\da-f]{6}$/i.test(value)) {
+        const a = Math.round((alpha / 100) * 255).toString(16).padStart(2, '0');
+        return `${value}${a}`;
+      }
+
+      return value;
+    };
+
+    if (layout.border && !layout.hollowText) {
+      const borderColor = layout.contourColor || '#7c3aed';
+      const width = getTextEffectStrokeWidth(layout);
+      if (width <= 0) {
+        return shadows.length ? shadows.join(', ') : 'none';
+      }
+      const ring = Math.max(1, Math.round(width));
+      for (let x = -ring; x <= ring; x++) {
+        for (let y = -ring; y <= ring; y++) {
+          if (x === 0 && y === 0) continue;
+          if (x * x + y * y <= ring * ring) {
+            shadows.push(`${x}px ${y}px 0 ${borderColor}`);
+          }
+        }
+      }
     }
 
-    if (layout.neonColor) {
-        shadows.push(`0 0 8px ${layout.neonColor}`, `0 0 18px ${layout.neonColor}`);
+    if (layout.textEffectMode === 'distort') {
+        const primaryColor = layout.shadowColor || '#f0f';
+        const secondaryColor = layout.neonColor || '#0ff';
+        const distance = clamp(Math.round(clamp(Number(layout.shadowOffset ?? 15), 0, 20) * 0.2), 1, 20);
+        const offset = toShadowOffset(distance);
+        shadows.push(
+          `${offset.x}px ${offset.y}px 0 ${primaryColor}`,
+          `${-offset.x}px ${-offset.y}px 0 ${secondaryColor}`,
+        );
+    } else if (layout.shadow) {
+        const color = layout.shadowColor || '#0f172a';
+        const preset = layout.shadowPreset || 'soft';
+        const colorWithAlpha = applyAlphaToHex(color, shadowOpacity);
+        const isMisaligned = layout.textEffectMode === 'misaligned';
+
+        if (isMisaligned) {
+          const distance = Math.max(0, Math.round(shadowOffset * 0.25));
+          const offset = toShadowOffset(distance);
+          shadows.push(`${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`);
+        } else if (preset === 'hard') {
+          const distance = Math.round(shadowOffset * 0.6);
+          const offset = toShadowOffset(distance);
+          shadows.push(`${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`);
+        } else if (preset === 'echo') {
+          const distance = Math.max(1, Math.round(shadowOffset * 0.25));
+          const offset = toShadowOffset(distance);
+          shadows.push(
+            `${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`,
+            `${offset.x * 2}px ${offset.y * 2}px 0 ${colorWithAlpha}`,
+            `${offset.x * 3}px ${offset.y * 3}px 0 ${colorWithAlpha}`,
+          );
+        } else {
+          const distance = Math.round(shadowOffset * 0.6);
+          const blur = Math.round(shadowBlur * 0.8);
+          const offset = toShadowOffset(distance);
+          shadows.push(`${offset.x}px ${offset.y}px ${blur}px ${colorWithAlpha}`);
+        }
+    }
+
+    if (layout.textEffectMode === 'neon' && !layout.hollowText) {
+      const sourceColor = textColor || '#7c3aed';
+      const blurSoft = Math.round(4 + neonIntensity / 5);
+      const blurStrong = Math.round(10 + neonIntensity / 2.5);
+      const glowColor = normalizePickerColor(sourceColor, '#7c3aed');
+      shadows.push(`0 0 ${blurSoft}px ${glowColor}`, `0 0 ${blurStrong}px ${glowColor}`);
+    } else if (layout.neonColor && layout.textEffectMode !== 'distort') {
+        const blurSoft = Math.round(4 + neonIntensity / 6);
+        const blurStrong = Math.round(12 + neonIntensity / 2);
+        shadows.push(`0 0 ${blurSoft}px ${layout.neonColor}`, `0 0 ${blurStrong}px ${layout.neonColor}`);
     }
 
     return shadows.length ? shadows.join(', ') : 'none';
@@ -630,18 +965,31 @@ const buildBubbleShadow = (layout) => {
 
 const buildVisualShadow = (layout) => {
   const shadows = [];
+  const shadowIntensity = clamp(Number(layout.shadowIntensity ?? 45), 0, 100);
+  const neonIntensity = clamp(Number(layout.neonIntensity ?? 55), 0, 100);
 
   if (layout.shadow) {
     const color = layout.shadowColor || '#0f172a';
     const preset = layout.shadowPreset || 'soft';
 
-    if (preset === 'hard') shadows.push(`4px 4px 0 ${color}`);
-    else if (preset === 'lifted') shadows.push(`0 14px 24px ${color}66`);
-    else shadows.push(`0 10px 24px ${color}66`);
+    if (preset === 'hard') {
+      const distance = Math.round(1 + shadowIntensity / 12);
+      shadows.push(`${distance}px ${distance}px 0 ${color}`);
+    } else if (preset === 'lifted') {
+      const y = Math.round(8 + shadowIntensity / 4);
+      const blur = Math.round(10 + shadowIntensity / 2);
+      shadows.push(`0 ${y}px ${blur}px ${color}66`);
+    } else {
+      const y = Math.round(4 + shadowIntensity / 6);
+      const blur = Math.round(8 + shadowIntensity / 2);
+      shadows.push(`0 ${y}px ${blur}px ${color}66`);
+    }
   }
 
-  if (layout.neonColor) {
-    shadows.push(`0 0 8px ${layout.neonColor}`, `0 0 18px ${layout.neonColor}`);
+  if (layout.neonColor && layout.textEffectMode !== 'distort') {
+    const blurSoft = Math.round(4 + neonIntensity / 6);
+    const blurStrong = Math.round(12 + neonIntensity / 2);
+    shadows.push(`0 0 ${blurSoft}px ${layout.neonColor}`, `0 0 ${blurStrong}px ${layout.neonColor}`);
   }
 
   if (layout.bubbleColor && layout.bubbleColor !== 'transparent') {
@@ -692,9 +1040,20 @@ const buildDefaultLayout = (overrides = {}) => ({
   shadowColor: '#0f172a',
   contourWidth: 0,
   contourColor: '#ffffff',
+  hollowText: false,
   neonColor: '',
+  shadowAngle: 135,
+  shadowOffset: 22,
+  shadowBlur: 28,
+  shadowOpacity: 65,
+  misalignedThickness: 6,
+  neonIntensity: 55,
   bubbleColor: 'transparent',
   backgroundColor: 'transparent',
+  backgroundRoundness: 50,
+  backgroundPadding: 5,
+  backgroundOpacity: 70,
+  textEffectMode: 'none',
   fillMode: 'solid',
   gradientStart: '#0ea5e9',
   gradientEnd: '#8b5cf6',
@@ -999,7 +1358,7 @@ const selectedOverlayStyle = computed(() => {
 
     const bounds = getSelectionBounds(ids);
     if (!bounds) return {};
-    const top = Math.max(8, bounds.y - 74);
+    const top = bounds.y - 74;
 
     return {
       left: `${bounds.x + (bounds.w / 2)}px`,
@@ -1321,13 +1680,23 @@ const elementContentStyle = (id) => {
     };
   }
 
+    const hasBackground = layout.backgroundColor && layout.backgroundColor !== 'transparent';
+    const backgroundOpacity = clamp(Number(layout.backgroundOpacity ?? 70), 0, 100);
+    const backgroundExpand = clamp(Number(layout.backgroundPadding ?? 5), 0, 100);
+    const backgroundAlphaHex = Math.round((backgroundOpacity / 100) * 255).toString(16).padStart(2, '0');
+    const resolvedBackground = hasBackground && /^#[\da-f]{6}$/i.test(layout.backgroundColor)
+      ? `${layout.backgroundColor}${backgroundAlphaHex}`
+      : (hasBackground ? layout.backgroundColor : 'transparent');
+
     return {
         opacity: `${(layout.opacity ?? 100) / 100}`,
-        backgroundColor: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : 'transparent',
-        borderRadius: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? '16px' : '0',
-        padding: '0',
-        textShadow: buildTextShadow(layout),
-        WebkitTextStroke: layout.border ? `${layout.contourWidth || 1}px ${layout.contourColor || '#ffffff'}` : '0',
+        backgroundColor: resolvedBackground,
+        borderRadius: hasBackground ? `${Math.round(clamp(Number(layout.backgroundRoundness ?? 50), 0, 100) * 0.48)}px` : '0',
+        padding: hasBackground ? `${backgroundExpand}px` : '0',
+        margin: hasBackground ? `-${backgroundExpand}px` : '0',
+      color: layout.hollowText ? 'transparent' : undefined,
+        textShadow: 'none',
+        WebkitTextStroke: '0',
         boxShadow: buildBubbleShadow(layout),
     };
 };
@@ -1336,10 +1705,19 @@ const paragraphContentStyle = (id, index, text = null) => {
     const layout = state.elementLayout[id];
     const paragraphStyle = getParagraphStyleForElement(id, index, text);
 
+    const baseColor = paragraphStyle?.color ?? layout.color ?? '#ffffff';
+    const isNeon = layout.textEffectMode === 'neon' && !layout.hollowText;
+    const displayColor = layout.hollowText
+      ? 'transparent'
+      : (isNeon ? '#ffffff' : baseColor);
+
+    const strokeWidth = getTextEffectStrokeWidth(layout);
+
     return {
         display: 'block',
         fontSize: `${paragraphStyle?.fontSize ?? layout.fontSize}px`,
-        color: paragraphStyle?.color ?? layout.color,
+      color: displayColor,
+      WebkitTextFillColor: layout.hollowText ? 'transparent' : undefined,
         fontFamily: paragraphStyle?.fontFamily ?? layout.fontFamily ?? 'Inter, sans-serif',
         fontStyle: paragraphStyle?.italic ? 'italic' : 'normal',
         fontWeight: paragraphStyle?.fontWeight === 'bold' ? '700' : '500',
@@ -1347,17 +1725,31 @@ const paragraphContentStyle = (id, index, text = null) => {
         textTransform: paragraphStyle?.uppercase ? 'uppercase' : 'none',
         letterSpacing: `${paragraphStyle?.letterSpacing ?? 0}px`,
         lineHeight: `${paragraphStyle?.lineHeight ?? 1.3}`,
-        textShadow: buildTextShadow(layout),
-        WebkitTextStroke: layout.border ? `${layout.contourWidth || 1}px ${layout.contourColor || '#ffffff'}` : '0',
+        textShadow: buildTextShadow(layout, baseColor),
+        WebkitTextStroke: layout.border && layout.hollowText && strokeWidth > 0 ? `${strokeWidth}px ${baseColor}` : '0',
         whiteSpace: 'pre-wrap',
     };
 };
 
 const richEditorContainerStyle = (id) => {
     const layout = state.elementLayout[id];
+  const firstParagraphColor = layout?.paragraphStyles?.[0]?.color ?? layout?.color ?? '#ffffff';
+  const strokeWidth = getTextEffectStrokeWidth(layout);
     return {
         opacity: `${(layout.opacity ?? 100) / 100}`,
+    textShadow: buildTextShadow(layout, firstParagraphColor),
+    WebkitTextStroke: layout?.border && layout?.hollowText && strokeWidth > 0
+      ? `${strokeWidth}px ${firstParagraphColor}`
+      : '0',
+    WebkitTextFillColor: layout?.hollowText ? 'transparent' : undefined,
+    color: layout?.hollowText ? 'transparent' : undefined,
     };
+};
+
+const neonColorOverride = (id) => {
+  const layout = state.elementLayout[id];
+  if (!layout || layout.textEffectMode !== 'neon' || layout.hollowText) return null;
+  return '#ffffff';
 };
 
 const setDragDocumentState = (active) => {
@@ -2217,8 +2609,8 @@ const moveDrag = (event) => {
 
       if (!isText) {
             const currentHeight = drag.startH || layout.h || 140;
-        const minHeight = 40;
-        const minWidth = 40;
+        const minHeight = 4;
+        const minWidth = 4;
 
         if (isVerticalBarHandle) {
           const verticalDelta = handle === 's-width' ? deltaY : -deltaY;
@@ -3202,187 +3594,272 @@ watch(selectedGroupId, (groupId) => {
 
               <div v-else-if="activePropertyPanel === 'effects'" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4 space-y-4">
-                  <p class="text-xs font-medium text-primary/80">Estos efectos se aplican al elemento completo seleccionado.</p>
-                  <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
-                    <div class="flex items-center justify-between gap-3">
-                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Sombra</p>
-                      <span class="text-[11px] text-base-content/60">{{ selectedElement.shadow ? (selectedElement.shadowColor || '#0f172a') : 'desactivada' }}</span>
-                    </div>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                      <button type="button" class="btn btn-outline btn-sm rounded-full" :class="selectedElement.shadow && selectedElement.shadowPreset === 'soft' ? 'btn-primary' : ''" @click="selectedElement.shadow = true; selectedElement.shadowPreset = 'soft'">Suave</button>
-                      <button type="button" class="btn btn-outline btn-sm rounded-full" :class="selectedElement.shadow && selectedElement.shadowPreset === 'hard' ? 'btn-primary' : ''" @click="selectedElement.shadow = true; selectedElement.shadowPreset = 'hard'">Dura</button>
-                      <button type="button" class="btn btn-outline btn-sm rounded-full" :class="selectedElement.shadow && selectedElement.shadowPreset === 'lifted' ? 'btn-primary' : ''" @click="selectedElement.shadow = true; selectedElement.shadowPreset = 'lifted'">Elevada</button>
-                      <button type="button" class="btn btn-outline btn-sm rounded-full" @click="selectedElement.shadow = false">Sin sombra</button>
-                    </div>
-                    <div class="mt-3 grid grid-cols-6 gap-2">
-                      <button
-                        v-for="color in colorOptions"
-                        :key="'shadow-' + color"
-                        type="button"
-                        class="h-8 w-8 rounded-full transition hover:scale-105"
-                        :class="selectedElement.shadow && selectedElement.shadowColor === color ? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                        :style="{ backgroundColor: color }"
-                        :title="color"
-                        @click="selectedElement.shadow = true; selectedElement.shadowColor = color"
-                      ></button>
-                    </div>
-                    <div class="mt-3 flex items-center gap-2">
-                      <input
-                        type="color"
-                        class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                        :value="normalizePickerColor(selectedElement.shadowColor || '#0f172a', '#0f172a')"
-                        @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
-                      />
-                      <input
-                        :value="selectedElement.shadowColor || '#0f172a'"
-                        type="text"
-                        placeholder="#0f172a"
-                        class="input input-bordered input-sm flex-1"
-                        @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
-                      />
-                    </div>
-                  </div>
+                  <template v-if="hasTextSelection">
+                    <template v-for="(effectRow, rowIndex) in textEffectRows" :key="`effect-row-${rowIndex}`">
+                      <div class="grid grid-cols-3 gap-2">
+                        <button
+                          v-for="effect in effectRow"
+                          :key="effect.id"
+                          type="button"
+                          class="text-center transition"
+                          :style="{ fontFamily: textEffectCardFontFamily }"
+                          @click="setTextEffect(effect.id)"
+                        >
+                          <span
+                            class="inline-flex h-18 w-full items-center justify-center rounded-xl border transition"
+                            :class="activeTextEffectId === effect.id
+                              ? 'border-primary bg-white ring-1 ring-primary/35'
+                              : 'border-base-300 bg-white hover:border-primary/45 hover:bg-white'"
+                          >
+                            <span :style="textEffectPreviewStyle(effect.id)">Ag</span>
+                          </span>
+                          <span class="mt-1.5 block text-[11px] font-medium text-base-content/85">{{ effect.label }}</span>
+                        </button>
+                        <div v-for="emptyIndex in Math.max(0, 3 - effectRow.length)" :key="`effect-row-${rowIndex}-empty-${emptyIndex}`"></div>
+                      </div>
 
-                  <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
-                    <div class="flex items-center justify-between gap-3">
-                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Contorno</p>
-                      <span class="text-[11px] text-base-content/60">{{ selectedElement.border ? `${selectedElement.contourWidth || 0}px` : 'apagado' }}</span>
-                    </div>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                      <button type="button" class="btn btn-outline btn-sm rounded-full" @click="selectedElement.border = !selectedElement.border">{{ selectedElement.border ? 'Quitar' : 'Activar' }}</button>
-                      <button type="button" class="btn btn-outline btn-sm rounded-full" @click="selectedElement.contourWidth = clamp((selectedElement.contourWidth || 0) - 1, 0, 12)">Grosor -</button>
-                      <button type="button" class="btn btn-outline btn-sm rounded-full" @click="selectedElement.contourWidth = clamp((selectedElement.contourWidth || 0) + 1, 0, 12)">Grosor +</button>
-                    </div>
-                    <div class="mt-3 grid grid-cols-6 gap-2">
-                      <button
-                        v-for="color in colorOptions"
-                        :key="'contour-' + color"
-                        type="button"
-                        class="h-8 w-8 rounded-full transition hover:scale-105"
-                        :class="selectedElement.border && selectedElement.contourColor === color ? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                        :style="{ backgroundColor: color }"
-                        :title="color"
-                        @click="selectedElement.border = true; selectedElement.contourColor = color"
-                      ></button>
-                    </div>
-                    <div class="mt-3 flex items-center gap-2">
-                      <input
-                        type="color"
-                        class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                        :value="normalizePickerColor(selectedElement.contourColor || '#ffffff', '#ffffff')"
-                        @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
-                      />
-                      <input
-                        :value="selectedElement.contourColor || '#ffffff'"
-                        type="text"
-                        placeholder="#ffffff"
-                        class="input input-bordered input-sm flex-1"
-                        @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
-                      />
-                    </div>
-                  </div>
+                      <div
+                        v-if="activeTextEffectId !== 'none' && effectRow.some((effect) => effect.id === activeTextEffectId)"
+                        class="flex flex-wrap items-end gap-3 rounded-2xl border border-base-300/70 bg-base-100/60 p-3"
+                      >
+                      <div v-if="activeTextEffectId === 'shadow'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Direccion</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.shadowAngle" type="range" min="0" max="360" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.shadowAngle" type="number" min="0" max="360" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'shadow'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Compensacion</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.shadowOffset" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.shadowOffset" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'shadow'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Desenfoque</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.shadowBlur" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.shadowBlur" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="['shadow', 'shadow1', 'shadow2'].includes(activeTextEffectId)" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Transparencia</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.shadowOpacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.shadowOpacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="['shadow', 'shadow1', 'shadow2'].includes(activeTextEffectId)" class="w-23 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                          <input
+                            type="color"
+                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                            :value="normalizePickerColor(selectedElement.shadowColor || '#000000', '#000000')"
+                            @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
+                          />
+                        </div>
+                      </div>
 
-                  <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
-                    <div class="flex items-center justify-between gap-3">
-                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Neón</p>
-                      <button type="button" class="btn btn-ghost btn-xs rounded-full" @click="selectedElement.neonColor = ''">Sin neón</button>
-                    </div>
-                    <div class="mt-3 grid grid-cols-6 gap-2">
-                      <button
-                        v-for="color in colorOptions"
-                        :key="'neon-' + color"
-                        type="button"
-                        class="h-8 w-8 rounded-full transition hover:scale-105"
-                        :class="selectedElement.neonColor === color ? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                        :style="{ backgroundColor: color }"
-                        :title="color"
-                        @click="selectedElement.neonColor = color"
-                      ></button>
-                    </div>
-                    <div class="mt-3 flex items-center gap-2">
-                      <input
-                        type="color"
-                        class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                        :value="normalizePickerColor(selectedElement.neonColor || '#7c3aed', '#7c3aed')"
-                        @input="setSelectedColor('neonColor', $event.target.value)"
-                      />
-                      <input
-                        :value="selectedElement.neonColor"
-                        type="text"
-                        placeholder="#7c3aed"
-                        class="input input-bordered input-sm flex-1"
-                        @input="setSelectedColor('neonColor', $event.target.value)"
-                      />
-                    </div>
-                  </div>
+                      <div v-if="activeTextEffectId === 'echo'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Direccion</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.shadowAngle" type="range" min="0" max="360" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.shadowAngle" type="number" min="0" max="360" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'echo'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Compensacion</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.shadowOffset" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.shadowOffset" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'echo'" class="w-23 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                          <input
+                            type="color"
+                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                            :value="normalizePickerColor(selectedElement.shadowColor || '#000000', '#000000')"
+                            @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
+                          />
+                        </div>
+                      </div>
 
-                  <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
-                    <div class="flex items-center justify-between gap-3">
-                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Burbuja</p>
-                      <button type="button" class="btn btn-ghost btn-xs rounded-full" @click="selectedElement.bubbleColor = 'transparent'">Sin burbuja</button>
-                    </div>
-                    <div class="mt-3 grid grid-cols-6 gap-2">
-                      <button
-                        v-for="color in backgroundOptions"
-                        :key="'bubble-' + color"
-                        type="button"
-                        class="h-8 w-8 rounded-full transition hover:scale-105"
-                        :class="selectedElement.bubbleColor === color ? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                        :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
-                        :title="color"
-                        @click="selectedElement.bubbleColor = color"
-                      ></button>
-                    </div>
-                    <div class="mt-3 flex items-center gap-2">
-                      <input
-                        type="color"
-                        class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                        :value="normalizePickerColor(selectedElement.bubbleColor, '#7c3aed')"
-                        @input="setSelectedColor('bubbleColor', $event.target.value)"
-                      />
-                      <input
-                        :value="selectedElement.bubbleColor"
-                        type="text"
-                        placeholder="transparent o #7c3aed"
-                        class="input input-bordered input-sm flex-1"
-                        @input="setSelectedColor('bubbleColor', $event.target.value)"
-                      />
-                    </div>
-                  </div>
+                      <div v-if="activeTextEffectId === 'glow'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Brillo</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.neonIntensity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.neonIntensity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'glow'" class="w-23 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                          <input
+                            type="color"
+                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                            :value="normalizePickerColor(selectedElement.neonColor || '#8b5cf6', '#8b5cf6')"
+                            @input="setSelectedColor('neonColor', $event.target.value)"
+                          />
+                        </div>
+                      </div>
 
-                  <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
-                    <div class="flex items-center justify-between gap-3">
-                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Fondo</p>
-                      <button type="button" class="btn btn-ghost btn-xs rounded-full" @click="selectedElement.backgroundColor = 'transparent'">Sin fondo</button>
-                    </div>
-                    <div class="mt-3 grid grid-cols-6 gap-2">
-                      <button
-                        v-for="color in backgroundOptions"
-                        :key="'bg-' + color"
-                        type="button"
-                        class="h-8 w-8 rounded-full transition hover:scale-105"
-                        :class="selectedElement.backgroundColor === color ? 'ring-2 ring-primary ring-offset-1 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                        :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
-                        :title="color"
-                        @click="selectedElement.backgroundColor = color"
-                      ></button>
-                    </div>
-                    <div class="mt-3 flex items-center gap-2">
-                      <input
-                        type="color"
-                        class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                        :value="normalizePickerColor(selectedElement.backgroundColor, '#ffffff')"
-                        @input="setSelectedColor('backgroundColor', $event.target.value)"
-                      />
-                      <input
-                        :value="selectedElement.backgroundColor"
-                        type="text"
-                        placeholder="transparent o #0ea5e9"
-                        class="input input-bordered input-sm flex-1"
-                        @input="setSelectedColor('backgroundColor', $event.target.value)"
-                      />
-                    </div>
-                  </div>
+                      <div v-if="activeTextEffectId === 'distort'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Direccion</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.shadowAngle" type="range" min="0" max="360" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.shadowAngle" type="number" min="0" max="360" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'distort'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Compensacion</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.shadowOffset" type="range" min="0" max="20" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.shadowOffset" type="number" min="0" max="20" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'distort'" class="w-23 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color 1</label>
+                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                          <input
+                            type="color"
+                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                            :value="normalizePickerColor(selectedElement.shadowColor || '#f0f', '#f0f')"
+                            @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
+                          />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'distort'" class="w-23 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color 2</label>
+                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                          <input
+                            type="color"
+                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                            :value="normalizePickerColor(selectedElement.neonColor || '#0ff', '#0ff')"
+                            @input="setSelectedColor('neonColor', $event.target.value)"
+                          />
+                        </div>
+                      </div>
+
+                      <div v-if="activeTextEffectId === 'misaligned'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'misaligned'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Compensacion</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.shadowOffset" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.shadowOffset" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'misaligned'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Direccion</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.shadowAngle" type="range" min="0" max="360" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.shadowAngle" type="number" min="0" max="360" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'misaligned'" class="w-23 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                          <input
+                            type="color"
+                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                            :value="normalizePickerColor(selectedElement.shadowColor || '#000000', '#000000')"
+                            @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
+                          />
+                        </div>
+                      </div>
+
+                      <div v-if="activeTextEffectId === 'neon'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Intensidad</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.neonIntensity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.neonIntensity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+
+                      <div v-if="activeTextEffectId === 'outline'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'outline'" class="w-23 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                          <input
+                            type="color"
+                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                            :value="normalizePickerColor(selectedElement.contourColor || '#7c3aed', '#7c3aed')"
+                            @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
+                          />
+                        </div>
+                      </div>
+
+                      <div v-if="activeTextEffectId === 'hollow'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+
+                      <div v-if="activeTextEffectId === 'background'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Redondez</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.backgroundRoundness" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.backgroundRoundness" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'background'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Extender</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.backgroundPadding" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.backgroundPadding" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'background'" class="min-w-55 flex-1 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Transparencia</label>
+                        <div class="flex items-center gap-2">
+                          <input v-model.number="selectedElement.backgroundOpacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.backgroundOpacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                      <div v-if="activeTextEffectId === 'background'" class="w-23 space-y-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                          <input
+                            type="color"
+                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                            :value="normalizePickerColor(selectedElement.backgroundColor, '#ddd6fe')"
+                            @input="setSelectedColor('backgroundColor', $event.target.value)"
+                          />
+                        </div>
+                      </div>
+                      </div>
+                    </template>
+
+                    <button
+                      v-if="activeTextEffectId !== 'none'"
+                      type="button"
+                      class="btn btn-primary btn-block mt-2 rounded-2xl text-sm font-semibold shadow-md"
+                      @click="setTextEffect('none')"
+                    >
+                      Quitar efecto
+                    </button>
+                  </template>
+
+                  <template v-else>
+                    <p class="text-sm text-base-content/70">Los efectos tipo Canva estan disponibles para elementos de texto.</p>
+                  </template>
                 </div>
               </div>
 
@@ -3416,7 +3893,7 @@ watch(selectedGroupId, (groupId) => {
 
           <div class="canvas-grid min-h-[680px] bg-slate-100 px-6 pt-12 pb-6 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10">
             <div class="mx-auto max-w-[400px] bg-white p-4 shadow-2xl dark:bg-slate-900" :class="state.selectedElementId === 'background' ? 'ring-2 ring-primary' : ''">
-              <div ref="canvasRef" class="relative h-[620px] overflow-hidden p-7 text-white select-none touch-none" :style="canvasBackgroundStyle" @pointerdown="handleCanvasPointerDown">
+              <div ref="canvasRef" class="relative h-[620px] overflow-visible p-7 text-white select-none touch-none" :style="canvasBackgroundStyle" @pointerdown="handleCanvasPointerDown">
 
                 <div
                   v-for="item in editorElements"
@@ -3444,6 +3921,8 @@ watch(selectedGroupId, (groupId) => {
                         :text="item.text ?? ''"
                         :editable="editingElementId === item.id"
                         :editor-style="richEditorContainerStyle(item.id)"
+                        :color-override="neonColorOverride(item.id)"
+                        :transparent-fill="!!state.elementLayout[item.id]?.hollowText"
                         @update:text="onRichEditorTextUpdate(item.id, $event)"
                         @update:paragraph-styles="onRichEditorStylesUpdate(item.id, $event)"
                         @selection-change="onRichEditorSelectionChange(item.id, $event)"
@@ -3481,7 +3960,6 @@ watch(selectedGroupId, (groupId) => {
                     </template>
                   </div>
                 </div>
-
                 <div
                   v-if="activeSelectionIds.length && state.selectedElementId !== 'background'"
                   data-editor-control="true"

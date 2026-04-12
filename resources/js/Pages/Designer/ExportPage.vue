@@ -144,6 +144,32 @@ function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
 }
 
+function normalizePickerColor(value, fallback = '#ffffff') {
+    if (typeof value !== 'string') return fallback;
+
+    const trimmed = value.trim();
+    if (/^#[\da-f]{6}$/i.test(trimmed)) return trimmed;
+    if (/^#[\da-f]{3}$/i.test(trimmed)) {
+        return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`;
+    }
+
+    return fallback;
+}
+
+function blendHexWithWhite(hexColor, amountPercent = 40) {
+    if (typeof hexColor !== 'string') return '#ffffff';
+
+    const normalized = normalizePickerColor(hexColor, '#ffffff');
+    const amount = clamp(Number(amountPercent), 0, 100) / 100;
+    const channel = (index) => Number.parseInt(normalized.slice(index, index + 2), 16);
+    const mix = (value) => Math.round(value + (255 - value) * amount).toString(16).padStart(2, '0');
+
+    const r = mix(channel(1));
+    const g = mix(channel(3));
+    const b = mix(channel(5));
+    return `#${r}${g}${b}`;
+}
+
 function parseSizeDetail(detail) {
     const source = String(detail || '').replace(',', '.').trim();
 
@@ -231,20 +257,106 @@ function getParagraphStyleForElement(id, index) {
     };
 }
 
-function buildTextShadow(layout = {}) {
+function buildTextShadow(layout = {}, textColor = null) {
     const shadows = [];
+    const shadowOffset = clamp(Number(layout.shadowOffset ?? 20), 0, 100);
+    const shadowBlur = clamp(Number(layout.shadowBlur ?? 25), 0, 100);
+    const shadowOpacity = clamp(Number(layout.shadowOpacity ?? 65), 0, 100);
+    const shadowAngle = ((Number(layout.shadowAngle ?? 135) % 360) + 360) % 360;
+    const neonIntensity = clamp(Number(layout.neonIntensity ?? 55), 0, 100);
 
-    if (layout.shadow) {
-        const color = layout.shadowColor || '#0f172a';
-        const preset = layout.shadowPreset || 'soft';
+    const toShadowOffset = (distance) => {
+        const rad = (shadowAngle * Math.PI) / 180;
+        return {
+            x: Math.round(Math.cos(rad) * distance),
+            y: Math.round(Math.sin(rad) * distance),
+        };
+    };
 
-        if (preset === 'hard') shadows.push(`4px 4px 0 ${color}`);
-        else if (preset === 'lifted') shadows.push(`0 14px 24px ${color}`);
-        else shadows.push(`0 10px 24px ${color}`);
+    const applyAlphaToHex = (color, alphaPercent) => {
+        if (typeof color !== 'string') return color;
+        const value = color.trim();
+        const alpha = clamp(100 - alphaPercent, 0, 100);
+
+        if (/^#[\da-f]{3}$/i.test(value)) {
+            const r = value[1];
+            const g = value[2];
+            const b = value[3];
+            const a = Math.round((alpha / 100) * 255).toString(16).padStart(2, '0');
+            return `#${r}${r}${g}${g}${b}${b}${a}`;
+        }
+
+        if (/^#[\da-f]{6}$/i.test(value)) {
+            const a = Math.round((alpha / 100) * 255).toString(16).padStart(2, '0');
+            return `${value}${a}`;
+        }
+
+        return value;
+    };
+
+    if (layout.border && !layout.hollowText) {
+        const borderColor = layout.contourColor || '#7c3aed';
+        const width = clamp(Number(layout.contourWidth ?? 2), 1, 12);
+        const ring = Math.max(1, Math.round(width));
+        for (let x = -ring; x <= ring; x++) {
+            for (let y = -ring; y <= ring; y++) {
+                if (x === 0 && y === 0) continue;
+                if (x * x + y * y <= ring * ring) {
+                    shadows.push(`${x}px ${y}px 0 ${borderColor}`);
+                }
+            }
+        }
     }
 
-    if (layout.neonColor) {
-        shadows.push(`0 0 8px ${layout.neonColor}`, `0 0 18px ${layout.neonColor}`);
+    if (layout.textEffectMode === 'distort') {
+        const primaryColor = layout.shadowColor || '#f0f';
+        const secondaryColor = layout.neonColor || '#0ff';
+        const distance = clamp(Math.round(clamp(Number(layout.shadowOffset ?? 15), 0, 20) * 0.2), 1, 20);
+        const offset = toShadowOffset(distance);
+        shadows.push(
+            `${offset.x}px ${offset.y}px 0 ${primaryColor}`,
+            `${-offset.x}px ${-offset.y}px 0 ${secondaryColor}`,
+        );
+    } else if (layout.shadow) {
+        const color = layout.shadowColor || '#0f172a';
+        const preset = layout.shadowPreset || 'soft';
+        const colorWithAlpha = applyAlphaToHex(color, shadowOpacity);
+        const isMisaligned = layout.textEffectMode === 'misaligned';
+
+        if (isMisaligned) {
+            const distance = Math.max(0, Math.round(shadowOffset * 0.25));
+            const offset = toShadowOffset(distance);
+            shadows.push(`${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`);
+        } else if (preset === 'hard') {
+            const distance = Math.round(shadowOffset * 0.6);
+            const offset = toShadowOffset(distance);
+            shadows.push(`${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`);
+        } else if (preset === 'echo') {
+            const distance = Math.max(1, Math.round(shadowOffset * 0.25));
+            const offset = toShadowOffset(distance);
+            shadows.push(
+                `${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`,
+                `${offset.x * 2}px ${offset.y * 2}px 0 ${colorWithAlpha}`,
+                `${offset.x * 3}px ${offset.y * 3}px 0 ${colorWithAlpha}`,
+            );
+        } else {
+            const distance = Math.round(shadowOffset * 0.6);
+            const blur = Math.round(shadowBlur * 0.8);
+            const offset = toShadowOffset(distance);
+            shadows.push(`${offset.x}px ${offset.y}px ${blur}px ${colorWithAlpha}`);
+        }
+    }
+
+    if (layout.textEffectMode === 'neon' && !layout.hollowText) {
+        const sourceColor = textColor || '#7c3aed';
+        const blurSoft = Math.round(4 + neonIntensity / 5);
+        const blurStrong = Math.round(10 + neonIntensity / 2.5);
+        const glowColor = normalizePickerColor(sourceColor, '#7c3aed');
+        shadows.push(`0 0 ${blurSoft}px ${glowColor}`, `0 0 ${blurStrong}px ${glowColor}`);
+    } else if (layout.neonColor && layout.textEffectMode !== 'distort') {
+        const blurSoft = Math.round(4 + neonIntensity / 6);
+        const blurStrong = Math.round(12 + neonIntensity / 2);
+        shadows.push(`0 0 ${blurSoft}px ${layout.neonColor}`, `0 0 ${blurStrong}px ${layout.neonColor}`);
     }
 
     return shadows.length ? shadows.join(', ') : 'none';
@@ -257,18 +369,31 @@ function buildBubbleShadow(layout = {}) {
 
 function buildVisualShadow(layout = {}) {
     const shadows = [];
+    const shadowIntensity = clamp(Number(layout.shadowIntensity ?? 45), 0, 100);
+    const neonIntensity = clamp(Number(layout.neonIntensity ?? 55), 0, 100);
 
     if (layout.shadow) {
         const color = layout.shadowColor || '#0f172a';
         const preset = layout.shadowPreset || 'soft';
 
-        if (preset === 'hard') shadows.push(`4px 4px 0 ${color}`);
-        else if (preset === 'lifted') shadows.push(`0 14px 24px ${color}66`);
-        else shadows.push(`0 10px 24px ${color}66`);
+        if (preset === 'hard') {
+            const distance = Math.round(1 + shadowIntensity / 12);
+            shadows.push(`${distance}px ${distance}px 0 ${color}`);
+        } else if (preset === 'lifted') {
+            const y = Math.round(8 + shadowIntensity / 4);
+            const blur = Math.round(10 + shadowIntensity / 2);
+            shadows.push(`0 ${y}px ${blur}px ${color}66`);
+        } else {
+            const y = Math.round(4 + shadowIntensity / 6);
+            const blur = Math.round(8 + shadowIntensity / 2);
+            shadows.push(`0 ${y}px ${blur}px ${color}66`);
+        }
     }
 
     if (layout.neonColor) {
-        shadows.push(`0 0 8px ${layout.neonColor}`, `0 0 18px ${layout.neonColor}`);
+        const blurSoft = Math.round(4 + neonIntensity / 6);
+        const blurStrong = Math.round(12 + neonIntensity / 2);
+        shadows.push(`0 0 ${blurSoft}px ${layout.neonColor}`, `0 0 ${blurStrong}px ${layout.neonColor}`);
     }
 
     if (layout.bubbleColor && layout.bubbleColor !== 'transparent') {
@@ -307,18 +432,28 @@ function elementContentStyle(id) {
         };
     }
 
+    const hasBackground = layout.backgroundColor && layout.backgroundColor !== 'transparent';
+    const backgroundOpacity = clamp(Number(layout.backgroundOpacity ?? 70), 0, 100);
+    const backgroundExpand = clamp(Number(layout.backgroundPadding ?? 5), 0, 100);
+    const backgroundAlphaHex = Math.round((backgroundOpacity / 100) * 255).toString(16).padStart(2, '0');
+    const resolvedBackground = hasBackground && /^#[\da-f]{6}$/i.test(layout.backgroundColor)
+        ? `${layout.backgroundColor}${backgroundAlphaHex}`
+        : (hasBackground ? layout.backgroundColor : 'transparent');
+
     return {
         opacity: `${(layout.opacity ?? 100) / 100}`,
-        backgroundColor: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : 'transparent',
-        borderRadius: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? '16px' : '0',
-        padding: '0',
+        backgroundColor: resolvedBackground,
+        borderRadius: hasBackground ? `${Math.round(clamp(Number(layout.backgroundRoundness ?? 50), 0, 100) * 0.48)}px` : '0',
+        padding: hasBackground ? `${backgroundExpand}px` : '0',
+        margin: hasBackground ? `-${backgroundExpand}px` : '0',
         boxSizing: 'border-box',
         textAlign: 'left',
         textIndent: '0',
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
-        textShadow: buildTextShadow(layout),
-        WebkitTextStroke: layout.border ? `${layout.contourWidth || 1}px ${layout.contourColor || '#ffffff'}` : '0',
+        color: undefined,
+        textShadow: 'none',
+        WebkitTextStroke: '0',
         boxShadow: buildBubbleShadow(layout),
     };
 }
@@ -333,6 +468,11 @@ function richEditorContainerStyle(id) {
 function paragraphContentStyle(id, index) {
     const layout = state.elementLayout[id] ?? {};
     const paragraphStyle = getParagraphStyleForElement(id, index);
+    const baseColor = paragraphStyle.color ?? layout.color ?? '#ffffff';
+    const isNeon = layout.textEffectMode === 'neon' && !layout.hollowText;
+    const displayColor = layout.hollowText
+        ? 'transparent'
+        : (isNeon ? '#ffffff' : baseColor);
 
     return {
         margin: '0',
@@ -341,7 +481,8 @@ function paragraphContentStyle(id, index) {
         textIndent: '0',
         display: 'block',
         fontSize: `${paragraphStyle.fontSize}px`,
-        color: paragraphStyle.color,
+        color: displayColor,
+        WebkitTextFillColor: layout.hollowText ? 'transparent' : undefined,
         fontFamily: paragraphStyle.fontFamily,
         fontStyle: paragraphStyle.italic ? 'italic' : 'normal',
         fontWeight: paragraphStyle.fontWeight === 'bold' ? '700' : '500',
@@ -349,8 +490,8 @@ function paragraphContentStyle(id, index) {
         textTransform: paragraphStyle.uppercase ? 'uppercase' : 'none',
         letterSpacing: `${paragraphStyle.letterSpacing}px`,
         lineHeight: `${paragraphStyle.lineHeight}`,
-        textShadow: buildTextShadow(layout),
-        WebkitTextStroke: layout.border ? `${layout.contourWidth || 1}px ${layout.contourColor || '#ffffff'}` : '0',
+        textShadow: buildTextShadow(layout, baseColor),
+        WebkitTextStroke: layout.border && layout.hollowText ? `${layout.contourWidth || 1}px ${baseColor}` : '0',
         whiteSpace: 'pre-wrap',
     };
 }

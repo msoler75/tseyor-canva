@@ -46,6 +46,8 @@ const props = defineProps({
     text: { type: String, required: true },
     editorClass: { type: String, default: '' },
     editorStyle: { type: Object, default: () => ({}) },
+    colorOverride: { type: String, default: null },
+    transparentFill: { type: Boolean, default: false },
     editable: { type: Boolean, default: false },
 });
 const emit = defineEmits(['update:text', 'update:paragraphStyles', 'selectionChange', 'blur']);
@@ -238,18 +240,36 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <EditorContent :editor="editor" :style="editorStyle" />
+    <div
+        :class="{ 'neon-active': !!props.colorOverride, 'hollow-active': props.transparentFill }"
+        :style="props.colorOverride ? { '--neon-override-color': props.colorOverride } : {}"
+    >
+        <EditorContent :editor="editor" :style="editorStyle" />
+    </div>
 </template>
 
 <style>
+.neon-active .ProseMirror p {
+    color: var(--neon-override-color) !important;
+}
+.hollow-active .ProseMirror,
+.hollow-active .ProseMirror p {
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+}
 .ProseMirror {
     outline: none;
     white-space: pre-wrap;
     word-break: break-word;
     cursor: text;
+    color: inherit;
+    text-shadow: inherit;
+    -webkit-text-stroke: inherit;
 }
 .ProseMirror p {
     margin: 0;
     padding: 0;
+    text-shadow: inherit;
+    -webkit-text-stroke: inherit;
 }
 </style>
