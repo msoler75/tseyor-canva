@@ -29,7 +29,7 @@ const editingElementId = ref(null);
 const editingBoxHeight = ref(null);
 const selectedParagraphIndex = ref(0);
 const paragraphSelection = reactive({ start: 0, end: 0, active: false });
-const activePropertyPanel = ref('typography');
+const activePropertyPanel = ref(null);
 const toolbarPosition = reactive({ x: 16, y: 16 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
 let longPressTimer = null;
@@ -47,6 +47,12 @@ const drag = reactive({
     startY: 0,
     startW: 0,
     startH: 0,
+    startRotation: 0,
+    startAngle: 0,
+    centerX: 0,
+    centerY: 0,
+    lastClientX: 0,
+    lastClientY: 0,
     startFontSize: 0,
     startParagraphStyles: [],
 });
@@ -64,6 +70,24 @@ const colorOptions = [
 const backgroundOptions = [
     'transparent', '#ffffff', '#f8fafc', '#e2e8f0', '#111827', '#0f172a', '#7c3aed', '#8b5cf6',
     '#0ea5e9', '#14b8a6', '#22c55e', '#f59e0b', '#f43f5e', '#fef3c7', '#fecdd3', '#ddd6fe',
+];
+const shapeGradientOptions = [
+  { id: 'g1', start: '#0ea5e9', end: '#8b5cf6' },
+  { id: 'g2', start: '#22c55e', end: '#0ea5e9' },
+  { id: 'g3', start: '#f59e0b', end: '#ef4444' },
+  { id: 'g4', start: '#f43f5e', end: '#8b5cf6' },
+  { id: 'g5', start: '#14b8a6', end: '#22c55e' },
+  { id: 'g6', start: '#111827', end: '#6366f1' },
+  { id: 'g7', start: '#67e8f9', end: '#7c3aed' },
+  { id: 'g8', start: '#fde68a', end: '#f43f5e' },
+];
+const shapeGradientDirections = [
+  { value: 0, label: 'Arriba → abajo', icon: 'ph:arrow-down' },
+  { value: 90, label: 'Izquierda → derecha', icon: 'ph:arrow-right' },
+  { value: 135, label: 'Diagonal ↘', icon: 'ph:arrow-down-right' },
+  { value: 45, label: 'Diagonal ↗', icon: 'ph:arrow-up-right' },
+  { value: 180, label: 'Abajo → arriba', icon: 'ph:arrow-up' },
+  { value: 270, label: 'Derecha → izquierda', icon: 'ph:arrow-left' },
 ];
 const fontOptions = [
     { label: 'Poppins', family: 'Poppins, sans-serif' },
@@ -88,12 +112,21 @@ const fontOptions = [
     { label: 'Libre Baskerville', family: '"Libre Baskerville", serif' },
     { label: 'Caveat', family: 'Caveat, cursive' },
 ];
-const propertyTabs = [
+const textPropertyTabs = [
     { id: 'typography', label: 'Fuente' , class: 'order-first'},
     { id: 'color', label: 'A', labelClass:'border-b-5 border-blue-500 text-xl',class: '' },
     { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
     { id: 'effects', label: 'Efectos', class: 'order-last' },
     { id: 'arrange', label: 'Posición' , class: 'order-last'},
+];
+const visualPropertyTabs = [
+  { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
+  { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
+  { id: 'effects', label: 'Efectos', class: 'order-last' },
+  { id: 'arrange', label: 'Posición', class: 'order-last' },
+];
+const backgroundPropertyTabs = [
+  { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
 ];
 
 const baseTextElementIds = new Set(['title', 'subtitle', 'meta', 'contact', 'extra']);
@@ -265,9 +298,18 @@ const editorElements = computed(() => {
 });
 const selectedElement = computed(() => state.elementLayout[state.selectedElementId]);
 const hasSelection = computed(() => Boolean(state.selectedElementId && selectedElement.value));
-const activeElementLabel = computed(() => editorElements.value.find((item) => item.id === state.selectedElementId)?.label ?? 'Elemento');
+const activeElementLabel = computed(() => {
+  if (state.selectedElementId === 'background') return 'Fondo';
+  return editorElements.value.find((item) => item.id === state.selectedElementId)?.label ?? 'Elemento';
+});
 const selectedElementType = computed(() => editorElements.value.find((item) => item.id === state.selectedElementId)?.type ?? null);
 const hasTextSelection = computed(() => hasSelection.value && selectedElementType.value === 'text');
+const selectedPropertyTabs = computed(() => {
+  if (!hasSelection.value) return textPropertyTabs;
+  if (state.selectedElementId === 'background') return backgroundPropertyTabs;
+  return selectedElementType.value === 'text' ? textPropertyTabs : visualPropertyTabs;
+});
+const activePropertyTitle = computed(() => selectedPropertyTabs.value.find((tab) => tab.id === activePropertyPanel.value)?.label ?? 'Propiedades');
 const orderedLayerIds = computed(() => Object.keys(state.elementLayout).sort((a, b) => {
     const zA = state.elementLayout[a]?.zIndex ?? 0;
     const zB = state.elementLayout[b]?.zIndex ?? 0;
@@ -278,6 +320,18 @@ const orderedLayerIds = computed(() => Object.keys(state.elementLayout).sort((a,
 
     return zA - zB;
 }));
+
+watch([selectedElementType, hasSelection], () => {
+  if (!hasSelection.value) {
+    activePropertyPanel.value = null;
+    return;
+  }
+
+  const availableTabIds = selectedPropertyTabs.value.map((tab) => tab.id);
+  if (activePropertyPanel.value && !availableTabIds.includes(activePropertyPanel.value)) {
+    activePropertyPanel.value = null;
+  }
+}, { immediate: true });
 
 const paragraphStyleFields = new Set([
     'fontSize',
@@ -437,6 +491,18 @@ const setSelectedColor = (field, value) => {
     if (!selectedElement.value) return;
     selectedElement.value[field] = value;
 };
+  const applyShapeGradientPreset = (start, end) => {
+    if (!selectedElement.value || selectedElementType.value !== 'shape') return;
+    selectedElement.value.fillMode = 'gradient';
+    selectedElement.value.gradientStart = start;
+    selectedElement.value.gradientEnd = end;
+  };
+  const swapShapeGradientStops = () => {
+    if (!selectedElement.value || selectedElementType.value !== 'shape') return;
+    const start = selectedElement.value.gradientStart || '#0ea5e9';
+    selectedElement.value.gradientStart = selectedElement.value.gradientEnd || '#8b5cf6';
+    selectedElement.value.gradientEnd = start;
+  };
 const clampToolbar = () => {
     toolbarPosition.x = clamp(toolbarPosition.x, 8, 700);
     toolbarPosition.y = clamp(toolbarPosition.y, 8, 180);
@@ -466,6 +532,29 @@ const buildBubbleShadow = (layout) => {
     return `0 10px 20px ${layout.bubbleColor}55`;
 };
 
+const buildVisualShadow = (layout) => {
+  const shadows = [];
+
+  if (layout.shadow) {
+    const color = layout.shadowColor || '#0f172a';
+    const preset = layout.shadowPreset || 'soft';
+
+    if (preset === 'hard') shadows.push(`4px 4px 0 ${color}`);
+    else if (preset === 'lifted') shadows.push(`0 14px 24px ${color}66`);
+    else shadows.push(`0 10px 24px ${color}66`);
+  }
+
+  if (layout.neonColor) {
+    shadows.push(`0 0 8px ${layout.neonColor}`, `0 0 18px ${layout.neonColor}`);
+  }
+
+  if (layout.bubbleColor && layout.bubbleColor !== 'transparent') {
+    shadows.push(`0 10px 20px ${layout.bubbleColor}55`);
+  }
+
+  return shadows.length ? shadows.join(', ') : 'none';
+};
+
 const isTextElement = (id) => {
   if (baseTextElementIds.has(id)) return true;
   return state.customElements?.[id]?.type === 'text';
@@ -484,6 +573,7 @@ const buildDefaultLayout = (overrides = {}) => ({
   x: 24,
   y: 40,
   w: 280,
+  rotation: 0,
   zIndex: getMaxZIndex() + 10,
   fontSize: 18,
   color: '#ffffff',
@@ -504,6 +594,12 @@ const buildDefaultLayout = (overrides = {}) => ({
   neonColor: '',
   bubbleColor: 'transparent',
   backgroundColor: 'transparent',
+  fillMode: 'solid',
+  gradientStart: '#0ea5e9',
+  gradientEnd: '#8b5cf6',
+  gradientAngle: 135,
+  imageTintColor: '#0f172a',
+  imageTintStrength: 0,
   ...overrides,
 });
 const placeInsideCanvas = (layout) => {
@@ -550,7 +646,6 @@ const addTextElement = (presetId) => {
   };
   state.elementLayout[id] = layout;
   state.selectedElementId = id;
-  activePropertyPanel.value = 'typography';
 };
 
 const openImagePanel = () => {
@@ -601,7 +696,6 @@ const addImageElementFromSrc = (src, label = 'Imagen') => {
   };
   state.elementLayout[id] = layout;
   state.selectedElementId = id;
-  activePropertyPanel.value = 'arrange';
   closeImagePanel();
 };
 
@@ -660,7 +754,7 @@ const addShapeElement = (shapeKind) => {
     h: isRectangle ? 120 : 140,
     x: 44,
     y: 150,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#38bdf8',
     opacity: 90,
     shadow: true,
     border: false,
@@ -675,7 +769,6 @@ const addShapeElement = (shapeKind) => {
   };
   state.elementLayout[id] = layout;
   state.selectedElementId = id;
-  activePropertyPanel.value = 'color';
 };
 
 // Genera estilo CSS para una figura según su shapeKind
@@ -698,11 +791,14 @@ const shapeStyleFromKind = (shapeKind, base) => {
 
 const shapeStyle = (item) => {
   const layout = state.elementLayout[item.id];
+  const fill = layout.fillMode === 'gradient'
+    ? `linear-gradient(${layout.gradientAngle || 135}deg, ${layout.gradientStart || '#0ea5e9'}, ${layout.gradientEnd || '#8b5cf6'})`
+    : (layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : '#ffffff');
   const base = {
     width: '100%',
     height: '100%',
-    background: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : '#ffffff',
-    boxShadow: layout.shadow ? buildBubbleShadow(layout) : 'none',
+    background: fill,
+    boxShadow: buildVisualShadow(layout),
     border: layout.border
       ? `${layout.contourWidth || 1}px solid ${layout.contourColor || '#ffffff'}`
       : '0',
@@ -710,9 +806,36 @@ const shapeStyle = (item) => {
   return shapeStyleFromKind(item.shapeKind, base);
 };
 
+const imageFrameStyle = (id) => {
+  const layout = state.elementLayout[id];
+  if (!layout) return {};
+
+  return {
+    backgroundColor: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : 'rgba(255,255,255,0.2)',
+    border: layout.border
+      ? `${layout.contourWidth || 1}px solid ${layout.contourColor || '#ffffff'}`
+      : '1px solid rgba(255,255,255,0.4)',
+    boxShadow: buildVisualShadow(layout),
+  };
+};
+
+const imageTintOverlayStyle = (id) => {
+  const layout = state.elementLayout[id];
+  if (!layout) return {};
+
+  const tintStrength = clamp(Number(layout.imageTintStrength ?? 0), 0, 100);
+
+  return {
+    backgroundColor: layout.imageTintColor || '#0f172a',
+    opacity: `${tintStrength / 100}`,
+    mixBlendMode: 'multiply',
+  };
+};
+
 const elementBoxStyle = (id) => {
     const layout = state.elementLayout[id];
   const isText = isTextElement(id);
+  const rotation = Number(layout.rotation ?? 0);
 
     return {
         left: `${layout.x}px`,
@@ -720,6 +843,8 @@ const elementBoxStyle = (id) => {
         width: `${layout.w}px`,
     height: isText ? 'auto' : `${layout.h ?? 140}px`,
         zIndex: `${layout.zIndex ?? 1}`,
+    transform: `rotate(${rotation}deg)`,
+    transformOrigin: 'center center',
     };
 };
 
@@ -736,6 +861,7 @@ const selectedOverlayStyle = computed(() => {
     const measured = elementMeasurements[state.selectedElementId] ?? null;
     const measuredWidth = measured?.width ?? layout.w;
     const measuredHeight = measured?.height ?? getEstimatedTextHeight(layout, text);
+  const rotation = Number(layout.rotation ?? 0);
 
     return {
         left: `${layout.x}px`,
@@ -743,6 +869,8 @@ const selectedOverlayStyle = computed(() => {
         width: `${measuredWidth}px`,
         height: `${measuredHeight}px`,
         zIndex: '6000',
+    transform: `rotate(${rotation}deg)`,
+    transformOrigin: 'center center',
     };
 });
 
@@ -786,6 +914,13 @@ const refreshElementObservers = async () => {
 
 const elementContentStyle = (id) => {
     const layout = state.elementLayout[id];
+  const elementType = state.customElements?.[id]?.type ?? (baseTextElementIds.has(id) ? 'text' : null);
+
+  if (elementType !== 'text') {
+    return {
+      opacity: `${(layout.opacity ?? 100) / 100}`,
+    };
+  }
 
     return {
         opacity: `${(layout.opacity ?? 100) / 100}`,
@@ -1074,6 +1209,46 @@ const startResize = (event, id, handle) => {
     event.preventDefault();
 };
 
+  const getPointerAngle = (event, centerX, centerY) => Math.atan2(event.clientY - centerY, event.clientX - centerX) * (180 / Math.PI);
+
+  const startRotate = (event, id) => {
+    const layout = state.elementLayout[id];
+    const measured = elementMeasurements[id];
+    if (!layout) return;
+
+    if (editingElementId.value) commitTextEdit();
+
+    const width = measured?.width ?? layout.w ?? 0;
+    const height = measured?.height ?? layout.h ?? 44;
+    const centerX = layout.x + (width / 2);
+    const centerY = layout.y + (height / 2);
+
+    state.selectedElementId = id;
+    drag.active = true;
+    drag.mode = 'rotate';
+    drag.pointerId = event.pointerId;
+    drag.elementId = id;
+    drag.handle = null;
+    drag.startRotation = Number(layout.rotation ?? 0);
+    drag.centerX = centerX;
+    drag.centerY = centerY;
+    drag.startAngle = getPointerAngle(event, centerX, centerY);
+    drag.lastClientX = event.clientX;
+    drag.lastClientY = event.clientY;
+    clearLongPress();
+    setDragDocumentState(true);
+
+    event.currentTarget?.setPointerCapture?.(event.pointerId);
+    event.stopPropagation();
+    event.preventDefault();
+  };
+
+  const resetRotation = (id) => {
+    const layout = state.elementLayout[id];
+    if (!layout) return;
+    layout.rotation = 0;
+  };
+
 const moveDrag = (event) => {
     if (toolbarDrag.active && toolbarDrag.pointerId === event.pointerId) {
         toolbarPosition.x = toolbarDrag.originX + (event.clientX - toolbarDrag.startX);
@@ -1095,18 +1270,47 @@ const moveDrag = (event) => {
     const layout = state.elementLayout[drag.elementId];
     const isText = isTextElement(drag.elementId);
 
+    if (drag.mode === 'rotate') {
+      const dx = event.clientX - drag.lastClientX;
+      const dy = event.clientY - drag.lastClientY;
+      const currentRotation = Number(layout.rotation ?? 0);
+      const theta = (currentRotation * Math.PI) / 180;
+
+      // Tangente local del asa superior: arrastrar en ese sentido incrementa el giro horario.
+      const tangentX = Math.cos(theta);
+      const tangentY = Math.sin(theta);
+      const projectedDelta = (dx * tangentX) + (dy * tangentY);
+      const sensitivity = 0.8;
+      const nextRotation = currentRotation + (projectedDelta * sensitivity);
+
+      layout.rotation = Math.round(((nextRotation) + 540) % 360 - 180);
+      drag.lastClientX = event.clientX;
+      drag.lastClientY = event.clientY;
+      if (event.cancelable) event.preventDefault();
+      return;
+    }
+
     if (drag.mode === 'resize') {
         if (event.cancelable) event.preventDefault();
         const deltaX = event.clientX - drag.startClientX;
         const deltaY = event.clientY - drag.startClientY;
         const handle = drag.handle ?? 'se';
         const isSideHandle = handle === 'e' || handle === 'w';
+        const isHorizontalBarHandle = handle === 'n-width' || handle === 's-width';
         const horizontalDelta = handle.includes('e') ? deltaX : -deltaX;
 
       if (!isText) {
             const currentHeight = drag.startH || layout.h || 140;
         const minHeight = 40;
         const minWidth = 40;
+
+        if (isHorizontalBarHandle) {
+          const nextWidth = clamp(Math.round(drag.startW + deltaX), minWidth, 460);
+          const centeredX = drag.startX - ((nextWidth - drag.startW) / 2);
+          layout.w = nextWidth;
+          layout.x = Math.round(clamp(centeredX, 0, Math.max(0, rect.width - nextWidth - 8)));
+          return;
+        }
 
         if (isSideHandle) {
           const nextWidth = clamp(Math.round(drag.startW + horizontalDelta), minWidth, 460);
@@ -1195,6 +1399,12 @@ const endDrag = (event) => {
     drag.elementId = null;
     drag.handle = null;
     drag.startH = 0;
+    drag.startRotation = 0;
+    drag.startAngle = 0;
+    drag.centerX = 0;
+    drag.centerY = 0;
+    drag.lastClientX = 0;
+    drag.lastClientY = 0;
     clearLongPress();
     setDragDocumentState(false);
 };
@@ -1245,11 +1455,26 @@ const clearSelection = () => {
     commitTextEdit();
   }
     state.selectedElementId = null;
+    activePropertyPanel.value = null;
 };
 
 const handleCanvasPointerDown = (event) => {
     if (drag.active) return;
     if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
+    
+    // Si el fondo ya está seleccionado, permitir deseleccionar con clic
+    if (state.selectedElementId === 'background') {
+        clearSelection();
+        return;
+    }
+    
+    // Permitir seleccionar el fondo con doble clic
+    if (event.detail === 2) {
+        state.selectedElementId = 'background';
+        activePropertyPanel.value = 'color';
+        return;
+    }
+    
     clearSelection();
 };
 
@@ -1307,7 +1532,7 @@ watch(editorElements, () => {
     <section class="relative glass soft-shadow rounded-[32px] border border-white/70 p-6 sm:p-8 dark:border-slate-700/70">
       <div class="overflow-hidden rounded-[32px] border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div
-          v-if="hasTextSelection"
+          v-if="hasSelection"
           data-editor-keep-selection="true"
           class="pointer-events-none absolute z-[7000]"
           :style="{ left: toolbarPosition.x + 'px', top: toolbarPosition.y + 'px' }"
@@ -1316,19 +1541,24 @@ watch(editorElements, () => {
             <div class="card-body p-1.5">
                 <div class="flex flex-wrap items-center gap-3">
                     <button type="button" class="order-first btn btn-ghost text-lg cursor-grab active:cursor-grabbing" @pointerdown="startToolbarDrag">⋮⋮</button>
-                    <button v-for="tab in propertyTabs" :key="tab.id" type="button" class="btn border-0 py-1 px-2" :class="[activePropertyPanel === tab.id ? 'btn-primary' : 'btn-outline', tab.class]"
+                  <button v-for="tab in selectedPropertyTabs" :key="tab.id" type="button" class="btn border-0 py-1 px-2" :class="[activePropertyPanel === tab.id ? 'btn-primary' : 'btn-outline', tab.class]"
                         @click="activePropertyPanel = tab.id">
                         <span v-if="tab.label" class="text-sm text-base-100-accent" :class="tab.labelClass">{{ tab.label }}</span>
                         <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl"/>
                     </button>
+                  <template v-if="hasTextSelection">
                     <input v-model.number="selectedTextStyle.fontSize" type="number" min="8" max="200" step="1" class="input input-bordered join-item w-12 text-center order-first" />
                     <button type="button" class="btn text-lg" :class="selectedTextStyle.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
                     <button type="button" class="btn text-lg italic" :class="selectedTextStyle.italic ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.italic = !selectedTextStyle.italic">I</button>
                     <button type="button" class="btn text-lg w-12" :class="selectedTextStyle.uppercase ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.uppercase = !selectedTextStyle.uppercase">Aa</button>
                     <button type="button" class="btn text-lg btn-outline" @click="cycleAlignment">
-                        <Icon :icon="currentAlignmentIcon" class="scale-150"/>
+                      <Icon :icon="currentAlignmentIcon" class="scale-150"/>
                     </button>
                     <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">{{ activeParagraphLabel }}</span>
+                  </template>
+                  <template v-else>
+                    <span class="rounded-full border border-base-300 bg-base-100 px-3 py-1 text-[11px] font-medium text-base-content/70">{{ activeElementLabel }}</span>
+                  </template>
                 </div>
             </div>
           </div>
@@ -1338,13 +1568,42 @@ watch(editorElements, () => {
           <aside data-editor-keep-selection="true" class="border-b border-base-300 bg-base-100 p-5 xl:border-b-0 xl:border-r">
             <div class="space-y-5">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Panel contextual</p>
-                <h3 class="mt-2 text-xl font-semibold text-base-content">{{ hasSelection ? propertyTabs.find((tab) => tab.id === activePropertyPanel)?.label : 'Elementos' }}</h3>
-                <p v-if="hasSelection" class="mt-2 text-sm leading-6 text-base-content/75">Elige una propiedad arriba para ver sus opciones.</p>
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Panel contextual</p>
+                    <h3 class="mt-2 text-xl font-semibold text-base-content">{{ hasSelection && activePropertyPanel ? activePropertyTitle : 'Elementos' }}</h3>
+                    <p v-if="hasSelection && activePropertyPanel" class="mt-2 text-sm leading-6 text-base-content/75">Elige una propiedad arriba para ver sus opciones.</p>
+                  </div>
+                  <button
+                    v-if="hasSelection && activePropertyPanel"
+                    type="button"
+                    class="btn btn-ghost btn-sm btn-circle"
+                    aria-label="Cerrar propiedad activa"
+                    @click="activePropertyPanel = null"
+                  >
+                    <Icon icon="mdi:close" class="text-lg" />
+                  </button>
+                </div>
               </div>
 
               <!-- Panel de inserción (siempre visible cuando no hay selección) -->
-              <div v-if="!hasSelection" class="space-y-3">
+              <div v-if="!hasSelection || !activePropertyPanel" class="space-y-3">
+                <!-- Botón para seleccionar el fondo -->
+                <button
+                  type="button"
+                  class="w-full rounded-xl border-2 p-3 transition"
+                  :class="state.selectedElementId === 'background' ? 'border-primary bg-primary/15 text-primary' : 'border-base-300 bg-base-100/70 hover:border-primary/50 hover:bg-primary/10'"
+                  @click="state.selectedElementId = 'background'; activePropertyPanel = 'color'"
+                >
+                  <div class="flex items-center gap-3">
+                    <div class="h-8 w-8 rounded-lg border border-base-300" :style="{ backgroundColor: state.elementLayout.background?.backgroundColor }"></div>
+                    <div class="text-left">
+                      <p class="text-xs font-semibold uppercase tracking-[0.15em]">Fondo</p>
+                      <p class="text-[11px] text-base-content/60">{{ state.elementLayout.background?.backgroundColor }}</p>
+                    </div>
+                  </div>
+                </button>
+
                 <!-- Grid de acciones -->
                 <div class="grid grid-cols-3 gap-2">
                   <button
@@ -1524,7 +1783,7 @@ watch(editorElements, () => {
                 </div>
               </div>
 
-              <div v-else-if="activePropertyPanel === 'typography'" class="card border border-base-300 bg-base-100/80">
+              <div v-else-if="activePropertyPanel === 'typography' && hasTextSelection" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4">
                   <div class="flex items-center justify-between gap-3">
                     <p class="text-sm font-semibold text-base-content">Tipo de fuente</p>
@@ -1567,7 +1826,49 @@ watch(editorElements, () => {
 
               <div v-else-if="activePropertyPanel === 'color'" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4 space-y-4">
-                  <div>
+                  <div v-if="state.selectedElementId === 'background'">
+                    <div class="flex items-center justify-between gap-3">
+                      <div>
+                        <p class="text-sm font-semibold text-base-content">Color del fondo</p>
+                        <p class="text-xs text-base-content/60">Elige un color sólido para el fondo del diseño.</p>
+                      </div>
+                      <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                        {{ state.elementLayout.background?.backgroundColor }}
+                      </span>
+                    </div>
+                    <div class="mt-4 grid grid-cols-6 gap-2">
+                      <button
+                        v-for="color in backgroundOptions"
+                        :key="color"
+                        type="button"
+                        class="h-9 w-9 rounded-full transition hover:scale-105"
+                        :class="state.elementLayout.background?.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                        :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
+                        :title="color"
+                        @click="state.elementLayout.background.backgroundColor = color"
+                      ></button>
+                    </div>
+                    <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
+                      <div class="flex items-center gap-2">
+                        <input
+                          type="color"
+                          class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                          :value="normalizePickerColor(state.elementLayout.background?.backgroundColor || '#4338ca', '#4338ca')"
+                          @input="state.elementLayout.background.backgroundColor = $event.target.value"
+                        />
+                        <input
+                          :value="state.elementLayout.background?.backgroundColor"
+                          type="text"
+                          placeholder="#4338ca"
+                          class="input input-bordered input-sm flex-1"
+                          @input="state.elementLayout.background.backgroundColor = $event.target.value"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-else-if="hasTextSelection">
                     <div class="flex items-center justify-between gap-3">
                       <div>
                         <p class="text-sm font-semibold text-base-content">Color del texto</p>
@@ -1609,12 +1910,208 @@ watch(editorElements, () => {
                       </div>
                     </div>
                   </div>
+
+                  <div v-else-if="selectedElementType === 'shape'">
+                    <div class="flex items-center justify-between gap-3">
+                      <div>
+                        <p class="text-sm font-semibold text-base-content">Color de la figura</p>
+                        <p class="text-xs text-base-content/60">Puedes usar color sólido o degradado.</p>
+                      </div>
+                      <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                        {{ selectedElement.fillMode === 'gradient' ? 'degradado' : (selectedElement.backgroundColor || 'transparent') }}
+                      </span>
+                    </div>
+
+                    <div class="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        class="btn btn-sm rounded-full"
+                        :class="selectedElement.fillMode !== 'gradient' ? 'btn-primary' : 'btn-outline'"
+                        @click="selectedElement.fillMode = 'solid'"
+                      >
+                        Sólido
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-sm rounded-full"
+                        :class="selectedElement.fillMode === 'gradient' ? 'btn-primary' : 'btn-outline'"
+                        @click="selectedElement.fillMode = 'gradient'"
+                      >
+                        Degradado
+                      </button>
+                    </div>
+
+                    <div v-if="selectedElement.fillMode !== 'gradient'" class="space-y-4">
+                      <div class="mt-4 grid grid-cols-6 gap-2">
+                        <button
+                          v-for="color in backgroundOptions"
+                          :key="'element-color-' + color"
+                          type="button"
+                          class="h-9 w-9 rounded-full transition hover:scale-105"
+                          :class="selectedElement.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                          :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
+                          :title="color"
+                          @click="selectedElement.fillMode = 'solid'; selectedElement.backgroundColor = color"
+                        ></button>
+                      </div>
+                      <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
+                        <div class="flex items-center gap-2">
+                          <input
+                            type="color"
+                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                            :value="normalizePickerColor(selectedElement.backgroundColor, '#ffffff')"
+                            @input="selectedElement.fillMode = 'solid'; setSelectedColor('backgroundColor', $event.target.value)"
+                          />
+                          <input
+                            :value="selectedElement.backgroundColor"
+                            type="text"
+                            placeholder="transparent o #0ea5e9"
+                            class="input input-bordered input-sm flex-1"
+                            @input="selectedElement.fillMode = 'solid'; setSelectedColor('backgroundColor', $event.target.value)"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-else class="space-y-4">
+                      <div class="grid grid-cols-2 gap-2">
+                        <button
+                          v-for="preset in shapeGradientOptions"
+                          :key="preset.id"
+                          type="button"
+                          class="h-10 rounded-xl border border-base-300/70 transition hover:scale-[1.01]"
+                          :class="selectedElement.gradientStart === preset.start && selectedElement.gradientEnd === preset.end ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : ''"
+                          :style="{ background: `linear-gradient(135deg, ${preset.start}, ${preset.end})` }"
+                          @click="applyShapeGradientPreset(preset.start, preset.end)"
+                        ></button>
+                      </div>
+                      <div class="grid gap-3 sm:grid-cols-2">
+                        <div class="flex items-center gap-2">
+                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Inicio</span>
+                          <input
+                            type="color"
+                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                            :value="normalizePickerColor(selectedElement.gradientStart || '#0ea5e9', '#0ea5e9')"
+                            @input="selectedElement.gradientStart = $event.target.value"
+                          />
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Final</span>
+                          <input
+                            type="color"
+                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                            :value="normalizePickerColor(selectedElement.gradientEnd || '#8b5cf6', '#8b5cf6')"
+                            @input="selectedElement.gradientEnd = $event.target.value"
+                          />
+                        </div>
+                      </div>
+                      <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Dirección</label>
+                        <div class="grid grid-cols-3 gap-2 rounded-xl border border-base-300/70 bg-base-100/70 p-2">
+                          <button
+                            v-for="direction in shapeGradientDirections"
+                            :key="direction.value"
+                            type="button"
+                            class="group flex items-center justify-center rounded-lg border p-2 transition"
+                            :class="selectedElement.gradientAngle === direction.value
+                              ? 'border-primary bg-primary/15 text-primary'
+                              : 'border-base-300/70 bg-base-100/80 text-base-content/70 hover:border-primary/50 hover:text-primary'"
+                            :title="direction.label"
+                            :aria-label="direction.label"
+                            @click="selectedElement.gradientAngle = direction.value"
+                          >
+                            <Icon :icon="direction.icon" class="text-xl" />
+                          </button>
+                        </div>
+                      </div>
+                      <div class="flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-outline btn-sm rounded-full" @click="swapShapeGradientStops">Alternar inicio/fin</button>
+                        <div class="h-8 flex-1 min-w-28 rounded-full border border-base-300/70" :style="{ background: `linear-gradient(${selectedElement.gradientAngle || 135}deg, ${selectedElement.gradientStart || '#0ea5e9'}, ${selectedElement.gradientEnd || '#8b5cf6'})` }"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-else>
+                    <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
+                      <div class="flex items-center justify-between gap-3">
+                        <div>
+                          <p class="text-sm font-semibold text-base-content">Color del marco/fondo</p>
+                          <p class="text-xs text-base-content/60">Color del contenedor de la imagen.</p>
+                        </div>
+                        <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                          {{ selectedElement.backgroundColor || 'transparent' }}
+                        </span>
+                      </div>
+                      <div class="mt-4 grid grid-cols-6 gap-2">
+                        <button
+                          v-for="color in backgroundOptions"
+                          :key="'image-frame-' + color"
+                          type="button"
+                          class="h-9 w-9 rounded-full transition hover:scale-105"
+                          :class="selectedElement.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                          :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
+                          :title="color"
+                          @click="selectedElement.backgroundColor = color"
+                        ></button>
+                      </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
+                      <div class="flex items-center justify-between gap-3">
+                        <div>
+                          <p class="text-sm font-semibold text-base-content">Tinte de imagen</p>
+                          <p class="text-xs text-base-content/60">Superposición de color sobre la foto.</p>
+                        </div>
+                        <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                          {{ selectedElement.imageTintStrength ?? 0 }}%
+                        </span>
+                      </div>
+                      <div class="mt-3 grid grid-cols-6 gap-2">
+                        <button
+                          v-for="color in colorOptions"
+                          :key="'image-tint-' + color"
+                          type="button"
+                          class="h-9 w-9 rounded-full transition hover:scale-105"
+                          :class="selectedElement.imageTintColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                          :style="{ backgroundColor: color }"
+                          :title="color"
+                          @click="selectedElement.imageTintColor = color"
+                        ></button>
+                      </div>
+                      <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
+                        <div class="flex items-center gap-2">
+                          <input
+                            type="color"
+                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                            :value="normalizePickerColor(selectedElement.imageTintColor || '#0f172a', '#0f172a')"
+                            @input="setSelectedColor('imageTintColor', $event.target.value)"
+                          />
+                          <input
+                            :value="selectedElement.imageTintColor || '#0f172a'"
+                            type="text"
+                            placeholder="#0f172a"
+                            class="input input-bordered input-sm flex-1"
+                            @input="setSelectedColor('imageTintColor', $event.target.value)"
+                          />
+                        </div>
+                      </div>
+                      <div class="mt-4 space-y-2">
+                        <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Intensidad del tinte</label>
+                        <div class="flex items-center gap-3">
+                          <input v-model.number="selectedElement.imageTintStrength" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="selectedElement.imageTintStrength" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               <div v-else-if="activePropertyPanel === 'effects'" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4 space-y-4">
-                  <p class="text-xs font-medium text-primary/80">Estos efectos se aplican a todo el objeto de texto.</p>
+                  <p class="text-xs font-medium text-primary/80">Estos efectos se aplican al elemento completo seleccionado.</p>
                   <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
                     <div class="flex items-center justify-between gap-3">
                       <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Sombra</p>
@@ -1821,14 +2318,14 @@ watch(editorElements, () => {
               </div>
 
               <div class="alert border border-base-300 bg-base-100/80 text-sm leading-6 text-base-content/80">
-                Doble click para editar texto. Enter crea un nuevo parrafo; al hacer clic fuera, el texto se guarda automaticamente. Ctrl+Enter tambien confirma y Esc cancela. En touch, mantén pulsado para editar. Usa el icono inferior para mover y las esquinas para redimensionar.
+                Doble click para editar texto. Enter crea un nuevo parrafo; al hacer clic fuera, el texto se guarda automaticamente. Ctrl+Enter tambien confirma y Esc cancela. En touch, mantén pulsado para editar. Usa el icono inferior para mover, las esquinas para redimensionar y el icono superior para girar (doble click para volver a 0°).
               </div>
             </div>
           </aside>
 
           <div class="canvas-grid min-h-[680px] bg-slate-100 p-6 dark:bg-slate-950 sm:p-10">
             <div class="mx-auto max-w-[400px] bg-white p-4 shadow-2xl dark:bg-slate-900">
-              <div ref="canvasRef" class="relative h-[620px] overflow-hidden bg-gradient-to-br from-indigo-800 via-violet-700 to-fuchsia-600 p-7 text-white select-none touch-none" @pointerdown="handleCanvasPointerDown">
+              <div ref="canvasRef" class="relative h-[620px] overflow-hidden p-7 text-white select-none touch-none" :style="{ backgroundColor: state.elementLayout.background?.backgroundColor || '#4338ca' }" @pointerdown="handleCanvasPointerDown">
                 <button
                   type="button"
                   class="absolute inset-0 z-0 cursor-default bg-transparent"
@@ -1854,7 +2351,7 @@ watch(editorElements, () => {
                   @dblclick="beginTextEdit(item.id)"
                   @pointerdown="startTouchEditIntent($event, item.id)"
                 >
-                  <div class="relative" :style="elementContentStyle(item.id)">
+                  <div class="relative" :class="item.type === 'text' ? '' : 'h-full w-full'" :style="elementContentStyle(item.id)">
                     <template v-if="item.type === 'text'">
                       <RichTextEditor
                         :ref="(el) => { if (el) richEditorRefs[item.id] = el; else delete richEditorRefs[item.id]; }"
@@ -1876,7 +2373,7 @@ watch(editorElements, () => {
                       />
                     </template>
                     <template v-else-if="item.type === 'image'">
-                      <div class="h-full w-full overflow-hidden rounded-xl border border-white/40 bg-white/20">
+                      <div class="relative h-full w-full overflow-hidden rounded-xl" :style="imageFrameStyle(item.id)">
                         <img
                           v-if="item.src"
                           :src="item.src"
@@ -1884,6 +2381,11 @@ watch(editorElements, () => {
                           class="h-full w-full object-cover"
                           draggable="false"
                         />
+                        <div
+                          v-if="item.src && (state.elementLayout[item.id]?.imageTintStrength ?? 0) > 0"
+                          class="pointer-events-none absolute inset-0"
+                          :style="imageTintOverlayStyle(item.id)"
+                        ></div>
                         <div v-else class="flex h-full w-full items-center justify-center text-xs font-semibold text-white/80">
                           Imagen
                         </div>
@@ -1896,7 +2398,28 @@ watch(editorElements, () => {
                 </div>
 
                 <div v-if="state.selectedElementId" data-editor-control="true" class="pointer-events-none absolute" :style="selectedOverlayStyle">
-                  <span class="pointer-events-none absolute -top-10 left-0 rounded-full bg-cyan-300 px-3 py-1 text-xs font-semibold text-slate-950">{{ activeElementLabel }} seleccionado</span>
+                  <button
+                    data-editor-control="true"
+                    type="button"
+                    class="pointer-events-auto absolute -top-10 left-1/2 z-40 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border-2 border-white bg-cyan-300 text-slate-950 shadow-md cursor-grab active:cursor-grabbing touch-none"
+                    title="Girar elemento"
+                    @pointerdown="startRotate($event, state.selectedElementId)"
+                    @dblclick.stop.prevent="resetRotation(state.selectedElementId)"
+                  >
+                    <Icon icon="ph:arrow-clockwise-bold" class="text-lg" />
+                  </button>
+                  <span
+                    v-if="selectedElementType !== 'text'"
+                    data-editor-control="true"
+                    class="pointer-events-auto absolute -top-2 left-1/2 z-30 h-3 w-16 -translate-x-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
+                    @pointerdown="startResize($event, state.selectedElementId, 'n-width')"
+                  ></span>
+                  <span
+                    v-if="selectedElementType !== 'text'"
+                    data-editor-control="true"
+                    class="pointer-events-auto absolute -bottom-2 left-1/2 z-30 h-3 w-16 -translate-x-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
+                    @pointerdown="startResize($event, state.selectedElementId, 's-width')"
+                  ></span>
                   <span data-editor-control="true" class="pointer-events-auto absolute -left-2 top-1/2 z-30 h-8 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'w')"></span>
                   <span data-editor-control="true" class="pointer-events-auto absolute -right-2 top-1/2 z-30 h-8 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'e')"></span>
                   <span data-editor-control="true" class="pointer-events-auto absolute -left-2 -top-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'nw')"></span>

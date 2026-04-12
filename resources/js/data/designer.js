@@ -291,6 +291,7 @@ export const initialDesignerState = {
         extra: '',
     },
     elementLayout: {
+        background: { backgroundColor: '#4338ca' },
         title: { x: 28, y: 72, w: 300, zIndex: 50, fontSize: 44, color: '#ffffff', shadow: true, border: false, fontFamily: 'Poppins, sans-serif', opacity: 100, fontWeight: 'bold', italic: false, uppercase: false, textAlign: 'left', letterSpacing: 0, lineHeight: 0.95, shadowPreset: 'soft', shadowColor: '#0f172a', contourWidth: 0, contourColor: '#ffffff', neonColor: '', bubbleColor: '', backgroundColor: 'transparent' },
         subtitle: { x: 32, y: 186, w: 280, zIndex: 40, fontSize: 18, color: '#f8fafc', shadow: false, border: false, fontFamily: 'Inter, sans-serif', opacity: 100, fontWeight: 'regular', italic: false, uppercase: false, textAlign: 'left', letterSpacing: 0, lineHeight: 1.45, shadowPreset: 'soft', shadowColor: '#0f172a', contourWidth: 0, contourColor: '#ffffff', neonColor: '', bubbleColor: '', backgroundColor: 'transparent' },
         meta: { x: 36, y: 336, w: 250, zIndex: 30, fontSize: 16, color: '#ffffff', shadow: false, border: false, fontFamily: 'Inter, sans-serif', opacity: 100, fontWeight: 'bold', italic: false, uppercase: false, textAlign: 'left', letterSpacing: 0, lineHeight: 1.3, shadowPreset: 'soft', shadowColor: '#0f172a', contourWidth: 0, contourColor: '#ffffff', neonColor: '', bubbleColor: '', backgroundColor: 'transparent' },
