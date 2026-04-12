@@ -1948,22 +1948,24 @@ const onRichEditorSelectionChange = (id, { paragraphIndex, selectedIndexes }) =>
 
 const onRichEditorTextUpdate = (id, newText) => {
     if (!state.elementLayout[id]) return;
+  const normalizedText = newText == null ? '' : String(newText);
+
     switch (id) {
         case 'title':
         case 'subtitle':
         case 'contact':
         case 'extra':
-            state.content[id] = newText;
+      state.content[id] = normalizedText;
             break;
         case 'meta': {
-            const parts = newText.split('\n');
+      const parts = normalizedText.split('\n');
             state.content.date = (parts[0] ?? '').trim();
             state.content.time = (parts[1] ?? '').trim();
             break;
         }
         default:
           if (state.customElements?.[id]?.type === 'text') {
-            state.customElements[id].text = newText;
+      state.customElements[id].text = normalizedText;
           }
     }
 };
@@ -2000,6 +2002,17 @@ const beginTextEdit = async (id, focusToEnd = false) => {
 
 const commitTextEdit = () => {
     if (!editingElementId.value) return;
+
+    const id = editingElementId.value;
+    const editorRef = richEditorRefs.value[id];
+
+    if (editorRef?.getPlainText) {
+      onRichEditorTextUpdate(id, editorRef.getPlainText());
+    }
+
+    if (editorRef?.getParagraphStyles) {
+      onRichEditorStylesUpdate(id, editorRef.getParagraphStyles());
+    }
 
     paragraphSelection.start = selectedParagraphIndex.value;
     paragraphSelection.end = selectedParagraphIndex.value;

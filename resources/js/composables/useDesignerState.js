@@ -8,6 +8,8 @@ const BASE_LAYOUT_KEYS = new Set(['background', 'title', 'subtitle', 'meta', 'co
 let designerState;
 let persistenceBootstrapped = false;
 let saveTimer;
+let saveInFlight = false;
+let queuedSave = null;
 
 export function useDesignerState() {
     const page = usePage();
@@ -132,7 +134,7 @@ function bootstrapPersistence(saveEndpoint) {
                 try {
                     const snapshot = JSON.parse(JSON.stringify(designerState));
                     delete snapshot.userUploadedImages;
-                    await axios.put(saveEndpoint, { state: snapshot });
+                    await persistStateSnapshot(saveEndpoint, snapshot);
                 } catch (error) {
                     console.error('Failed to persist designer session state', error);
                 }
@@ -140,4 +142,24 @@ function bootstrapPersistence(saveEndpoint) {
         },
         { deep: true }
     );
+}
+
+async function persistStateSnapshot(saveEndpoint, snapshot) {
+    queuedSave = { saveEndpoint, snapshot };
+
+    if (saveInFlight) {
+        return;
+    }
+
+    saveInFlight = true;
+
+    try {
+        while (queuedSave) {
+            const next = queuedSave;
+            queuedSave = null;
+            await axios.put(next.saveEndpoint, { state: next.snapshot });
+        }
+    } finally {
+        saveInFlight = false;
+    }
 }

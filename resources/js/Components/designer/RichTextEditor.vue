@@ -217,8 +217,18 @@ const focusAtEnd = () => {
     editor.value.commands.focus('end');
 };
 
+const getPlainText = () => {
+    if (!editor.value) return '';
+    return extractFromDoc(editor.value.state.doc).text;
+};
+
+const getParagraphStyles = () => {
+    if (!editor.value) return [];
+    return extractFromDoc(editor.value.state.doc).styles;
+};
+
 // Expone API para que EditorPage pueda llamar
-defineExpose({ applyStyle, applyStyleAll, getActiveAttrs, focusAtEnd });
+defineExpose({ applyStyle, applyStyleAll, getActiveAttrs, focusAtEnd, getPlainText, getParagraphStyles });
 
 // Cuando cambia el prop editable, actualizar el editor
 watch(() => props.editable, (val) => {

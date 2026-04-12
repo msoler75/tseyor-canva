@@ -107,7 +107,7 @@ class DesignerController extends Controller
             'state.elementLayout.*.shadowOffset' => ['nullable', 'numeric', 'between:0,200'],
             'state.elementLayout.*.shadowBlur' => ['nullable', 'numeric', 'between:0,200'],
             'state.elementLayout.*.shadowOpacity' => ['nullable', 'numeric', 'between:0,100'],
-            'state.elementLayout.*.contourWidth' => ['nullable', 'numeric', 'between:0,12'],
+            'state.elementLayout.*.contourWidth' => ['nullable', 'numeric', 'between:0,100'],
             'state.elementLayout.*.contourColor' => ['nullable', 'string', 'max:32'],
             'state.elementLayout.*.neonColor' => ['nullable', 'string', 'max:32'],
             'state.elementLayout.*.neonIntensity' => ['nullable', 'numeric', 'between:0,100'],
