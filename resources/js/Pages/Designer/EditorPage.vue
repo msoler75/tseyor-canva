@@ -1,20 +1,21 @@
 ﻿<script setup>
 import { Icon } from '@iconify/vue';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
-import StepFooter from '../../Components/designer/StepFooter.vue';
 import RichTextEditor from '../../Components/designer/RichTextEditor.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { objectiveRecommendations } from '../../data/designer';
 import { useDesignerState } from '../../composables/useDesignerState';
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const state = useDesignerState();
-if (!state.customElements) {
-  state.customElements = {};
+if (!state.customElements || Array.isArray(state.customElements)) {
+  state.customElements = Object.fromEntries(Object.entries(state.customElements ?? {}));
 }
 if (!state.userUploadedImages) {
   state.userUploadedImages = [];
 }
 const canvasRef = ref(null);
+const zoomLevel = ref(100);
 const imageInputRef = ref(null);
 const imageUrlInput = ref('');
 const imagePanelOpen = ref(false);
@@ -112,6 +113,8 @@ const textEffectOptions = [
   { id: 'distort', label: 'Distorsion' },
 ];
 const textEffectCardFontFamily = '"Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif';
+const BASE_CANVAS_SHORT_SIDE = 368;
+const BASE_CANVAS_LONG_SIDE = 620;
 const shapeGradientOptions = [
   { id: 'g1', start: '#0ea5e9', end: '#8b5cf6' },
   { id: 'g2', start: '#22c55e', end: '#0ea5e9' },
@@ -1010,10 +1013,101 @@ const isAspectLockedResizeElement = (id) => {
 };
 
 const getMaxZIndex = () => Object.values(state.elementLayout).reduce((max, layout) => Math.max(max, layout?.zIndex ?? 0), 0);
-const getCanvasBounds = () => ({
-  width: canvasRef.value?.clientWidth ?? 360,
-  height: canvasRef.value?.clientHeight ?? 620,
+const resolvedSizeOption = computed(() => {
+  const objectiveRules = objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic;
+  const options = objectiveRules[state.outputType] ?? [];
+  return options.find((option) => option.label === state.size) ?? null;
 });
+const selectedSizeDetail = computed(() => resolvedSizeOption.value?.detail ?? '1080 × 1080 px');
+const parseSizeDetail = (detail) => {
+  if (!detail) return null;
+
+  const normalized = String(detail).replace(',', '.').trim();
+  const pxMatch = normalized.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*px/i);
+  if (pxMatch) {
+    return { width: Number(pxMatch[1]), height: Number(pxMatch[2]) };
+  }
+
+  const cmMatch = normalized.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*cm/i);
+  if (cmMatch) {
+    return { width: Number(cmMatch[1]), height: Number(cmMatch[2]) };
+  }
+
+  return null;
+};
+const editorCanvasDimensions = computed(() => {
+  const parsed = parseSizeDetail(selectedSizeDetail.value);
+  if (parsed?.width > 0 && parsed?.height > 0) {
+    const ratio = parsed.width / parsed.height;
+    if (ratio >= 0.95 && ratio <= 1.05) {
+      return {
+        width: 500,
+        height: 500,
+      };
+    }
+
+    if (ratio > 1) {
+      return {
+        width: BASE_CANVAS_LONG_SIDE,
+        height: Math.max(300, Math.min(BASE_CANVAS_LONG_SIDE, Math.round(BASE_CANVAS_LONG_SIDE / ratio))),
+      };
+    }
+
+    return {
+      width: Math.max(300, Math.min(BASE_CANVAS_LONG_SIDE, Math.round(BASE_CANVAS_LONG_SIDE * ratio))),
+      height: BASE_CANVAS_LONG_SIDE,
+    };
+  }
+
+  if (state.format === 'horizontal') {
+    return { width: BASE_CANVAS_LONG_SIDE, height: BASE_CANVAS_SHORT_SIDE };
+  }
+
+  if (state.format === 'square') {
+    return { width: 500, height: 500 };
+  }
+
+  return { width: BASE_CANVAS_SHORT_SIDE, height: BASE_CANVAS_LONG_SIDE };
+});
+const canvasGridStyle = computed(() => ({
+  minHeight: `${editorCanvasDimensions.value.height + 96}px`,
+}));
+const editorGridStyle = computed(() => ({
+  gridTemplateColumns: optionsPanelOpen.value ? '70px 320px 1fr' : '70px 1fr',
+}));
+const canvasFrameStyle = computed(() => ({
+  width: `${editorCanvasDimensions.value.width + 32}px`,
+  maxWidth: '100%',
+}));
+const canvasZoomStyle = computed(() => ({
+  transform: `scale(${zoomLevel.value / 100})`,
+  transformOrigin: 'top center',
+}));
+const zoomScale = computed(() => Math.max(0.25, zoomLevel.value / 100));
+const controlZoomStyle = computed(() => ({
+  transform: `scale(${Math.max(0.1, Math.min(4, 100 / zoomLevel.value))})`,
+  transformOrigin: 'center center',
+}));
+const canvasElementStyle = computed(() => ({
+  width: `${editorCanvasDimensions.value.width}px`,
+  height: `${editorCanvasDimensions.value.height}px`,
+}));
+const setZoomLevel = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return;
+  zoomLevel.value = Math.round(clamp(parsed, 25, 200));
+};
+const getCanvasBounds = () => ({
+  width: canvasRef.value?.clientWidth ?? editorCanvasDimensions.value.width,
+  height: canvasRef.value?.clientHeight ?? editorCanvasDimensions.value.height,
+});
+const getInsertX = (elementWidth = 280) => {
+  const bounds = getCanvasBounds();
+  const width = Math.max(40, elementWidth);
+  const maxX = Math.max(0, bounds.width - width - 8);
+  const centeredX = Math.round((bounds.width - width) / 2);
+  return Math.round(clamp(centeredX, 0, maxX));
+};
 const createElementId = (prefix) => {
   const suffix = Math.random().toString(36).slice(2, 9);
   return `${prefix}-${Date.now().toString(36)}-${suffix}`;
@@ -1083,7 +1177,7 @@ const addTextElement = (presetId) => {
     lineHeight: preset.lineHeight,
     color: '#ffffff',
     shadow: presetId === 'heading',
-    x: 28,
+    x: getInsertX(preset.width),
     y: 90,
     paragraphStyles: [{
       fontSize: preset.fontSize,
@@ -1099,12 +1193,19 @@ const addTextElement = (presetId) => {
   });
 
   placeInsideCanvas(layout);
-  state.customElements[id] = {
+  state.customElements = {
+    ...(state.customElements ?? {}),
+    [id]: {
+    id,
     type: 'text',
     label: preset.label,
     text: preset.preview,
+    },
   };
-  state.elementLayout[id] = layout;
+  state.elementLayout = {
+    ...(state.elementLayout ?? {}),
+    [id]: layout,
+  };
   state.selectedElementId = id;
 };
 
@@ -1142,19 +1243,26 @@ const addImageElementFromSrc = (src, label = 'Imagen') => {
   const layout = buildDefaultLayout({
     w: 220,
     h: 160,
-    x: 36,
+    x: getInsertX(220),
     y: 120,
     backgroundColor: '#ffffff',
     color: '#ffffff',
   });
 
   placeInsideCanvas(layout);
-  state.customElements[id] = {
+  state.customElements = {
+    ...(state.customElements ?? {}),
+    [id]: {
+    id,
     type: 'image',
     label,
     src,
+    },
   };
-  state.elementLayout[id] = layout;
+  state.elementLayout = {
+    ...(state.elementLayout ?? {}),
+    [id]: layout,
+  };
   state.selectedElementId = id;
   closeImagePanel();
 };
@@ -1214,7 +1322,7 @@ const addShapeElement = (shapeKind) => {
     // El rectángulo base nace cuadrado; luego el usuario puede deformarlo libremente.
     w: isRectangle ? 140 : 140,
     h: isRectangle ? 140 : 140,
-    x: 44,
+    x: getInsertX(140),
     y: 150,
     backgroundColor: isRoundedFrame ? 'transparent' : '#38bdf8',
     opacity: 90,
@@ -1226,12 +1334,19 @@ const addShapeElement = (shapeKind) => {
   placeInsideCanvas(layout);
 
   const id = createElementId('shape');
-  state.customElements[id] = {
+  state.customElements = {
+    ...(state.customElements ?? {}),
+    [id]: {
+    id,
     type: 'shape',
     label: shape.label,
     shapeKind,
+    },
   };
-  state.elementLayout[id] = layout;
+  state.elementLayout = {
+    ...(state.elementLayout ?? {}),
+    [id]: layout,
+  };
   state.selectedElementId = id;
 };
 
@@ -2362,6 +2477,9 @@ const startResize = (event, id, handle) => {
 const moveDrag = (event) => {
   if (selectionMarquee.active && selectionMarquee.pointerId === event.pointerId && canvasRef.value) {
     const rect = canvasRef.value.getBoundingClientRect();
+    const logicalBounds = getCanvasBounds();
+    const boundsWidth = logicalBounds.width;
+    const boundsHeight = logicalBounds.height;
     selectionMarquee.currentX = clamp(event.clientX - rect.left, 0, rect.width);
     selectionMarquee.currentY = clamp(event.clientY - rect.top, 0, rect.height);
     updateSelectionMarqueePreview();
@@ -2435,6 +2553,9 @@ const moveDrag = (event) => {
     }
 
     const rect = canvasRef.value.getBoundingClientRect();
+    const logicalBounds = getCanvasBounds();
+    const boundsWidth = logicalBounds.width;
+    const boundsHeight = logicalBounds.height;
     const layout = drag.groupId ? groupedElements[drag.groupId]?.layout : state.elementLayout[drag.elementId];
     const isText = drag.groupId ? false : isTextElement(drag.elementId);
     if (!layout) return;
@@ -2444,8 +2565,8 @@ const moveDrag = (event) => {
       if (!group) return;
 
       if (drag.mode === 'move') {
-        const deltaX = event.clientX - drag.startClientX;
-        const deltaY = event.clientY - drag.startClientY;
+        const deltaX = (event.clientX - drag.startClientX) / zoomScale.value;
+        const deltaY = (event.clientY - drag.startClientY) / zoomScale.value;
         const nextX = Math.round(drag.startX + deltaX);
         const nextY = Math.round(drag.startY + deltaY);
         const shiftX = nextX - group.layout.x;
@@ -2467,8 +2588,8 @@ const moveDrag = (event) => {
         if (event.cancelable) event.preventDefault();
         const snapshot = drag.groupSnapshot;
         if (!snapshot) return;
-        const deltaX = event.clientX - drag.startClientX;
-        const deltaY = event.clientY - drag.startClientY;
+        const deltaX = (event.clientX - drag.startClientX) / zoomScale.value;
+        const deltaY = (event.clientY - drag.startClientY) / zoomScale.value;
         const handle = drag.handle ?? 'se';
         const minSize = 40;
         let nextX = snapshot.x;
@@ -2478,17 +2599,17 @@ const moveDrag = (event) => {
 
         if (handle === 'n-width' || handle === 's-width') {
           if (handle === 's-width') {
-            nextH = clamp(Math.round(snapshot.h + deltaY), minSize, rect.height - 8);
+            nextH = clamp(Math.round(snapshot.h + deltaY), minSize, boundsHeight - 8);
           } else {
-            nextH = clamp(Math.round(snapshot.h - deltaY), minSize, rect.height - 8);
+            nextH = clamp(Math.round(snapshot.h - deltaY), minSize, boundsHeight - 8);
             nextY = snapshot.y + (snapshot.h - nextH);
           }
         } else {
           if (handle.includes('e')) {
-            nextW = clamp(Math.round(snapshot.w + deltaX), minSize, rect.width - 8);
+            nextW = clamp(Math.round(snapshot.w + deltaX), minSize, boundsWidth - 8);
           }
           if (handle.includes('w')) {
-            nextW = clamp(Math.round(snapshot.w - deltaX), minSize, rect.width - 8);
+            nextW = clamp(Math.round(snapshot.w - deltaX), minSize, boundsWidth - 8);
             nextX = snapshot.x + (snapshot.w - nextW);
           }
         }
@@ -2498,16 +2619,16 @@ const moveDrag = (event) => {
           nextY = snapshot.y;
         } else if (handle !== 'n-width' && handle !== 's-width') {
           if (handle.includes('s')) {
-            nextH = clamp(Math.round(snapshot.h + deltaY), minSize, rect.height - 8);
+            nextH = clamp(Math.round(snapshot.h + deltaY), minSize, boundsHeight - 8);
           }
           if (handle.includes('n')) {
-            nextH = clamp(Math.round(snapshot.h - deltaY), minSize, rect.height - 8);
+            nextH = clamp(Math.round(snapshot.h - deltaY), minSize, boundsHeight - 8);
             nextY = snapshot.y + (snapshot.h - nextH);
           }
         }
 
-        nextX = clamp(Math.round(nextX), 0, Math.max(0, rect.width - nextW - 8));
-        nextY = clamp(Math.round(nextY), 18, Math.max(18, rect.height - nextH - 8));
+        nextX = clamp(Math.round(nextX), 0, Math.max(0, boundsWidth - nextW - 8));
+        nextY = clamp(Math.round(nextY), 18, Math.max(18, boundsHeight - nextH - 8));
 
         const sx = nextW / Math.max(1, snapshot.w);
         const sy = nextH / Math.max(1, snapshot.h);
@@ -2578,8 +2699,8 @@ const moveDrag = (event) => {
     }
 
     if (drag.mode === 'rotate') {
-      const dx = event.clientX - drag.lastClientX;
-      const dy = event.clientY - drag.lastClientY;
+      const dx = (event.clientX - drag.lastClientX) / zoomScale.value;
+      const dy = (event.clientY - drag.lastClientY) / zoomScale.value;
       const currentRotation = Number(layout.rotation ?? 0);
       const theta = (currentRotation * Math.PI) / 180;
 
@@ -2600,12 +2721,13 @@ const moveDrag = (event) => {
 
     if (drag.mode === 'resize') {
         if (event.cancelable) event.preventDefault();
-        const deltaX = event.clientX - drag.startClientX;
-        const deltaY = event.clientY - drag.startClientY;
+      const deltaX = (event.clientX - drag.startClientX) / zoomScale.value;
+      const deltaY = (event.clientY - drag.startClientY) / zoomScale.value;
         const handle = drag.handle ?? 'se';
         const isSideHandle = handle === 'e' || handle === 'w';
         const isVerticalBarHandle = handle === 'n-width' || handle === 's-width';
         const horizontalDelta = handle.includes('e') ? deltaX : -deltaX;
+      const maxTextWidth = Math.max(120, boundsWidth - 8);
 
       if (!isText) {
             const currentHeight = drag.startH || layout.h || 140;
@@ -2618,9 +2740,9 @@ const moveDrag = (event) => {
           layout.h = nextHeight;
 
           if (handle === 'n-width') {
-            layout.y = Math.round(clamp(drag.startY + (currentHeight - nextHeight), 18, Math.max(18, rect.height - nextHeight - 8)));
+            layout.y = Math.round(clamp(drag.startY + (currentHeight - nextHeight), 18, Math.max(18, boundsHeight - nextHeight - 8)));
           } else {
-            layout.y = Math.round(clamp(drag.startY, 18, Math.max(18, rect.height - nextHeight - 8)));
+            layout.y = Math.round(clamp(drag.startY, 18, Math.max(18, boundsHeight - nextHeight - 8)));
           }
           return;
         }
@@ -2630,9 +2752,9 @@ const moveDrag = (event) => {
           layout.w = nextWidth;
 
           if (handle === 'w') {
-            layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, rect.width - nextWidth - 8)));
+            layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, boundsWidth - nextWidth - 8)));
           } else {
-            layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, rect.width - nextWidth - 8)));
+            layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, boundsWidth - nextWidth - 8)));
           }
 
           return;
@@ -2656,34 +2778,34 @@ const moveDrag = (event) => {
         layout.h = nextHeight;
 
         if (handle.includes('w')) {
-          layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, rect.width - nextWidth - 8)));
+          layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, boundsWidth - nextWidth - 8)));
         } else {
-          layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, rect.width - nextWidth - 8)));
+          layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, boundsWidth - nextWidth - 8)));
         }
         if (handle.includes('n')) {
-          layout.y = Math.round(clamp(drag.startY + (currentHeight - nextHeight), 18, Math.max(18, rect.height - nextHeight - 8)));
+          layout.y = Math.round(clamp(drag.startY + (currentHeight - nextHeight), 18, Math.max(18, boundsHeight - nextHeight - 8)));
         } else {
-          layout.y = Math.round(clamp(drag.startY, 18, Math.max(18, rect.height - nextHeight - 8)));
+          layout.y = Math.round(clamp(drag.startY, 18, Math.max(18, boundsHeight - nextHeight - 8)));
         }
 
         return;
       }
 
         if (isSideHandle) {
-            const nextWidth = clamp(Math.round(drag.startW + horizontalDelta), 120, 340);
+          const nextWidth = clamp(Math.round(drag.startW + horizontalDelta), 120, maxTextWidth);
             layout.w = nextWidth;
 
             if (handle === 'w') {
-                layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, rect.width - nextWidth - 8)));
+                layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, boundsWidth - nextWidth - 8)));
             } else {
-                layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, rect.width - nextWidth - 8)));
+                layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, boundsWidth - nextWidth - 8)));
             }
 
             return;
         }
 
         const widthDelta = horizontalDelta + (deltaY * 0.35);
-        const nextWidth = clamp(Math.round(drag.startW + widthDelta), 120, 340);
+        const nextWidth = clamp(Math.round(drag.startW + widthDelta), 120, maxTextWidth);
         const scale = nextWidth / Math.max(drag.startW, 1);
 
         layout.w = nextWidth;
@@ -2694,17 +2816,17 @@ const moveDrag = (event) => {
                 fontSize: clamp(Math.round((style.fontSize ?? drag.startFontSize) * scale), 8, 200),
             }));
 
-        if (handle.includes('w')) layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, rect.width - nextWidth - 8)));
-        else layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, rect.width - nextWidth - 8)));
+        if (handle.includes('w')) layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, boundsWidth - nextWidth - 8)));
+        else layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, boundsWidth - nextWidth - 8)));
 
-        if (handle.includes('n')) layout.y = Math.round(clamp(drag.startY - ((layout.fontSize - drag.startFontSize) * 0.6), 18, Math.max(18, rect.height - 44)));
+        if (handle.includes('n')) layout.y = Math.round(clamp(drag.startY - ((layout.fontSize - drag.startFontSize) * 0.6), 18, Math.max(18, boundsHeight - 44)));
         return;
     }
 
     if (drag.mode === 'multi') {
       if (!drag.multiSnapshot) return;
-      const deltaX = event.clientX - drag.startClientX;
-      const deltaY = event.clientY - drag.startClientY;
+      const deltaX = (event.clientX - drag.startClientX) / zoomScale.value;
+      const deltaY = (event.clientY - drag.startClientY) / zoomScale.value;
       drag.multiSnapshot.forEach(({ id: elId, startX, startY }) => {
         const l = state.elementLayout[elId];
         if (!l) return;
@@ -2715,8 +2837,8 @@ const moveDrag = (event) => {
       return;
     }
 
-    const deltaX = event.clientX - drag.startClientX;
-    const deltaY = event.clientY - drag.startClientY;
+    const deltaX = (event.clientX - drag.startClientX) / zoomScale.value;
+    const deltaY = (event.clientY - drag.startClientY) / zoomScale.value;
     layout.x = Math.round(drag.startX + deltaX);
     layout.y = Math.round(drag.startY + deltaY);
     if (event.cancelable) event.preventDefault();
@@ -2925,11 +3047,56 @@ watch(selectedGroupId, (groupId) => {
     :current-step="currentStep"
     :steps="steps"
     :show-steps="false"
+    :show-header="false"
+    :full-height="true"
     :dark-mode="state.darkMode"
     @toggle-dark="state.darkMode = !state.darkMode"
   >
-    <section class="relative glass soft-shadow rounded-[32px] border border-white/70 p-6 sm:p-8 dark:border-slate-700/70">
-      <div class="overflow-hidden rounded-[32px] border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+    <div class="flex h-full min-h-0 flex-col overflow-hidden bg-base-100">
+    <nav class="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-4 py-3 shadow-sm">
+      <div class="flex items-center gap-2">
+        <span class="rounded-xl bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">Editor</span>
+        <span class="text-sm text-base-content/65">{{ state.size || 'Tamaño no definido' }}</span>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2 rounded-xl border border-base-300 px-3 py-2">
+          <span class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">Zoom</span>
+          <input
+            :value="zoomLevel"
+            type="range"
+            min="25"
+            max="200"
+            step="5"
+            class="range range-primary h-2 w-28"
+            @input="setZoomLevel($event.target.value)"
+          />
+          <input
+            :value="zoomLevel"
+            type="number"
+            min="25"
+            max="200"
+            step="5"
+            class="input input-bordered input-sm w-20"
+            @input="setZoomLevel($event.target.value)"
+          />
+          <span class="text-xs text-base-content/60">%</span>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-sm btn-outline rounded-full"
+          @click="state.darkMode = !state.darkMode"
+        >
+          {{ state.darkMode ? '☀️ Modo claro' : '🌙 Modo oscuro' }}
+        </button>
+
+        <a href="/designer/export" class="btn btn-sm btn-primary rounded-full">Exportar</a>
+      </div>
+    </nav>
+
+    <section class="relative min-h-0 flex-1 overflow-hidden">
+      <div class="h-full overflow-hidden border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div
           v-if="hasSelection && !hasMultiSelection && !isGroupSelection && state.selectedElementId !== 'background'"
           data-editor-keep-selection="true"
@@ -2964,7 +3131,7 @@ watch(selectedGroupId, (groupId) => {
           </div>
         </div>
 
-        <div class="relative grid gap-0" style="gridTemplateColumns: 70px 1fr">
+        <div class="relative grid h-full min-h-0 gap-0" :style="editorGridStyle">
           <!-- Panel de Creación (vertical, siempre visible) -->
           <div class="flex flex-col items-center gap-2 border-r border-base-300 bg-base-100 p-3 xl:border-b-0">
             <button
@@ -3016,7 +3183,7 @@ watch(selectedGroupId, (groupId) => {
           </div>
 
           <!-- Panel de Opciones (condicionalmente visible) -->
-          <aside v-if="optionsPanelOpen" data-editor-keep-selection="true" class="absolute top-0 z-40 w-80 border-r border-base-300 bg-base-100 p-5 overflow-y-auto" style="left: 70px; max-height: calc(100vh - 200px)">
+          <aside v-if="optionsPanelOpen" data-editor-keep-selection="true" class="relative z-40 h-full w-80 border-r border-base-300 bg-base-100 p-5 overflow-y-auto">
             <div class="space-y-5">
               <div>
                 <div class="flex items-start justify-between gap-3">
@@ -3883,9 +4050,9 @@ watch(selectedGroupId, (groupId) => {
             </div>
           </aside>
 
-          <div class="canvas-grid min-h-[680px] bg-slate-100 px-6 pt-12 pb-6 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10">
-            <div class="mx-auto max-w-[400px] bg-white p-4 shadow-2xl dark:bg-slate-900" :class="state.selectedElementId === 'background' ? 'ring-2 ring-primary' : ''">
-              <div ref="canvasRef" class="relative h-[620px] overflow-visible p-7 text-white select-none touch-none" :style="canvasBackgroundStyle" @pointerdown="handleCanvasPointerDown">
+          <div class="canvas-grid h-full overflow-auto bg-slate-100 px-6 pt-12 pb-6 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10" :style="canvasGridStyle">
+            <div class="mx-auto bg-white p-4 shadow-2xl dark:bg-slate-900" :style="[canvasFrameStyle, canvasZoomStyle]" :class="state.selectedElementId === 'background' ? 'ring-2 ring-primary' : ''">
+              <div ref="canvasRef" class="relative overflow-visible p-7 text-white select-none touch-none" :style="{ ...canvasBackgroundStyle, ...canvasElementStyle }" @pointerdown="handleCanvasPointerDown">
 
                 <div
                   v-for="item in editorElements"
@@ -3958,7 +4125,7 @@ watch(selectedGroupId, (groupId) => {
                   class="pointer-events-none absolute"
                   :style="selectedActionBarStyle"
                 >
-                  <div class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90 text-base-content">
+                  <div class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90 text-base-content" :style="controlZoomStyle">
                     <div class="flex items-center gap-1 p-1.5">
                     <button
                       v-if="multiSelectionIds.length > 1"
@@ -4012,6 +4179,7 @@ watch(selectedGroupId, (groupId) => {
                     data-editor-control="true"
                     type="button"
                     class="pointer-events-auto absolute -bottom-12 left-1/2 z-40 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border-2 border-white bg-cyan-300 text-slate-950 shadow-md touch-none"
+                    :style="controlZoomStyle"
                     title="Girar elemento"
                     @pointerdown="startRotate($event, overlayControlTargetId)"
                     @dblclick.stop.prevent="resetRotation(overlayControlTargetId)"
@@ -4022,22 +4190,22 @@ watch(selectedGroupId, (groupId) => {
                     v-if="overlayControlTargetId && (isGroupSelection || (!hasMultiSelection && selectedElementType !== 'text'))"
                     data-editor-control="true"
                     class="pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 cursor-ns-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
-                    :style="{ top: selectedHandleMetrics.barOffset, width: selectedHandleMetrics.barLength, height: selectedHandleMetrics.barThickness }"
+                    :style="{ top: selectedHandleMetrics.barOffset, width: selectedHandleMetrics.barLength, height: selectedHandleMetrics.barThickness, ...controlZoomStyle }"
                     @pointerdown="startResize($event, overlayControlTargetId, 'n-width')"
                   ></span>
                   <span
                     v-if="overlayControlTargetId && (isGroupSelection || (!hasMultiSelection && selectedElementType !== 'text'))"
                     data-editor-control="true"
                     class="pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 cursor-ns-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
-                    :style="{ bottom: selectedHandleMetrics.barOffset, width: selectedHandleMetrics.barLength, height: selectedHandleMetrics.barThickness }"
+                    :style="{ bottom: selectedHandleMetrics.barOffset, width: selectedHandleMetrics.barLength, height: selectedHandleMetrics.barThickness, ...controlZoomStyle }"
                     @pointerdown="startResize($event, overlayControlTargetId, 's-width')"
                   ></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute top-1/2 z-30 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.sideOffset, width: selectedHandleMetrics.sideThickness, height: selectedHandleMetrics.sideLength }" @pointerdown="startResize($event, overlayControlTargetId, 'w')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute top-1/2 z-30 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.sideOffset, width: selectedHandleMetrics.sideThickness, height: selectedHandleMetrics.sideLength }" @pointerdown="startResize($event, overlayControlTargetId, 'e')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.cornerOffset, top: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize }" @pointerdown="startResize($event, overlayControlTargetId, 'nw')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.cornerOffset, top: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize }" @pointerdown="startResize($event, overlayControlTargetId, 'ne')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.cornerOffset, bottom: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize }" @pointerdown="startResize($event, overlayControlTargetId, 'sw')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.cornerOffset, bottom: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize }" @pointerdown="startResize($event, overlayControlTargetId, 'se')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute top-1/2 z-30 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.sideOffset, width: selectedHandleMetrics.sideThickness, height: selectedHandleMetrics.sideLength, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'w')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute top-1/2 z-30 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.sideOffset, width: selectedHandleMetrics.sideThickness, height: selectedHandleMetrics.sideLength, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'e')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.cornerOffset, top: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'nw')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.cornerOffset, top: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'ne')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.cornerOffset, bottom: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'sw')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.cornerOffset, bottom: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'se')"></span>
                 </div>
                 <div v-if="selectionMarquee.active" class="pointer-events-none absolute border border-cyan-200/90 bg-cyan-200/20" :style="marqueeRectStyle"></div>
                 <div class="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-cyan-200/30"></div>
@@ -4046,8 +4214,8 @@ watch(selectedGroupId, (groupId) => {
           </div>
         </div>
       </div>
-      <StepFooter :previous-url="navigation.previous" :next-url="navigation.next" />
     </section>
+    </div>
   </DesignerLayout>
 </template>
 

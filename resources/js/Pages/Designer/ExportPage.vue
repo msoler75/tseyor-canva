@@ -10,10 +10,8 @@ import { useDesignerState } from '../../composables/useDesignerState';
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const state = useDesignerState();
 
-// Debe coincidir con el ancho efectivo del canvas en EditorPage:
-// max-w 400 + padding 4 en contenedor externo => 400 - 32 = 368.
-const BASE_CANVAS_WIDTH = 368;
-const BASE_CANVAS_HEIGHT = 620;
+const BASE_CANVAS_SHORT_SIDE = 368;
+const BASE_CANVAS_LONG_SIDE = 620;
 const baseTextElementIds = new Set(['title', 'subtitle', 'meta', 'contact', 'extra']);
 const dpiOptions = [
     { value: 72, label: '72 DPI', helper: 'Web / borrador' },
@@ -86,6 +84,42 @@ const resolvedSizeOption = computed(() => {
 });
 
 const selectedSizeDetail = computed(() => resolvedSizeOption.value?.detail ?? '1080 × 1080 px');
+const baseCanvasDimensions = computed(() => {
+    const parsed = parseSizeDetail(selectedSizeDetail.value);
+
+    if (parsed?.width > 0 && parsed?.height > 0) {
+        const ratio = parsed.width / parsed.height;
+
+        if (ratio >= 0.95 && ratio <= 1.05) {
+            return {
+                width: 500,
+                height: 500,
+            };
+        }
+
+        if (ratio > 1) {
+            return {
+                width: BASE_CANVAS_LONG_SIDE,
+                height: Math.max(300, Math.min(BASE_CANVAS_LONG_SIDE, Math.round(BASE_CANVAS_LONG_SIDE / ratio))),
+            };
+        }
+
+        return {
+            width: Math.max(300, Math.min(BASE_CANVAS_LONG_SIDE, Math.round(BASE_CANVAS_LONG_SIDE * ratio))),
+            height: BASE_CANVAS_LONG_SIDE,
+        };
+    }
+
+    if (state.format === 'horizontal') {
+        return { width: BASE_CANVAS_LONG_SIDE, height: BASE_CANVAS_SHORT_SIDE };
+    }
+
+    if (state.format === 'square') {
+        return { width: 500, height: 500 };
+    }
+
+    return { width: BASE_CANVAS_SHORT_SIDE, height: BASE_CANVAS_LONG_SIDE };
+});
 
 const targetDimensions = computed(() => resolveTargetDimensions(selectedSizeDetail.value, selectedDpi.value));
 
@@ -693,12 +727,14 @@ async function getExportFontEmbedCss() {
 
 async function buildRendererOptions(width, height) {
     const fontEmbedCSS = await getExportFontEmbedCss();
-    const scale = Math.max(width / BASE_CANVAS_WIDTH, height / BASE_CANVAS_HEIGHT);
+    const baseWidth = baseCanvasDimensions.value.width;
+    const baseHeight = baseCanvasDimensions.value.height;
+    const scale = Math.max(width / baseWidth, height / baseHeight);
     return {
         cacheBust: true,
         pixelRatio: scale,
-        width: BASE_CANVAS_WIDTH,
-        height: BASE_CANVAS_HEIGHT,
+        width: baseWidth,
+        height: baseHeight,
         backgroundColor: null,
         preferredFontFormat: 'woff2',
         // Embebe archivos de fuente como data URI para mantener fidelidad tipografica.
@@ -729,7 +765,7 @@ async function renderGeneratedCanvasPreview() {
             await document.fonts.ready;
         }
 
-        const rendererOptions = await buildRendererOptions(BASE_CANVAS_WIDTH, BASE_CANVAS_HEIGHT);
+        const rendererOptions = await buildRendererOptions(baseCanvasDimensions.value.width, baseCanvasDimensions.value.height);
         const canvas = await toCanvas(exportPreviewRef.value, rendererOptions);
         if (runId !== previewRenderSeq) return;
         mountPreviewCanvas(canvas);
@@ -937,7 +973,7 @@ watch(() => state.elementLayout, () => {
                     <div
                         ref="exportPreviewRef"
                         class="relative overflow-hidden p-7 text-white"
-                        :style="{ ...canvasBackgroundStyle, width: `${BASE_CANVAS_WIDTH}px`, height: `${BASE_CANVAS_HEIGHT}px` }"
+                        :style="{ ...canvasBackgroundStyle, width: `${baseCanvasDimensions.width}px`, height: `${baseCanvasDimensions.height}px` }"
                     >
                         <div
                             v-for="item in editorElements"

@@ -17,6 +17,14 @@ const props = defineProps({
         type: Boolean,
         default: true,
     },
+    showHeader: {
+        type: Boolean,
+        default: true,
+    },
+    fullHeight: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const emit = defineEmits(['toggle-dark']);
@@ -33,9 +41,9 @@ watch(() => props.darkMode, syncTheme);
 <template>
     <Head :title="title" />
 
-    <div class="min-h-screen bg-base-100 text-base-content">
-        <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
-            <header class="card glass soft-shadow sticky top-4 z-30 mb-8 border border-base-300/60 bg-base-100/85 text-base-content">
+    <div :class="props.fullHeight ? 'h-screen overflow-hidden bg-base-100 text-base-content' : 'min-h-screen bg-base-100 text-base-content'">
+        <div :class="props.fullHeight ? 'mx-auto h-full w-full' : 'mx-auto w-full px-4 py-6 sm:px-6 lg:px-8'">
+            <header v-if="showHeader" class="card glass soft-shadow sticky top-4 z-30 mb-8 border border-base-300/60 bg-base-100/85 text-base-content">
                 <div class="card-body gap-4 px-5 py-4">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
@@ -76,7 +84,9 @@ watch(() => props.darkMode, syncTheme);
                 </div>
             </header>
 
-            <slot />
+            <div :class="props.fullHeight ? (showHeader ? 'h-[calc(100%-9rem)]' : 'h-full') : ''">
+                <slot />
+            </div>
         </div>
     </div>
 </template>

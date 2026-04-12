@@ -3,6 +3,8 @@ import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { initialDesignerState } from '../data/designer';
 
+const BASE_LAYOUT_KEYS = new Set(['background', 'title', 'subtitle', 'meta', 'contact', 'extra']);
+
 let designerState;
 let persistenceBootstrapped = false;
 let saveTimer;
@@ -54,6 +56,8 @@ function buildInitialState(sessionState) {
         return base;
     }
 
+    const mergedElementLayout = mergeElementLayout(base.elementLayout, sessionState.elementLayout ?? {});
+
     return {
         ...base,
         ...sessionState,
@@ -62,8 +66,36 @@ function buildInitialState(sessionState) {
             ...base.content,
             ...normalizeContentStrings(sessionState.content ?? {}),
         },
-        elementLayout: mergeElementLayout(base.elementLayout, sessionState.elementLayout ?? {}),
+        elementLayout: mergedElementLayout,
+        customElements: normalizeCustomElements(sessionState.customElements, mergedElementLayout),
     };
+}
+
+function normalizeCustomElements(customElements, elementLayout) {
+    if (!customElements) return {};
+
+    if (!Array.isArray(customElements)) {
+        return Object.fromEntries(
+            Object.entries(customElements).map(([id, element]) => [
+                id,
+                { ...(element ?? {}), id: String((element ?? {}).id ?? id) },
+            ])
+        );
+    }
+
+    const layoutCustomIds = Object.keys(elementLayout ?? {}).filter((id) => !BASE_LAYOUT_KEYS.has(id));
+    const normalized = {};
+
+    customElements.forEach((element, index) => {
+        if (!element || typeof element !== 'object') return;
+        const candidateId = element.id ?? layoutCustomIds[index] ?? `legacy-${index}`;
+        normalized[String(candidateId)] = {
+            ...element,
+            id: String(candidateId),
+        };
+    });
+
+    return normalized;
 }
 
 function normalizeContentStrings(content) {
