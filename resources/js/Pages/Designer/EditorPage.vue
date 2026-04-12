@@ -1738,9 +1738,7 @@ const buildGroupResizeSnapshot = (groupId) => {
         w: layout.w ?? measured?.width ?? 40,
         h: layout.h ?? measuredHeight,
         fontSize: layout.fontSize ?? 16,
-        paragraphStyles: Array.isArray(layout.paragraphStyles)
-          ? layout.paragraphStyles.map((style) => ({ ...style }))
-          : [],
+        paragraphStyles: ensureParagraphStyles(layout, getElementText(id)).map((style) => ({ ...style })),
       };
     }).filter(Boolean),
   };
@@ -2147,10 +2145,7 @@ const moveDrag = (event) => {
           if (memberSnapshot.isText) {
             const scale = Math.max(0.2, Math.min(sx, sy));
             member.fontSize = clamp(Math.round(memberSnapshot.fontSize * scale), 8, 200);
-            const baseStyles = memberSnapshot.paragraphStyles.length
-              ? memberSnapshot.paragraphStyles
-              : ensureParagraphStyles(member, getElementText(memberSnapshot.id)).map((style) => ({ ...style }));
-            member.paragraphStyles = baseStyles.map((style) => ({
+            member.paragraphStyles = memberSnapshot.paragraphStyles.map((style) => ({
               ...style,
               fontSize: clamp(Math.round((style.fontSize ?? memberSnapshot.fontSize) * scale), 8, 200),
             }));

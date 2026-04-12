@@ -552,13 +552,12 @@ async function getExportFontEmbedCss() {
 
 async function buildRendererOptions(width, height) {
     const fontEmbedCSS = await getExportFontEmbedCss();
+    const scale = Math.max(width / BASE_CANVAS_WIDTH, height / BASE_CANVAS_HEIGHT);
     return {
         cacheBust: true,
-        pixelRatio: 1,
+        pixelRatio: scale,
         width: BASE_CANVAS_WIDTH,
         height: BASE_CANVAS_HEIGHT,
-        canvasWidth: width,
-        canvasHeight: height,
         backgroundColor: null,
         preferredFontFormat: 'woff2',
         // Embebe archivos de fuente como data URI para mantener fidelidad tipografica.
