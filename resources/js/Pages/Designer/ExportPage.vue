@@ -921,20 +921,6 @@ watch(() => state.elementLayout, () => {
                         </div>
                     </div>
 
-                    <div class="card border border-base-300 bg-base-100/80">
-                        <div class="card-body">
-                            <div class="flex h-14 w-14 items-center justify-center rounded-full bg-success/15 text-2xl text-success">✓</div>
-                            <h4 class="mt-4 text-2xl font-semibold text-base-content">Exportación fiable</h4>
-                            <p class="mt-3 text-sm leading-6 text-base-content/75">
-                                Se usa captura DOM para evitar diferencias entre lo que ves en el editor y lo que descargas.
-                            </p>
-                            <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-base-content/75">
-                                <li>Respeta orden de capas</li>
-                                <li>Respeta tipografías y estilos</li>
-                                <li>Escala a resolución final según DPI</li>
-                            </ul>
-                        </div>
-                    </div>
                 </div>
                 <StepFooter :previous-url="navigation.previous" />
             </div>

@@ -13,6 +13,10 @@ const props = defineProps({
     currentStep: String,
     steps: Array,
     darkMode: Boolean,
+    showSteps: {
+        type: Boolean,
+        default: true,
+    },
 });
 
 const emit = defineEmits(['toggle-dark']);
@@ -56,7 +60,7 @@ watch(() => props.darkMode, syncTheme);
                     </button>
                 </div>
 
-                <nav class="mt-5 flex flex-wrap gap-2">
+                <nav v-if="showSteps && steps?.length" class="mt-5 flex flex-wrap gap-2">
                     <Link
                         v-for="step in steps"
                         :key="step.id"

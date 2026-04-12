@@ -2924,6 +2924,7 @@ watch(selectedGroupId, (groupId) => {
     description="Selecciona un texto para editarlo."
     :current-step="currentStep"
     :steps="steps"
+    :show-steps="false"
     :dark-mode="state.darkMode"
     @toggle-dark="state.darkMode = !state.darkMode"
   >
@@ -3025,15 +3026,6 @@ watch(selectedGroupId, (groupId) => {
                     <p v-if="hasSelection && activePropertyPanel" class="mt-2 text-sm leading-6 text-base-content/75">Elige una propiedad arriba para ver sus opciones.</p>
                   </div>
                   <div class="flex gap-2">
-                    <button
-                      v-if="hasSelection && activePropertyPanel"
-                      type="button"
-                      class="btn btn-ghost btn-sm btn-circle"
-                      aria-label="Cerrar propiedad activa"
-                      @click="activePropertyPanel = null"
-                    >
-                      <Icon icon="mdi:close" class="text-lg" />
-                    </button>
                     <button
                       type="button"
                       class="btn btn-ghost btn-sm btn-circle"

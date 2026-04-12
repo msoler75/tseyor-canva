@@ -15,7 +15,6 @@ class DesignerController extends Controller
      * @var array<string, array{component:string,label:string,url:string}>
      */
     private array $steps = [
-        'welcome' => ['component' => 'Designer/WelcomePage', 'label' => 'Inicio', 'url' => '/'],
         'objective' => ['component' => 'Designer/ObjectivePage', 'label' => 'Objetivo', 'url' => '/designer/objective'],
         'format' => ['component' => 'Designer/FormatPage', 'label' => 'Formato', 'url' => '/designer/format'],
         'content' => ['component' => 'Designer/ContentPage', 'label' => 'Datos', 'url' => '/designer/content'],
@@ -26,9 +25,14 @@ class DesignerController extends Controller
 
     public function welcome(Request $request): Response
     {
-        $request->session()->forget(self::SESSION_KEY);
-
-        return $this->page('welcome');
+        return Inertia::render('Designer/WelcomePage', [
+            'currentStep' => null,
+            'steps' => [],
+            'navigation' => [
+                'previous' => null,
+                'next' => null,
+            ],
+        ]);
     }
 
     public function objective(): Response
