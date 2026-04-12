@@ -2,19 +2,33 @@
 import { Icon } from '@iconify/vue';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
 import StepFooter from '../../Components/designer/StepFooter.vue';
+import RichTextEditor from '../../Components/designer/RichTextEditor.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useDesignerState } from '../../composables/useDesignerState';
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const state = useDesignerState();
+if (!state.customElements) {
+  state.customElements = {};
+}
+if (!state.userUploadedImages) {
+  state.userUploadedImages = [];
+}
 const canvasRef = ref(null);
+const imageInputRef = ref(null);
+const imageUrlInput = ref('');
+const imagePanelOpen = ref(false);
+const imagePanelTab = ref('insert');
+const shapePanelOpen = ref(false);
+const textPanelOpen = ref(false);
+const shapeCategoryFilter = ref('all');
 const elementMeasurements = reactive({});
 const elementObservers = new Map();
-const editInputRef = ref(null);
+const richEditorRefs = ref({});
 const editingElementId = ref(null);
-const editingDraft = ref('');
 const editingBoxHeight = ref(null);
 const selectedParagraphIndex = ref(0);
+const paragraphSelection = reactive({ start: 0, end: 0, active: false });
 const activePropertyPanel = ref('typography');
 const toolbarPosition = reactive({ x: 16, y: 16 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
@@ -32,6 +46,7 @@ const drag = reactive({
     startX: 0,
     startY: 0,
     startW: 0,
+    startH: 0,
     startFontSize: 0,
     startParagraphStyles: [],
 });
@@ -81,17 +96,178 @@ const propertyTabs = [
     { id: 'arrange', label: 'Posición' , class: 'order-last'},
 ];
 
+const baseTextElementIds = new Set(['title', 'subtitle', 'meta', 'contact', 'extra']);
+const textPresets = [
+  {
+    id: 'heading',
+    label: 'Título',
+    preview: 'Agrega un titulo',
+    fontSize: 52,
+    fontWeight: 'bold',
+    lineHeight: 1,
+    width: 320,
+  },
+  {
+    id: 'medium',
+    label: 'Subtítulo',
+    preview: 'Agrega un subtitulo',
+    fontSize: 28,
+    fontWeight: 'bold',
+    lineHeight: 1.2,
+    width: 300,
+  },
+  {
+    id: 'normal',
+    label: 'Texto normal',
+    preview: 'Escribe tu texto aqui',
+    fontSize: 18,
+    fontWeight: 'regular',
+    lineHeight: 1.4,
+    width: 280,
+  },
+];
+const shapeCategories = [
+  {
+    id: 'basicas',
+    label: 'Básicas',
+    shapes: [
+      { id: 'square', label: 'Cuadrado' },
+      { id: 'rectangle', label: 'Rectángulo' },
+      { id: 'circle', label: 'Círculo' },
+      { id: 'ellipse', label: 'Elipse' },
+      { id: 'diamond', label: 'Rombo' },
+      { id: 'parallelogram', label: 'Paralelogramo' },
+      { id: 'trapezoid', label: 'Trapecio' },
+      { id: 'trapezoid-inv', label: 'Trapecio inv.' },
+    ],
+  },
+  {
+    id: 'poligonos',
+    label: 'Polígonos',
+    shapes: [
+      { id: 'triangle-up', label: 'Triángulo' },
+      { id: 'triangle-down', label: 'Triángulo inv.' },
+      { id: 'triangle-right', label: 'Triángulo der.' },
+      { id: 'triangle-left', label: 'Triángulo izq.' },
+      { id: 'pentagon', label: 'Pentágono' },
+      { id: 'hexagon', label: 'Hexágono' },
+      { id: 'octagon', label: 'Octágono' },
+    ],
+  },
+  {
+    id: 'estrellas',
+    label: 'Estrellas',
+    shapes: [
+      { id: 'star-5', label: 'Estrella 5' },
+      { id: 'star-4', label: 'Estrella 4' },
+      { id: 'star-6', label: 'Estrella 6' },
+      { id: 'star-burst', label: 'Destello' },
+    ],
+  },
+  {
+    id: 'flechas',
+    label: 'Flechas',
+    shapes: [
+      { id: 'arrow-right', label: 'Flecha →' },
+      { id: 'arrow-left', label: 'Flecha ←' },
+      { id: 'arrow-up', label: 'Flecha ↑' },
+      { id: 'arrow-down', label: 'Flecha ↓' },
+      { id: 'arrow-double-h', label: 'Doble H' },
+      { id: 'arrow-double-v', label: 'Doble V' },
+      { id: 'chevron-right', label: 'Chevron →' },
+      { id: 'chevron-left', label: 'Chevron ←' },
+    ],
+  },
+  {
+    id: 'especiales',
+    label: 'Especiales',
+    shapes: [
+      { id: 'cross', label: 'Cruz' },
+      { id: 'x-mark', label: 'Aspa' },
+      { id: 'heart', label: 'Corazón' },
+      { id: 'badge', label: 'Escudo' },
+      { id: 'ribbon', label: 'Cinta' },
+      { id: 'frame', label: 'Marco' },
+      { id: 'callout', label: 'Bocadillo' },
+    ],
+  },
+];
+// Lookup plano de todas las figuras
+const shapePresets = shapeCategories.flatMap((cat) => cat.shapes.map((s) => ({ ...s, category: cat.id })));
+
+const SHAPE_CLIP_PATHS = {
+  diamond:           'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+  parallelogram:     'polygon(20% 0%, 100% 0%, 80% 100%, 0% 100%)',
+  trapezoid:         'polygon(15% 0%, 85% 0%, 100% 100%, 0% 100%)',
+  'trapezoid-inv':   'polygon(0% 0%, 100% 0%, 85% 100%, 15% 100%)',
+  'triangle-up':     'polygon(50% 0%, 100% 100%, 0% 100%)',
+  'triangle-down':   'polygon(0% 0%, 100% 0%, 50% 100%)',
+  'triangle-right':  'polygon(0% 0%, 100% 50%, 0% 100%)',
+  'triangle-left':   'polygon(100% 0%, 0% 50%, 100% 100%)',
+  pentagon:          'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)',
+  hexagon:           'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)',
+  octagon:           'polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)',
+  'star-5':          'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
+  'star-4':          'polygon(50% 0%, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0% 50%, 40% 40%)',
+  'star-6':          'polygon(50% 0%, 58% 17%, 79% 7%, 71% 26%, 93% 25%, 82% 43%, 100% 50%, 82% 57%, 93% 75%, 71% 74%, 79% 93%, 58% 83%, 50% 100%, 42% 83%, 21% 93%, 29% 74%, 7% 75%, 18% 57%, 0% 50%, 18% 43%, 7% 25%, 29% 26%, 21% 7%, 42% 17%)',
+  'star-burst':      'polygon(50% 0%, 54% 35%, 65% 9%, 60% 43%, 79% 21%, 65% 50%, 91% 38%, 67% 57%, 97% 57%, 68% 65%, 93% 75%, 64% 71%, 79% 93%, 57% 79%, 58% 100%, 50% 80%, 42% 100%, 43% 79%, 21% 93%, 36% 71%, 7% 75%, 32% 65%, 3% 57%, 33% 57%, 9% 38%, 35% 50%, 21% 21%, 40% 43%, 35% 9%, 46% 35%)',
+  'arrow-right':     'polygon(0% 25%, 60% 25%, 60% 0%, 100% 50%, 60% 100%, 60% 75%, 0% 75%)',
+  'arrow-left':      'polygon(40% 0%, 40% 25%, 100% 25%, 100% 75%, 40% 75%, 40% 100%, 0% 50%)',
+  'arrow-up':        'polygon(25% 40%, 0% 40%, 50% 0%, 100% 40%, 75% 40%, 75% 100%, 25% 100%)',
+  'arrow-down':      'polygon(25% 0%, 75% 0%, 75% 60%, 100% 60%, 50% 100%, 0% 60%, 25% 60%)',
+  'arrow-double-h':  'polygon(0% 50%, 20% 0%, 20% 35%, 80% 35%, 80% 0%, 100% 50%, 80% 100%, 80% 65%, 20% 65%, 20% 100%)',
+  'arrow-double-v':  'polygon(50% 0%, 100% 20%, 65% 20%, 65% 80%, 100% 80%, 50% 100%, 0% 80%, 35% 80%, 35% 20%, 0% 20%)',
+  'chevron-right':   'polygon(0% 0%, 70% 0%, 100% 50%, 70% 100%, 0% 100%, 30% 50%)',
+  'chevron-left':    'polygon(30% 0%, 100% 0%, 70% 50%, 100% 100%, 30% 100%, 0% 50%)',
+  cross:             'polygon(33% 0%, 67% 0%, 67% 33%, 100% 33%, 100% 67%, 67% 67%, 67% 100%, 33% 100%, 33% 67%, 0% 67%, 0% 33%, 33% 33%)',
+  'x-mark':          'polygon(10% 0%, 50% 40%, 90% 0%, 100% 10%, 60% 50%, 100% 90%, 90% 100%, 50% 60%, 10% 100%, 0% 90%, 40% 50%, 0% 10%)',
+  heart:             'polygon(50% 30%, 20% 5%, 0% 25%, 0% 50%, 50% 95%, 100% 50%, 100% 25%, 80% 5%)',
+  badge:             'polygon(50% 0%, 63% 12%, 79% 8%, 83% 25%, 98% 33%, 91% 50%, 98% 67%, 83% 75%, 79% 92%, 63% 88%, 50% 100%, 37% 88%, 21% 92%, 17% 75%, 2% 67%, 9% 50%, 2% 33%, 17% 25%, 21% 8%, 37% 12%)',
+  ribbon:            'polygon(0% 0%, 100% 0%, 100% 55%, 80% 55%, 100% 100%, 50% 73%, 0% 100%, 20% 55%, 0% 55%)',
+  frame:             'polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, 12% 12%, 12% 88%, 88% 88%, 88% 12%, 12% 12%)',
+  callout:           'polygon(0% 0%, 100% 0%, 100% 75%, 55% 75%, 50% 100%, 45% 75%, 0% 75%)',
+};
+const imagePanelTabs = [
+  { id: 'insert', label: 'Insertar' },
+  { id: 'library', label: 'Libreria' },
+  { id: 'uploads', label: 'Subidas' },
+];
+const imageLibrary = [
+  { id: 'lib-1', src: 'https://picsum.photos/seed/tseyor1/900/600', label: 'Biblioteca 1' },
+  { id: 'lib-2', src: 'https://picsum.photos/seed/tseyor2/900/600', label: 'Biblioteca 2' },
+  { id: 'lib-3', src: 'https://picsum.photos/seed/tseyor3/900/600', label: 'Biblioteca 3' },
+  { id: 'lib-4', src: 'https://picsum.photos/seed/tseyor4/900/600', label: 'Biblioteca 4' },
+  { id: 'lib-5', src: 'https://picsum.photos/seed/tseyor5/900/600', label: 'Biblioteca 5' },
+  { id: 'lib-6', src: 'https://picsum.photos/seed/tseyor6/900/600', label: 'Biblioteca 6' },
+];
+
 const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
-const editorElements = computed(() => [
-    { id: 'title', label: 'Título', text: state.content.title },
-    { id: 'subtitle', label: 'Subtítulo', text: state.content.subtitle },
-    { id: 'meta', label: 'Fecha / hora', text: metaLine.value },
-    { id: 'contact', label: 'Contacto', text: state.content.contact },
-    { id: 'extra', label: 'Texto adicional', text: state.content.extra },
-].sort((a, b) => (state.elementLayout[a.id]?.zIndex ?? 0) - (state.elementLayout[b.id]?.zIndex ?? 0)));
+const editorElements = computed(() => {
+  const baseTextElements = [
+    { id: 'title', type: 'text', label: 'Titulo', text: state.content.title },
+    { id: 'subtitle', type: 'text', label: 'Subtitulo', text: state.content.subtitle },
+    { id: 'meta', type: 'text', label: 'Fecha / hora', text: metaLine.value },
+    { id: 'contact', type: 'text', label: 'Contacto', text: state.content.contact },
+    { id: 'extra', type: 'text', label: 'Texto adicional', text: state.content.extra },
+  ];
+  const customElements = Object.entries(state.customElements ?? {}).map(([id, element]) => ({
+    id,
+    type: element.type,
+    label: element.label ?? 'Elemento',
+    text: element.type === 'text' ? (element.text ?? '') : '',
+    src: element.type === 'image' ? element.src : null,
+    shapeKind: element.type === 'shape' ? element.shapeKind : null,
+  }));
+
+  return [...baseTextElements, ...customElements]
+    .filter((item) => state.elementLayout[item.id])
+    .sort((a, b) => (state.elementLayout[a.id]?.zIndex ?? 0) - (state.elementLayout[b.id]?.zIndex ?? 0));
+});
 const selectedElement = computed(() => state.elementLayout[state.selectedElementId]);
 const hasSelection = computed(() => Boolean(state.selectedElementId && selectedElement.value));
 const activeElementLabel = computed(() => editorElements.value.find((item) => item.id === state.selectedElementId)?.label ?? 'Elemento');
+const selectedElementType = computed(() => editorElements.value.find((item) => item.id === state.selectedElementId)?.type ?? null);
+const hasTextSelection = computed(() => hasSelection.value && selectedElementType.value === 'text');
 const orderedLayerIds = computed(() => Object.keys(state.elementLayout).sort((a, b) => {
     const zA = state.elementLayout[a]?.zIndex ?? 0;
     const zB = state.elementLayout[b]?.zIndex ?? 0;
@@ -160,36 +336,86 @@ const ensureParagraphStyles = (layout, text = '') => {
 };
 const getTextSourceForSelectedElement = () => {
     if (!state.selectedElementId) return '';
-    return editingElementId.value === state.selectedElementId ? editingDraft.value : getElementText(state.selectedElementId);
+    return getElementText(state.selectedElementId);
 };
 const getParagraphStyleForElement = (id, index = 0, text = null) => {
     const layout = state.elementLayout[id];
     if (!layout) return null;
 
-    const sourceText = text ?? (editingElementId.value === id ? editingDraft.value : getElementText(id));
+    const sourceText = text ?? getElementText(id);
     const styles = ensureParagraphStyles(layout, sourceText);
 
     return styles[clamp(index, 0, Math.max(0, styles.length - 1))] ?? buildParagraphStyle(layout);
 };
-const getActiveParagraphStyle = () => {
-    if (!selectedElement.value) return null;
+const applyParagraphStyleField = (field, value) => {
+    if (!selectedElement.value || !state.selectedElementId) return;
 
-    const styles = ensureParagraphStyles(selectedElement.value, getTextSourceForSelectedElement());
-    selectedParagraphIndex.value = clamp(selectedParagraphIndex.value, 0, Math.max(0, styles.length - 1));
+    const editorRef = richEditorRefs.value[state.selectedElementId];
+    if (!editorRef) return;
 
-    return styles[selectedParagraphIndex.value] ?? buildParagraphStyle(selectedElement.value);
+    if (editingElementId.value === state.selectedElementId) {
+        editorRef.applyStyle(field, value);
+    } else {
+        editorRef.applyStyleAll(field, value);
+    }
 };
-const selectedTextStyle = computed(() => getActiveParagraphStyle());
-const paragraphCount = computed(() => {
-    if (!selectedElement.value) return 0;
-    return ensureParagraphStyles(selectedElement.value, getTextSourceForSelectedElement()).length;
+const selectedTextStyle = computed(() => {
+    if (!state.selectedElementId) return {};
+
+  const fallbackStyle = selectedElement.value
+    ? (getParagraphStyleForElement(
+      state.selectedElementId,
+      selectedParagraphIndex.value,
+      getTextSourceForSelectedElement(),
+    ) ?? buildParagraphStyle(selectedElement.value))
+    : {};
+
+    const editorRef = richEditorRefs.value[state.selectedElementId];
+  const activeAttrs = editorRef?.getActiveAttrs() ?? {};
+  const mergedAttrs = Object.fromEntries(
+    Object.entries(activeAttrs).filter(([, value]) => value !== null && value !== undefined)
+  );
+  const attrs = buildParagraphStyle(selectedElement.value ?? {}, {
+    ...fallbackStyle,
+    ...mergedAttrs,
+  });
+
+  return new Proxy(attrs, {
+        get(target, key) {
+            return target[key];
+        },
+        set(_, key, value) {
+            if (typeof key !== 'string') return true;
+            if (paragraphStyleFields.has(key)) {
+                applyParagraphStyleField(key, value);
+            }
+            return true;
+        },
+    });
 });
-const activeParagraphLabel = computed(() => paragraphCount.value ? `Párrafo ${selectedParagraphIndex.value + 1} de ${paragraphCount.value}` : 'Párrafo 1 de 1');
-const getParagraphIndexFromCursor = (text, cursor = 0) => {
-    const safeText = String(text ?? '');
-    const safeCursor = clamp(cursor, 0, safeText.length);
-    return safeText.slice(0, safeCursor).split('\n').length - 1;
-};
+const paragraphCount = computed(() => {
+    if (!selectedElement.value || !state.selectedElementId) return 0;
+    return selectedElement.value.paragraphStyles?.length
+        || getParagraphs(getElementText(state.selectedElementId)).length;
+});
+const activeParagraphLabel = computed(() => {
+    if (!paragraphCount.value) return 'Párrafo 1 de 1';
+
+    if (editingElementId.value !== state.selectedElementId) {
+        return paragraphCount.value === 1 ? 'Todo el texto (1 párrafo)' : `Todo el texto (${paragraphCount.value} párrafos)`;
+    }
+
+    const n = paragraphCount.value;
+    const first = paragraphSelection.start + 1;
+    const last = paragraphSelection.end + 1;
+
+    if (!paragraphSelection.active || first === last) {
+        return `Párrafo ${selectedParagraphIndex.value + 1} de ${n}`;
+    }
+
+    return `Párrafos ${Math.min(first, last)}-${Math.max(first, last)} de ${n}`;
+});
+
 const normalizePickerColor = (value, fallback = '#ffffff') => {
     if (typeof value !== 'string') return fallback;
 
@@ -204,8 +430,7 @@ const normalizePickerColor = (value, fallback = '#ffffff') => {
 };
 const setSelectedColor = (field, value) => {
     if (paragraphStyleFields.has(field)) {
-        if (!selectedTextStyle.value) return;
-        selectedTextStyle.value[field] = value;
+        applyParagraphStyleField(field, value);
         return;
     }
 
@@ -241,13 +466,259 @@ const buildBubbleShadow = (layout) => {
     return `0 10px 20px ${layout.bubbleColor}55`;
 };
 
+const isTextElement = (id) => {
+  if (baseTextElementIds.has(id)) return true;
+  return state.customElements?.[id]?.type === 'text';
+};
+
+const getMaxZIndex = () => Object.values(state.elementLayout).reduce((max, layout) => Math.max(max, layout?.zIndex ?? 0), 0);
+const getCanvasBounds = () => ({
+  width: canvasRef.value?.clientWidth ?? 360,
+  height: canvasRef.value?.clientHeight ?? 620,
+});
+const createElementId = (prefix) => {
+  const suffix = Math.random().toString(36).slice(2, 9);
+  return `${prefix}-${Date.now().toString(36)}-${suffix}`;
+};
+const buildDefaultLayout = (overrides = {}) => ({
+  x: 24,
+  y: 40,
+  w: 280,
+  zIndex: getMaxZIndex() + 10,
+  fontSize: 18,
+  color: '#ffffff',
+  shadow: false,
+  border: false,
+  fontFamily: 'Inter, sans-serif',
+  opacity: 100,
+  fontWeight: 'regular',
+  italic: false,
+  uppercase: false,
+  textAlign: 'left',
+  letterSpacing: 0,
+  lineHeight: 1.4,
+  shadowPreset: 'soft',
+  shadowColor: '#0f172a',
+  contourWidth: 0,
+  contourColor: '#ffffff',
+  neonColor: '',
+  bubbleColor: 'transparent',
+  backgroundColor: 'transparent',
+  ...overrides,
+});
+const placeInsideCanvas = (layout) => {
+  const bounds = getCanvasBounds();
+  const width = Math.max(40, layout.w ?? 0);
+  const height = Math.max(40, layout.h ?? 50);
+
+  layout.x = Math.round(clamp(layout.x ?? 0, 0, Math.max(0, bounds.width - width - 8)));
+  layout.y = Math.round(clamp(layout.y ?? 0, 18, Math.max(18, bounds.height - height - 8)));
+};
+
+const addTextElement = (presetId) => {
+  const preset = textPresets.find((item) => item.id === presetId);
+  if (!preset) return;
+
+  const id = createElementId('text');
+  const layout = buildDefaultLayout({
+    w: preset.width,
+    fontSize: preset.fontSize,
+    fontWeight: preset.fontWeight,
+    lineHeight: preset.lineHeight,
+    color: '#ffffff',
+    shadow: presetId === 'heading',
+    x: 28,
+    y: 90,
+    paragraphStyles: [{
+      fontSize: preset.fontSize,
+      color: '#ffffff',
+      fontFamily: 'Poppins, sans-serif',
+      fontWeight: preset.fontWeight,
+      italic: false,
+      uppercase: false,
+      textAlign: 'left',
+      letterSpacing: 0,
+      lineHeight: preset.lineHeight,
+    }],
+  });
+
+  placeInsideCanvas(layout);
+  state.customElements[id] = {
+    type: 'text',
+    label: preset.label,
+    text: preset.preview,
+  };
+  state.elementLayout[id] = layout;
+  state.selectedElementId = id;
+  activePropertyPanel.value = 'typography';
+};
+
+const openImagePanel = () => {
+  imagePanelOpen.value = true;
+  imagePanelTab.value = 'insert';
+};
+
+const closeImagePanel = () => {
+  imagePanelOpen.value = false;
+  imageUrlInput.value = '';
+};
+
+const openShapePanel = () => {
+  shapePanelOpen.value = true;
+  shapeCategoryFilter.value = 'all';
+};
+
+const closeShapePanel = () => {
+  shapePanelOpen.value = false;
+};
+
+const openTextPanel = () => {
+  textPanelOpen.value = true;
+};
+
+const closeTextPanel = () => {
+  textPanelOpen.value = false;
+};
+
+const addImageElementFromSrc = (src, label = 'Imagen') => {
+  if (!src) return;
+
+  const id = createElementId('image');
+  const layout = buildDefaultLayout({
+    w: 220,
+    h: 160,
+    x: 36,
+    y: 120,
+    backgroundColor: '#ffffff',
+    color: '#ffffff',
+  });
+
+  placeInsideCanvas(layout);
+  state.customElements[id] = {
+    type: 'image',
+    label,
+    src,
+  };
+  state.elementLayout[id] = layout;
+  state.selectedElementId = id;
+  activePropertyPanel.value = 'arrange';
+  closeImagePanel();
+};
+
+const triggerImagePicker = () => {
+  imageInputRef.value?.click();
+};
+
+const onImagePicked = (event) => {
+  const input = event.target;
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const src = typeof reader.result === 'string' ? reader.result : '';
+    if (!src) return;
+
+    state.userUploadedImages.unshift({
+      id: createElementId('upload'),
+      src,
+      label: file.name || 'Subida',
+    });
+    addImageElementFromSrc(src, file.name || 'Imagen');
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+};
+
+const addImageFromUrl = () => {
+  const src = imageUrlInput.value.trim();
+  if (!src) return;
+
+  state.userUploadedImages.unshift({
+    id: createElementId('upload-url'),
+    src,
+    label: 'URL',
+  });
+  addImageElementFromSrc(src, 'Imagen URL');
+};
+
+const addLibraryImage = (image) => {
+  addImageElementFromSrc(image?.src, image?.label || 'Imagen de libreria');
+};
+
+const addUploadedImage = (image) => {
+  addImageElementFromSrc(image?.src, image?.label || 'Imagen subida');
+};
+
+const addShapeElement = (shapeKind) => {
+  const shape = shapePresets.find((item) => item.id === shapeKind);
+  if (!shape) return;
+
+  const isRectangle = shapeKind === 'rectangle';
+  const layout = buildDefaultLayout({
+    w: isRectangle ? 220 : 140,
+    h: isRectangle ? 120 : 140,
+    x: 44,
+    y: 150,
+    backgroundColor: '#ffffff',
+    opacity: 90,
+    shadow: true,
+    border: false,
+  });
+  placeInsideCanvas(layout);
+
+  const id = createElementId('shape');
+  state.customElements[id] = {
+    type: 'shape',
+    label: shape.label,
+    shapeKind,
+  };
+  state.elementLayout[id] = layout;
+  state.selectedElementId = id;
+  activePropertyPanel.value = 'color';
+};
+
+// Genera estilo CSS para una figura según su shapeKind
+const shapeStyleFromKind = (shapeKind, base) => {
+  if (shapeKind === 'circle' || shapeKind === 'ellipse') {
+    return { ...base, borderRadius: '9999px' };
+  }
+  if (shapeKind === 'rectangle') {
+    return { ...base, borderRadius: '18px' };
+  }
+  if (shapeKind === 'square') {
+    return { ...base, borderRadius: '8px' };
+  }
+  const clipPath = SHAPE_CLIP_PATHS[shapeKind];
+  if (clipPath) {
+    return { ...base, clipPath, border: '0' };
+  }
+  return { ...base, borderRadius: '8px' };
+};
+
+const shapeStyle = (item) => {
+  const layout = state.elementLayout[item.id];
+  const base = {
+    width: '100%',
+    height: '100%',
+    background: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : '#ffffff',
+    boxShadow: layout.shadow ? buildBubbleShadow(layout) : 'none',
+    border: layout.border
+      ? `${layout.contourWidth || 1}px solid ${layout.contourColor || '#ffffff'}`
+      : '0',
+  };
+  return shapeStyleFromKind(item.shapeKind, base);
+};
+
 const elementBoxStyle = (id) => {
     const layout = state.elementLayout[id];
+  const isText = isTextElement(id);
 
     return {
         left: `${layout.x}px`,
         top: `${layout.y}px`,
         width: `${layout.w}px`,
+    height: isText ? 'auto' : `${layout.h ?? 140}px`,
         zIndex: `${layout.zIndex ?? 1}`,
     };
 };
@@ -261,7 +732,7 @@ const selectedOverlayStyle = computed(() => {
     }
 
     const layout = state.elementLayout[state.selectedElementId];
-    const text = editingElementId.value === state.selectedElementId ? editingDraft.value : getElementText(state.selectedElementId);
+    const text = getElementText(state.selectedElementId);
     const measured = elementMeasurements[state.selectedElementId] ?? null;
     const measuredWidth = measured?.width ?? layout.w;
     const measuredHeight = measured?.height ?? getEstimatedTextHeight(layout, text);
@@ -348,25 +819,12 @@ const paragraphContentStyle = (id, index, text = null) => {
     };
 };
 
-const elementEditInputStyle = (id) => {
+const richEditorContainerStyle = (id) => {
     const layout = state.elementLayout[id];
-    const paragraphStyle = id === state.selectedElementId ? selectedTextStyle.value : getParagraphStyleForElement(id, 0);
-
     return {
-        fontSize: `${paragraphStyle?.fontSize ?? layout.fontSize}px`,
-        color: paragraphStyle?.color ?? layout.color,
-        fontFamily: paragraphStyle?.fontFamily ?? layout.fontFamily ?? 'Inter, sans-serif',
-        fontStyle: paragraphStyle?.italic ? 'italic' : 'normal',
-        fontWeight: paragraphStyle?.fontWeight === 'bold' ? '700' : '500',
-        textAlign: paragraphStyle?.textAlign ?? 'left',
-        textTransform: paragraphStyle?.uppercase ? 'uppercase' : 'none',
-        letterSpacing: `${paragraphStyle?.letterSpacing ?? 0}px`,
-        lineHeight: `${paragraphStyle?.lineHeight ?? 1.3}`,
-        textShadow: buildTextShadow(layout),
-        WebkitTextStroke: layout.border ? `${layout.contourWidth || 1}px ${layout.contourColor || '#ffffff'}` : '0',
         opacity: `${(layout.opacity ?? 100) / 100}`,
-        minHeight: editingElementId.value === id && editingBoxHeight.value
-            ? `${Math.max(editingBoxHeight.value, (paragraphStyle?.fontSize ?? layout.fontSize) * (paragraphStyle?.lineHeight ?? layout.lineHeight ?? 1.3))}px`
+        minHeight: editingBoxHeight.value
+            ? `${editingBoxHeight.value}px`
             : undefined,
         overflow: 'hidden',
     };
@@ -399,63 +857,98 @@ const getElementText = (id) => {
         case 'meta':
             return [state.content.date, state.content.time].filter(Boolean).join(' · ');
         default:
-            return '';
+          return state.customElements?.[id]?.text ?? '';
     }
 };
 
-const selectParagraph = (id, index = 0) => {
-    state.selectedElementId = id;
-    selectedParagraphIndex.value = index;
-};
-
-const syncEditingParagraphState = () => {
-    if (!editingElementId.value || !selectedElement.value) return;
-
-    ensureParagraphStyles(selectedElement.value, editingDraft.value);
-
-    const input = editInputRef.value;
-    if (input && typeof input.selectionStart === 'number') {
-        selectedParagraphIndex.value = clamp(
-            getParagraphIndexFromCursor(editingDraft.value, input.selectionStart),
-            0,
-            Math.max(0, paragraphCount.value - 1)
-        );
+const handleElementClick = (id) => {
+    if (editingElementId.value && editingElementId.value !== id) {
+        commitTextEdit();
     }
-};
 
-const beginTextEdit = async (id) => {
+  if (!isTextElement(id)) {
     state.selectedElementId = id;
-    editingBoxHeight.value = elementMeasurements[id]?.height ?? null;
-    editingDraft.value = getElementText(id);
-    ensureParagraphStyles(state.elementLayout[id], editingDraft.value);
+    return;
+  }
+
+    // Patrón clic-para-seleccionar / clic-de-nuevo-para-editar
+    // (igual que Figma/Canva: no depende del dblclick del navegador)
+    if (state.selectedElementId === id && editingElementId.value !== id) {
+        beginTextEdit(id);
+        return;
+    }
+
+    state.selectedElementId = id;
     selectedParagraphIndex.value = 0;
-    editingElementId.value = id;
-    clearLongPress();
-    await nextTick();
-    syncEditingParagraphState();
-    editInputRef.value?.focus();
-    editInputRef.value?.select?.();
+    paragraphSelection.start = 0;
+    paragraphSelection.end = 0;
+    paragraphSelection.active = false;
 };
 
-const commitTextEdit = () => {
-    if (!editingElementId.value) return;
-    const value = String(editingDraft.value ?? '').replace(/\r\n/g, '\n');
+const onRichEditorSelectionChange = (id, { paragraphIndex, selectedIndexes }) => {
+    if (editingElementId.value !== id) return;
 
-    switch (editingElementId.value) {
+    selectedParagraphIndex.value = clamp(paragraphIndex, 0, Math.max(0, paragraphCount.value - 1));
+    paragraphSelection.active = selectedIndexes.length > 1;
+
+    if (paragraphSelection.active) {
+        paragraphSelection.start = selectedIndexes[0];
+        paragraphSelection.end = selectedIndexes[selectedIndexes.length - 1];
+    } else {
+        paragraphSelection.start = paragraphIndex;
+        paragraphSelection.end = paragraphIndex;
+    }
+};
+
+const onRichEditorTextUpdate = (id, newText) => {
+    if (!state.elementLayout[id]) return;
+    switch (id) {
         case 'title':
         case 'subtitle':
         case 'contact':
         case 'extra':
-            state.content[editingElementId.value] = value;
+            state.content[id] = newText;
             break;
         case 'meta': {
-            const [datePart, ...rest] = value.split('·');
-            state.content.date = (datePart ?? '').trim();
-            state.content.time = rest.join('·').trim();
+            const parts = newText.split('\n');
+            state.content.date = (parts[0] ?? '').trim();
+            state.content.time = (parts[1] ?? '').trim();
             break;
         }
+        default:
+          if (state.customElements?.[id]?.type === 'text') {
+            state.customElements[id].text = newText;
+          }
     }
+};
 
+const onRichEditorStylesUpdate = (id, newStyles) => {
+    const layout = state.elementLayout[id];
+    if (!layout) return;
+    layout.paragraphStyles = newStyles;
+};
+
+const beginTextEdit = async (id) => {
+  if (!isTextElement(id)) return;
+
+    state.selectedElementId = id;
+    editingBoxHeight.value = elementMeasurements[id]?.height ?? null;
+    selectedParagraphIndex.value = 0;
+    paragraphSelection.start = 0;
+    paragraphSelection.end = 0;
+    paragraphSelection.active = false;
+    editingElementId.value = id;
+    clearLongPress();
+    await nextTick();
+    richEditorRefs.value[id]?.$el?.querySelector('[contenteditable]')?.focus();
+};
+
+const commitTextEdit = () => {
+    if (!editingElementId.value) return;
+
+    paragraphSelection.start = selectedParagraphIndex.value;
+    paragraphSelection.end = selectedParagraphIndex.value;
+    paragraphSelection.active = false;
     editingElementId.value = null;
     editingBoxHeight.value = null;
 };
@@ -463,10 +956,46 @@ const commitTextEdit = () => {
 const cancelTextEdit = () => {
     editingElementId.value = null;
     editingBoxHeight.value = null;
+    paragraphSelection.start = selectedParagraphIndex.value;
+    paragraphSelection.end = selectedParagraphIndex.value;
+    paragraphSelection.active = false;
 };
-const onEditorKeydown = (event) => {
+const onRichEditorBlur = (id, event) => {
+    const nextTarget = event?.relatedTarget ?? null;
+    if (nextTarget instanceof Element) {
+        // Clic en control de propiedades → mantener edición y re-enfocar
+        if (nextTarget.closest('[data-editor-keep-selection="true"]')) {
+            // Si el foco va a un input/select/textarea: NO robar el foco de vuelta.
+            // Mantenemos editingElementId para que applyStyle sepa en qué párrafo actuar.
+            const isFocusableInput = nextTarget.closest('input,select,textarea');
+            if (!isFocusableInput) {
+              // Botón u otro control no focusable: re-enfocar TipTap
+              nextTick(() => {
+                if (editingElementId.value === id) {
+                  richEditorRefs.value[id]?.$el?.querySelector('[contenteditable]')?.focus();
+                }
+              });
+            }
+            // En ambos casos: mantener estado de edición, no deseleccionar
+            return;
+        }
+        // Clic en handle de resize/drag → salir de edición pero mantener selección
+        if (nextTarget.closest('[data-editor-control="true"]')) {
+            commitTextEdit();
+            return;
+        }
+        // Clic en otro elemento editable → solo salir del modo edición (handleElementClick re-seleccionará)
+        if (nextTarget.closest('[data-editor-element="true"]')) {
+            commitTextEdit();
+            return;
+        }
+    }
+    // Clic en fondo del canvas, fuera del canvas o en cualquier otro lugar → salir Y deseleccionar
+    clearSelection();
+};
+const onRichEditorKeydown = (event) => {
     if (event.key === 'Escape') return cancelTextEdit();
-  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         commitTextEdit();
     }
@@ -481,7 +1010,7 @@ const clearLongPress = () => {
 };
 
 const startTouchEditIntent = (event, id) => {
-    if (event.pointerType !== 'touch' || drag.active) return;
+  if (event.pointerType !== 'touch' || drag.active || !isTextElement(id)) return;
     clearLongPress();
     touchIntent.pointerId = event.pointerId;
     touchIntent.startX = event.clientX;
@@ -505,6 +1034,7 @@ const startDrag = (event, id) => {
     drag.startX = layout.x;
     drag.startY = layout.y;
     drag.startW = layout.w;
+    drag.startH = layout.h ?? 140;
     drag.startFontSize = layout.fontSize;
     clearLongPress();
     setDragDocumentState(true);
@@ -518,6 +1048,10 @@ const startResize = (event, id, handle) => {
     const layout = state.elementLayout[id];
     if (!layout) return;
 
+    // Si estamos en modo edición, commiteamos antes de redimensionar para evitar
+    // inconsistencias entre el estado interno de TipTap y paragraphStyles
+    if (editingElementId.value) commitTextEdit();
+
     state.selectedElementId = id;
     drag.active = true;
     drag.mode = 'resize';
@@ -529,6 +1063,7 @@ const startResize = (event, id, handle) => {
     drag.startX = layout.x;
     drag.startY = layout.y;
     drag.startW = layout.w;
+    drag.startH = layout.h ?? 140;
     drag.startFontSize = layout.fontSize;
     drag.startParagraphStyles = ensureParagraphStyles(layout, getElementText(id)).map((style) => ({ ...style }));
     clearLongPress();
@@ -558,6 +1093,7 @@ const moveDrag = (event) => {
 
     const rect = canvasRef.value.getBoundingClientRect();
     const layout = state.elementLayout[drag.elementId];
+    const isText = isTextElement(drag.elementId);
 
     if (drag.mode === 'resize') {
         if (event.cancelable) event.preventDefault();
@@ -566,6 +1102,44 @@ const moveDrag = (event) => {
         const handle = drag.handle ?? 'se';
         const isSideHandle = handle === 'e' || handle === 'w';
         const horizontalDelta = handle.includes('e') ? deltaX : -deltaX;
+
+      if (!isText) {
+            const currentHeight = drag.startH || layout.h || 140;
+        const minHeight = 40;
+        const minWidth = 40;
+
+        if (isSideHandle) {
+          const nextWidth = clamp(Math.round(drag.startW + horizontalDelta), minWidth, 460);
+          layout.w = nextWidth;
+
+          if (handle === 'w') {
+            layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, rect.width - nextWidth - 8)));
+          } else {
+            layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, rect.width - nextWidth - 8)));
+          }
+
+          return;
+        }
+
+        const verticalDelta = handle.includes('s') ? deltaY : -deltaY;
+        const nextWidth = clamp(Math.round(drag.startW + horizontalDelta), minWidth, 460);
+        const nextHeight = clamp(Math.round(currentHeight + verticalDelta), minHeight, 460);
+        layout.w = nextWidth;
+        layout.h = nextHeight;
+
+        if (handle.includes('w')) {
+          layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, rect.width - nextWidth - 8)));
+        } else {
+          layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, rect.width - nextWidth - 8)));
+        }
+        if (handle.includes('n')) {
+          layout.y = Math.round(clamp(drag.startY + (currentHeight - nextHeight), 18, Math.max(18, rect.height - nextHeight - 8)));
+        } else {
+          layout.y = Math.round(clamp(drag.startY, 18, Math.max(18, rect.height - nextHeight - 8)));
+        }
+
+        return;
+      }
 
         if (isSideHandle) {
             const nextWidth = clamp(Math.round(drag.startW + horizontalDelta), 120, 340);
@@ -602,7 +1176,7 @@ const moveDrag = (event) => {
     const deltaX = event.clientX - drag.startClientX;
     const deltaY = event.clientY - drag.startClientY;
     layout.x = Math.round(clamp(drag.startX + deltaX, 0, Math.max(0, rect.width - layout.w - 8)));
-    layout.y = Math.round(clamp(drag.startY + deltaY, 18, Math.max(18, rect.height - 44)));
+    layout.y = Math.round(clamp(drag.startY + deltaY, 18, Math.max(18, rect.height - (layout.h ?? 44))));
     if (event.cancelable) event.preventDefault();
 };
 
@@ -620,15 +1194,16 @@ const endDrag = (event) => {
     drag.pointerId = null;
     drag.elementId = null;
     drag.handle = null;
+    drag.startH = 0;
     clearLongPress();
     setDragDocumentState(false);
 };
 
 const cycleAlignment = () => {
     const order = ['left', 'center', 'right', 'justify'];
-    if (!selectedTextStyle.value) return;
-    const index = order.indexOf(selectedTextStyle.value.textAlign ?? 'left');
-    selectedTextStyle.value.textAlign = order[(index + 1) % order.length];
+    const current = selectedTextStyle.value?.textAlign ?? 'left';
+    const index = order.indexOf(current);
+    applyParagraphStyleField('textAlign', order[(index + 1) % order.length]);
 };
 
 const currentAlignmentIcon = computed(() => {
@@ -638,8 +1213,9 @@ const currentAlignmentIcon = computed(() => {
         right: 'ph:text-align-right',
         justify: 'ph:text-align-justify',
     };
-
-    return icons[selectedTextStyle.value?.textAlign ?? 'left'];
+    const editorRef = state.selectedElementId ? richEditorRefs.value[state.selectedElementId] : null;
+    const align = editorRef?.getActiveAttrs()?.textAlign ?? 'left';
+    return icons[align];
 });
 
 const changeLayer = (mode) => {
@@ -716,12 +1292,6 @@ onBeforeUnmount(() => {
 watch(editorElements, () => {
     refreshElementObservers();
 }, { deep: true });
-
-watch(editingDraft, () => {
-    if (editingElementId.value) {
-        syncEditingParagraphState();
-    }
-});
 </script>
 
 <template>
@@ -737,7 +1307,7 @@ watch(editingDraft, () => {
     <section class="relative glass soft-shadow rounded-[32px] border border-white/70 p-6 sm:p-8 dark:border-slate-700/70">
       <div class="overflow-hidden rounded-[32px] border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div
-          v-if="hasSelection"
+          v-if="hasTextSelection"
           data-editor-keep-selection="true"
           class="pointer-events-none absolute z-[7000]"
           :style="{ left: toolbarPosition.x + 'px', top: toolbarPosition.y + 'px' }"
@@ -751,7 +1321,7 @@ watch(editingDraft, () => {
                         <span v-if="tab.label" class="text-sm text-base-100-accent" :class="tab.labelClass">{{ tab.label }}</span>
                         <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl"/>
                     </button>
-                    <input v-model="selectedTextStyle.fontSize" type="number" min="8" max="200" step="1" class="input input-bordered join-item w-12 text-center order-first" />
+                    <input v-model.number="selectedTextStyle.fontSize" type="number" min="8" max="200" step="1" class="input input-bordered join-item w-12 text-center order-first" />
                     <button type="button" class="btn text-lg" :class="selectedTextStyle.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
                     <button type="button" class="btn text-lg italic" :class="selectedTextStyle.italic ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.italic = !selectedTextStyle.italic">I</button>
                     <button type="button" class="btn text-lg w-12" :class="selectedTextStyle.uppercase ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.uppercase = !selectedTextStyle.uppercase">Aa</button>
@@ -769,12 +1339,189 @@ watch(editingDraft, () => {
             <div class="space-y-5">
               <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Panel contextual</p>
-                <h3 class="mt-2 text-xl font-semibold text-base-content">{{ propertyTabs.find((tab) => tab.id === activePropertyPanel)?.label }}</h3>
-                <p class="mt-2 text-sm leading-6 text-base-content/75">Elige una propiedad arriba para ver sus opciones.</p>
+                <h3 class="mt-2 text-xl font-semibold text-base-content">{{ hasSelection ? propertyTabs.find((tab) => tab.id === activePropertyPanel)?.label : 'Elementos' }}</h3>
+                <p v-if="hasSelection" class="mt-2 text-sm leading-6 text-base-content/75">Elige una propiedad arriba para ver sus opciones.</p>
               </div>
 
-              <div v-if="!hasSelection" class="alert border border-base-300 bg-base-100/80 text-sm leading-6 text-base-content/80">
-                Selecciona una caja de texto para ver y editar sus propiedades.
+              <!-- Panel de inserción (siempre visible cuando no hay selección) -->
+              <div v-if="!hasSelection" class="space-y-3">
+                <!-- Grid de acciones -->
+                <div class="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    class="flex flex-col items-center gap-2 rounded-2xl border p-4 transition"
+                    :class="textPanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
+                    @click="textPanelOpen = !textPanelOpen; imagePanelOpen = false; shapePanelOpen = false"
+                  >
+                    <span class="flex h-10 w-10 items-center justify-center rounded-xl text-2xl font-bold leading-none"
+                      :class="textPanelOpen ? 'bg-primary/20' : 'bg-base-200'">T</span>
+                    <span class="text-xs font-medium">Texto</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="flex flex-col items-center gap-2 rounded-2xl border p-4 transition"
+                    :class="imagePanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
+                    @click="imagePanelOpen = !imagePanelOpen; textPanelOpen = false; shapePanelOpen = false"
+                  >
+                    <span class="flex h-10 w-10 items-center justify-center rounded-xl"
+                      :class="imagePanelOpen ? 'bg-primary/20' : 'bg-base-200'">
+                      <Icon icon="mdi:image-outline" class="text-2xl" />
+                    </span>
+                    <span class="text-xs font-medium">Imagen</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="flex flex-col items-center gap-2 rounded-2xl border p-4 transition"
+                    :class="shapePanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
+                    @click="shapePanelOpen = !shapePanelOpen; textPanelOpen = false; imagePanelOpen = false"
+                  >
+                    <span class="flex h-10 w-10 items-center justify-center rounded-xl"
+                      :class="shapePanelOpen ? 'bg-primary/20' : 'bg-base-200'">
+                      <Icon icon="mdi:shape-outline" class="text-2xl" />
+                    </span>
+                    <span class="text-xs font-medium">Figura</span>
+                  </button>
+                </div>
+
+                <!-- Opciones de texto (inline) -->
+                <div v-if="textPanelOpen" class="space-y-1">
+                  <button
+                    v-for="preset in textPresets"
+                    :key="preset.id"
+                    type="button"
+                    class="w-full rounded-xl border border-base-300/70 bg-base-100/70 px-4 py-3 text-left transition hover:border-primary/50 hover:bg-primary/10"
+                    @click="addTextElement(preset.id)"
+                  >
+                    <span
+                      :style="{ fontSize: Math.min(preset.fontSize, 32) + 'px', fontWeight: preset.fontWeight === 'bold' ? '700' : '400', lineHeight: preset.lineHeight }"
+                      class="block text-base-content"
+                    >{{ preset.label }}</span>
+                  </button>
+                </div>
+
+                <!-- Opciones de imagen (inline) -->
+                <div v-if="imagePanelOpen" class="card border border-base-300 bg-base-100/80">
+                  <div class="card-body p-4">
+                    <div class="flex flex-wrap gap-2">
+                      <button
+                        v-for="tab in imagePanelTabs"
+                        :key="tab.id"
+                        type="button"
+                        class="btn btn-sm rounded-full"
+                        :class="imagePanelTab === tab.id ? 'btn-primary' : 'btn-outline'"
+                        @click="imagePanelTab = tab.id"
+                      >
+                        {{ tab.label }}
+                      </button>
+                    </div>
+
+                    <div v-if="imagePanelTab === 'insert'" class="mt-4 space-y-4">
+                      <div class="rounded-xl border border-base-300/70 bg-base-100/60 p-3">
+                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Desde tu disco</p>
+                        <button type="button" class="btn btn-primary mt-3 w-full rounded-xl" @click="triggerImagePicker">
+                          <Icon icon="mdi:folder-image" class="text-xl" />
+                          Seleccionar archivo
+                        </button>
+                        <input ref="imageInputRef" type="file" accept="image/*" class="hidden" @change="onImagePicked" />
+                      </div>
+                      <div class="rounded-xl border border-base-300/70 bg-base-100/60 p-3">
+                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Desde una URL</p>
+                        <div class="mt-3 flex items-center gap-2">
+                          <input
+                            v-model="imageUrlInput"
+                            type="url"
+                            placeholder="https://ejemplo.com/imagen.jpg"
+                            class="input input-bordered input-sm flex-1"
+                          />
+                          <button type="button" class="btn btn-outline btn-sm" @click="addImageFromUrl">Insertar</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-else-if="imagePanelTab === 'library'" class="mt-4 grid grid-cols-2 gap-2">
+                      <button
+                        v-for="image in imageLibrary"
+                        :key="image.id"
+                        type="button"
+                        class="group overflow-hidden rounded-xl border border-base-300/70 bg-base-100/70"
+                        @click="addLibraryImage(image)"
+                      >
+                        <img :src="image.src" :alt="image.label" class="h-20 w-full object-cover transition group-hover:scale-105" />
+                        <span class="block px-2 py-1 text-[11px] text-base-content/70">{{ image.label }}</span>
+                      </button>
+                    </div>
+
+                    <div v-else class="mt-4">
+                      <div v-if="state.userUploadedImages.length" class="grid grid-cols-2 gap-2">
+                        <button
+                          v-for="image in state.userUploadedImages"
+                          :key="image.id"
+                          type="button"
+                          class="group overflow-hidden rounded-xl border border-base-300/70 bg-base-100/70"
+                          @click="addUploadedImage(image)"
+                        >
+                          <img :src="image.src" :alt="image.label" class="h-20 w-full object-cover transition group-hover:scale-105" />
+                          <span class="block truncate px-2 py-1 text-[11px] text-base-content/70">{{ image.label }}</span>
+                        </button>
+                      </div>
+                      <div v-else class="rounded-xl border border-base-300/70 bg-base-100/70 p-3 text-xs text-base-content/65">
+                        Aún no tienes imágenes subidas. Añade una desde la pestaña Insertar.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Opciones de figuras (inline) -->
+                <div v-if="shapePanelOpen" class="card border border-base-300 bg-base-100/80">
+                  <div class="card-body p-4">
+                    <div class="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        class="btn btn-xs rounded-full"
+                        :class="shapeCategoryFilter === 'all' ? 'btn-primary' : 'btn-outline'"
+                        @click="shapeCategoryFilter = 'all'"
+                      >
+                        Todas
+                      </button>
+                      <button
+                        v-for="cat in shapeCategories"
+                        :key="cat.id"
+                        type="button"
+                        class="btn btn-xs rounded-full"
+                        :class="shapeCategoryFilter === cat.id ? 'btn-primary' : 'btn-outline'"
+                        @click="shapeCategoryFilter = cat.id"
+                      >
+                        {{ cat.label }}
+                      </button>
+                    </div>
+
+                    <template v-for="cat in shapeCategories" :key="cat.id">
+                      <div v-if="shapeCategoryFilter === 'all' || shapeCategoryFilter === cat.id" class="mt-4">
+                        <p class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/55">{{ cat.label }}</p>
+                        <div class="grid grid-cols-4 gap-2">
+                          <button
+                            v-for="shape in cat.shapes"
+                            :key="shape.id"
+                            type="button"
+                            class="group flex flex-col items-center gap-1.5 rounded-xl border border-base-300/70 bg-base-100/70 p-2 transition hover:border-primary/60 hover:bg-primary/10"
+                            :title="shape.label"
+                            @click="addShapeElement(shape.id)"
+                          >
+                            <div class="h-8 w-8 shrink-0">
+                              <div
+                                class="h-full w-full text-primary"
+                                :style="shapeStyleFromKind(shape.id, { width: '100%', height: '100%', background: 'currentColor', border: '0' })"
+                              />
+                            </div>
+                            <span class="w-full truncate text-center text-[10px] leading-tight text-base-content/70 group-hover:text-primary">{{ shape.label }}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
               </div>
 
               <div v-else-if="activePropertyPanel === 'typography'" class="card border border-base-300 bg-base-100/80">
@@ -804,15 +1551,15 @@ watch(editingDraft, () => {
                   <div class="mt-4 space-y-3">
                     <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interletrado</label>
                     <div class="flex items-center gap-3">
-                      <input v-model="selectedTextStyle.letterSpacing" type="range" min="-5" max="40" step="1" class="range range-primary flex-1" />
-                      <input v-model="selectedTextStyle.letterSpacing" type="number" min="-5" max="40" step="1" class="input input-bordered input-sm w-20" />
+                      <input v-model.number="selectedTextStyle.letterSpacing" type="range" min="-5" max="40" step="1" class="range range-primary flex-1" />
+                      <input v-model.number="selectedTextStyle.letterSpacing" type="number" min="-5" max="40" step="1" class="input input-bordered input-sm w-20" />
                     </div>
                   </div>
                   <div class="mt-4 space-y-3">
                     <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interlineado</label>
                     <div class="flex items-center gap-3">
-                      <input v-model="selectedTextStyle.lineHeight" type="range" min="0.6" max="3" step="0.1" class="range range-primary flex-1" />
-                      <input v-model="selectedTextStyle.lineHeight" type="number" min="0.6" max="3" step="0.1" class="input input-bordered input-sm w-20" />
+                      <input v-model.number="selectedTextStyle.lineHeight" type="range" min="0.6" max="3" step="0.1" class="range range-primary flex-1" />
+                      <input v-model.number="selectedTextStyle.lineHeight" type="number" min="0.6" max="3" step="0.1" class="input input-bordered input-sm w-20" />
                     </div>
                   </div>
                 </div>
@@ -1089,49 +1836,64 @@ watch(editingDraft, () => {
                   @pointerdown.stop="clearSelection"
                 ></button>
 
-                <button
+                <div
                   v-for="item in editorElements"
                   :key="item.id"
-                  type="button"
                   data-editor-element="true"
                   :data-editor-id="item.id"
-                  class="absolute rounded-[18px] p-0 text-left transition"
+                  class="absolute rounded-[18px] p-0 text-left"
                   :style="elementBoxStyle(item.id)"
                   :class="state.selectedElementId === item.id
-                    ? (drag.active && drag.elementId === item.id
-                        ? 'border-2 border-dashed border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'
-                        : 'border-2 border-dashed border-cyan-300 bg-white/8 shadow-[0_0_0_3px_rgba(103,232,249,.18)]')
+                    ? (editingElementId === item.id
+                        ? 'border-2 border-solid border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.35)] editor-editing-pulse'
+                        : (drag.active && drag.elementId === item.id
+                            ? 'border-2 border-dashed border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'
+                            : 'border-2 border-dashed border-cyan-300 bg-white/8 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'))
                     : 'z-10 border border-transparent hover:border-white/20'"
-                  @click="selectParagraph(item.id, 0)"
+                  @click="handleElementClick(item.id)"
                   @dblclick="beginTextEdit(item.id)"
                   @pointerdown="startTouchEditIntent($event, item.id)"
                 >
                   <div class="relative" :style="elementContentStyle(item.id)">
-                  <textarea
-                    v-if="editingElementId === item.id"
-                    ref="editInputRef"
-                    v-model="editingDraft"
-                    class="block min-h-[3.5rem] w-full resize-none border-none bg-transparent p-0 placeholder:text-white/55 focus:bg-transparent focus:outline-none"
-                    :style="elementEditInputStyle(item.id)"
-                    @input="syncEditingParagraphState"
-                    @click="syncEditingParagraphState"
-                    @keyup="syncEditingParagraphState"
-                    @select="syncEditingParagraphState"
-                    @blur="commitTextEdit"
-                    @keydown="onEditorKeydown"
-                  ></textarea>
-                  <template v-else>
-                    <span
-                      v-for="(paragraph, index) in getParagraphs(item.text)"
-                      :key="`${item.id}-${index}`"
-                      class="block cursor-text whitespace-pre-wrap"
-                      :style="paragraphContentStyle(item.id, index, item.text)"
-                      @pointerdown.stop="selectParagraph(item.id, index)"
-                      @click.stop="selectParagraph(item.id, index)"
-                    >{{ paragraph || '\u00A0' }}</span>
-                  </template>
+                    <template v-if="item.type === 'text'">
+                      <RichTextEditor
+                        :ref="(el) => { if (el) richEditorRefs[item.id] = el; else delete richEditorRefs[item.id]; }"
+                        :paragraph-styles="state.elementLayout[item.id].paragraphStyles ?? []"
+                        :text="item.text"
+                        :editable="editingElementId === item.id"
+                        :editor-style="richEditorContainerStyle(item.id)"
+                        @update:text="onRichEditorTextUpdate(item.id, $event)"
+                        @update:paragraph-styles="onRichEditorStylesUpdate(item.id, $event)"
+                        @selection-change="onRichEditorSelectionChange(item.id, $event)"
+                        @blur="onRichEditorBlur(item.id, $event)"
+                        @keydown.escape.stop="cancelTextEdit"
+                        @keydown.ctrl.enter.stop="commitTextEdit"
+                        @keydown.meta.enter.stop="commitTextEdit"
+                        @pointerdown.stop
+                        @mousedown.stop
+                        @dblclick.stop="beginTextEdit(item.id)"
+                        @click.stop="editingElementId === item.id ? null : handleElementClick(item.id)"
+                      />
+                    </template>
+                    <template v-else-if="item.type === 'image'">
+                      <div class="h-full w-full overflow-hidden rounded-xl border border-white/40 bg-white/20">
+                        <img
+                          v-if="item.src"
+                          :src="item.src"
+                          :alt="item.label"
+                          class="h-full w-full object-cover"
+                          draggable="false"
+                        />
+                        <div v-else class="flex h-full w-full items-center justify-center text-xs font-semibold text-white/80">
+                          Imagen
+                        </div>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div class="h-full w-full" :style="shapeStyle(item)"></div>
+                    </template>
                   </div>
-                </button>
+                </div>
 
                 <div v-if="state.selectedElementId" data-editor-control="true" class="pointer-events-none absolute" :style="selectedOverlayStyle">
                   <span class="pointer-events-none absolute -top-10 left-0 rounded-full bg-cyan-300 px-3 py-1 text-xs font-semibold text-slate-950">{{ activeElementLabel }} seleccionado</span>
@@ -1153,3 +1915,17 @@ watch(editingDraft, () => {
     </section>
   </DesignerLayout>
 </template>
+
+<style>
+@keyframes editor-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.5), 0 0 0 4px rgba(103, 232, 249, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(103, 232, 249, 0.2), 0 0 0 10px rgba(103, 232, 249, 0);
+  }
+}
+.editor-editing-pulse {
+  animation: editor-pulse 1.4s ease-in-out infinite;
+}
+</style>
