@@ -30,7 +30,7 @@ watch(() => props.darkMode, syncTheme);
     <Head :title="title" />
 
     <div class="min-h-screen bg-base-100 text-base-content">
-        <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
             <header class="card glass soft-shadow sticky top-4 z-30 mb-8 border border-base-300/60 bg-base-100/85 text-base-content">
                 <div class="card-body gap-4 px-5 py-4">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

@@ -210,8 +210,13 @@ const getActiveAttrs = () => {
     return result;
 };
 
+const focusAtEnd = () => {
+    if (!editor.value) return;
+    editor.value.commands.focus('end');
+};
+
 // Expone API para que EditorPage pueda llamar
-defineExpose({ applyStyle, applyStyleAll, getActiveAttrs });
+defineExpose({ applyStyle, applyStyleAll, getActiveAttrs, focusAtEnd });
 
 // Cuando cambia el prop editable, actualizar el editor
 watch(() => props.editable, (val) => {

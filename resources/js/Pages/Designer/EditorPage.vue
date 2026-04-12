@@ -21,6 +21,7 @@ const imagePanelOpen = ref(false);
 const imagePanelTab = ref('insert');
 const shapePanelOpen = ref(false);
 const textPanelOpen = ref(false);
+const optionsPanelOpen = ref(true);
 const shapeCategoryFilter = ref('all');
 const elementMeasurements = reactive({});
 const elementObservers = new Map();
@@ -30,7 +31,7 @@ const editingBoxHeight = ref(null);
 const selectedParagraphIndex = ref(0);
 const paragraphSelection = reactive({ start: 0, end: 0, active: false });
 const activePropertyPanel = ref(null);
-const toolbarPosition = reactive({ x: 16, y: 16 });
+const toolbarPosition = reactive({ x: 0, y: 3 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
 let longPressTimer = null;
 const drag = reactive({
@@ -38,6 +39,8 @@ const drag = reactive({
     mode: 'move',
     pointerId: null,
     elementId: null,
+  groupId: null,
+  groupSnapshot: null,
     handle: null,
     offsetX: 0,
     offsetY: 0,
@@ -60,6 +63,29 @@ const touchIntent = reactive({
     pointerId: null,
     startX: 0,
     startY: 0,
+});
+const dragIntent = reactive({
+  active: false,
+  pointerId: null,
+  elementId: null,
+  groupId: null,
+  targetType: 'element',
+  startX: 0,
+  startY: 0,
+});
+const suppressElementClickUntil = ref(0);
+const preserveEditorSelectionUntil = ref(0);
+const multiSelectionIds = ref([]);
+const marqueePreviewIds = ref([]);
+const selectedGroupId = ref(null);
+const groupedElements = reactive({});
+const selectionMarquee = reactive({
+  active: false,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  currentX: 0,
+  currentY: 0,
 });
 
 const colorOptions = [
@@ -298,18 +324,52 @@ const editorElements = computed(() => {
 });
 const selectedElement = computed(() => state.elementLayout[state.selectedElementId]);
 const hasSelection = computed(() => Boolean(state.selectedElementId && selectedElement.value));
+const isGroupSelection = computed(() => Boolean(selectedGroupId.value && groupedElements[selectedGroupId.value]));
+const selectedGroup = computed(() => {
+  if (!selectedGroupId.value) return null;
+  return groupedElements[selectedGroupId.value] ?? null;
+});
+const activeSelectionIds = computed(() => {
+  if (isGroupSelection.value) {
+    return [...(selectedGroup.value?.elementIds ?? [])];
+  }
+  if (multiSelectionIds.value.length > 1) {
+    return [...multiSelectionIds.value];
+  }
+  if (state.selectedElementId) {
+    return [state.selectedElementId];
+  }
+  return [];
+});
+const hasMultiSelection = computed(() => activeSelectionIds.value.length > 1);
+const overlayControlTargetId = computed(() => (isGroupSelection.value ? selectedGroupId.value : state.selectedElementId));
 const activeElementLabel = computed(() => {
+  if (isGroupSelection.value) {
+    return `Grupo (${selectedGroup.value?.elementIds?.length ?? 0})`;
+  }
   if (state.selectedElementId === 'background') return 'Fondo';
   return editorElements.value.find((item) => item.id === state.selectedElementId)?.label ?? 'Elemento';
 });
 const selectedElementType = computed(() => editorElements.value.find((item) => item.id === state.selectedElementId)?.type ?? null);
 const hasTextSelection = computed(() => hasSelection.value && selectedElementType.value === 'text');
 const selectedPropertyTabs = computed(() => {
+  if (isGroupSelection.value || hasMultiSelection.value) return [];
   if (!hasSelection.value) return textPropertyTabs;
   if (state.selectedElementId === 'background') return backgroundPropertyTabs;
   return selectedElementType.value === 'text' ? textPropertyTabs : visualPropertyTabs;
 });
 const activePropertyTitle = computed(() => selectedPropertyTabs.value.find((tab) => tab.id === activePropertyPanel.value)?.label ?? 'Propiedades');
+const canvasBackgroundStyle = computed(() => {
+  const bg = state.elementLayout.background;
+  if (bg?.fillMode === 'gradient') {
+    return {
+      background: `linear-gradient(${bg.gradientAngle || 135}deg, ${bg.gradientStart || '#0ea5e9'}, ${bg.gradientEnd || '#8b5cf6'})`
+    };
+  }
+  return {
+    backgroundColor: bg?.backgroundColor || '#4338ca'
+  };
+});
 const orderedLayerIds = computed(() => Object.keys(state.elementLayout).sort((a, b) => {
     const zA = state.elementLayout[a]?.zIndex ?? 0;
     const zB = state.elementLayout[b]?.zIndex ?? 0;
@@ -491,21 +551,36 @@ const setSelectedColor = (field, value) => {
     if (!selectedElement.value) return;
     selectedElement.value[field] = value;
 };
+  const applyGradientPreset = (target, start, end) => {
+    if (target === 'background') {
+      state.elementLayout.background.fillMode = 'gradient';
+      state.elementLayout.background.gradientStart = start;
+      state.elementLayout.background.gradientEnd = end;
+    } else if (target === 'shape' && selectedElement.value) {
+      selectedElement.value.fillMode = 'gradient';
+      selectedElement.value.gradientStart = start;
+      selectedElement.value.gradientEnd = end;
+    }
+  };
+  const swapGradientStops = (target) => {
+    if (target === 'background') {
+      const start = state.elementLayout.background.gradientStart || '#0ea5e9';
+      state.elementLayout.background.gradientStart = state.elementLayout.background.gradientEnd || '#8b5cf6';
+      state.elementLayout.background.gradientEnd = start;
+    } else if (target === 'shape' && selectedElement.value) {
+      const start = selectedElement.value.gradientStart || '#0ea5e9';
+      selectedElement.value.gradientStart = selectedElement.value.gradientEnd || '#8b5cf6';
+      selectedElement.value.gradientEnd = start;
+    }
+  };
   const applyShapeGradientPreset = (start, end) => {
-    if (!selectedElement.value || selectedElementType.value !== 'shape') return;
-    selectedElement.value.fillMode = 'gradient';
-    selectedElement.value.gradientStart = start;
-    selectedElement.value.gradientEnd = end;
+    applyGradientPreset('shape', start, end);
   };
   const swapShapeGradientStops = () => {
-    if (!selectedElement.value || selectedElementType.value !== 'shape') return;
-    const start = selectedElement.value.gradientStart || '#0ea5e9';
-    selectedElement.value.gradientStart = selectedElement.value.gradientEnd || '#8b5cf6';
-    selectedElement.value.gradientEnd = start;
+    swapGradientStops('shape');
   };
 const clampToolbar = () => {
-    toolbarPosition.x = clamp(toolbarPosition.x, 8, 700);
-    toolbarPosition.y = clamp(toolbarPosition.y, 8, 180);
+    // Sin restricciones de movimiento - libertad de arrastre completa
 };
 
 const buildTextShadow = (layout) => {
@@ -852,26 +927,59 @@ const getEstimatedTextHeight = (layout, text = '') => ensureParagraphStyles(layo
     .reduce((total, style) => total + Math.max((style.fontSize ?? layout.fontSize ?? 16) * (style.lineHeight ?? 1.3), 16), 0);
 
 const selectedOverlayStyle = computed(() => {
-    if (!state.selectedElementId) {
-        return {};
+    const ids = activeSelectionIds.value;
+    if (!ids.length) return {};
+
+    const bounds = getSelectionBounds(ids);
+    if (!bounds) return {};
+    let rotation = 0;
+    if (isGroupSelection.value) {
+      rotation = Number(selectedGroup.value?.layout?.rotation ?? 0);
+    } else if (ids.length === 1) {
+      rotation = Number(state.elementLayout[ids[0]]?.rotation ?? 0);
     }
 
-    const layout = state.elementLayout[state.selectedElementId];
-    const text = getElementText(state.selectedElementId);
-    const measured = elementMeasurements[state.selectedElementId] ?? null;
-    const measuredWidth = measured?.width ?? layout.w;
-    const measuredHeight = measured?.height ?? getEstimatedTextHeight(layout, text);
-  const rotation = Number(layout.rotation ?? 0);
+    return {
+        left: `${bounds.x}px`,
+        top: `${bounds.y}px`,
+        width: `${bounds.w}px`,
+        height: `${bounds.h}px`,
+        zIndex: '6000',
+        transform: `rotate(${rotation}deg)`,
+        transformOrigin: 'center center',
+    };
+});
+
+  const selectedActionBarStyle = computed(() => {
+    const ids = activeSelectionIds.value;
+    if (!ids.length || state.selectedElementId === 'background') {
+      return {};
+    }
+
+    const bounds = getSelectionBounds(ids);
+    if (!bounds) return {};
+    const top = Math.max(8, bounds.y - 74);
 
     return {
-        left: `${layout.x}px`,
-        top: `${layout.y}px`,
-        width: `${measuredWidth}px`,
-        height: `${measuredHeight}px`,
-        zIndex: '6000',
-    transform: `rotate(${rotation}deg)`,
-    transformOrigin: 'center center',
+      left: `${bounds.x + (bounds.w / 2)}px`,
+      top: `${top}px`,
+      zIndex: '6100',
+      transform: 'translateX(-50%)',
     };
+  });
+
+const marqueeRectStyle = computed(() => {
+  if (!selectionMarquee.active) return {};
+  const left = Math.min(selectionMarquee.startX, selectionMarquee.currentX);
+  const top = Math.min(selectionMarquee.startY, selectionMarquee.currentY);
+  const width = Math.abs(selectionMarquee.currentX - selectionMarquee.startX);
+  const height = Math.abs(selectionMarquee.currentY - selectionMarquee.startY);
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${width}px`,
+    height: `${height}px`,
+  };
 });
 
 const updateElementMeasurement = (id, node) => {
@@ -882,6 +990,231 @@ const updateElementMeasurement = (id, node) => {
         height: node.offsetHeight,
     };
 };
+
+  const cloneSelectedElement = () => {
+    const sourceId = state.selectedElementId;
+    if (!sourceId || sourceId === 'background') return;
+
+    if (editingElementId.value) {
+      commitTextEdit();
+    }
+
+    const sourceLayout = state.elementLayout[sourceId];
+    const sourceElement = editorElements.value.find((item) => item.id === sourceId);
+    if (!sourceLayout || !sourceElement) return;
+
+    const cloneId = createElementId(sourceElement.type || 'element');
+    const cloneLayout = {
+      ...sourceLayout,
+      x: (sourceLayout.x ?? 0) + 18,
+      y: (sourceLayout.y ?? 0) + 18,
+      zIndex: getMaxZIndex() + 10,
+      paragraphStyles: Array.isArray(sourceLayout.paragraphStyles)
+        ? sourceLayout.paragraphStyles.map((style) => ({ ...style }))
+        : undefined,
+    };
+
+    placeInsideCanvas(cloneLayout);
+
+    if (sourceElement.type === 'text') {
+      state.customElements[cloneId] = {
+        type: 'text',
+        label: `${sourceElement.label} copia`,
+        text: getElementText(sourceId),
+      };
+    } else if (sourceElement.type === 'image') {
+      state.customElements[cloneId] = {
+        type: 'image',
+        label: `${sourceElement.label} copia`,
+        src: sourceElement.src,
+      };
+    } else if (sourceElement.type === 'shape') {
+      state.customElements[cloneId] = {
+        type: 'shape',
+        label: `${sourceElement.label} copia`,
+        shapeKind: sourceElement.shapeKind,
+      };
+    } else {
+      return;
+    }
+
+    state.elementLayout[cloneId] = cloneLayout;
+    state.selectedElementId = cloneId;
+  };
+
+  const deleteSelectedElement = () => {
+    const id = state.selectedElementId;
+    if (!id || id === 'background') return;
+
+    if (editingElementId.value === id) {
+      commitTextEdit();
+    }
+
+    if (state.customElements?.[id]) {
+      delete state.customElements[id];
+    }
+
+    if (state.elementLayout?.[id]) {
+      delete state.elementLayout[id];
+    }
+
+    if (elementMeasurements[id]) {
+      delete elementMeasurements[id];
+    }
+
+    if (richEditorRefs.value[id]) {
+      delete richEditorRefs.value[id];
+    }
+
+    state.selectedElementId = null;
+    activePropertyPanel.value = null;
+  };
+
+  const cloneElementsByIds = (ids) => {
+    const clonedIds = [];
+
+    ids.forEach((sourceId) => {
+      const sourceLayout = state.elementLayout[sourceId];
+      const sourceElement = editorElements.value.find((item) => item.id === sourceId);
+      if (!sourceLayout || !sourceElement) return;
+
+      const cloneId = createElementId(sourceElement.type || 'element');
+      const cloneLayout = {
+        ...sourceLayout,
+        x: (sourceLayout.x ?? 0) + 18,
+        y: (sourceLayout.y ?? 0) + 18,
+        zIndex: getMaxZIndex() + 10,
+        paragraphStyles: Array.isArray(sourceLayout.paragraphStyles)
+          ? sourceLayout.paragraphStyles.map((style) => ({ ...style }))
+          : undefined,
+      };
+
+      placeInsideCanvas(cloneLayout);
+
+      if (sourceElement.type === 'text') {
+        state.customElements[cloneId] = {
+          type: 'text',
+          label: `${sourceElement.label} copia`,
+          text: getElementText(sourceId),
+        };
+      } else if (sourceElement.type === 'image') {
+        state.customElements[cloneId] = {
+          type: 'image',
+          label: `${sourceElement.label} copia`,
+          src: sourceElement.src,
+        };
+      } else if (sourceElement.type === 'shape') {
+        state.customElements[cloneId] = {
+          type: 'shape',
+          label: `${sourceElement.label} copia`,
+          shapeKind: sourceElement.shapeKind,
+        };
+      } else {
+        return;
+      }
+
+      state.elementLayout[cloneId] = cloneLayout;
+      clonedIds.push(cloneId);
+    });
+
+    return clonedIds;
+  };
+
+  const groupSelectedElements = () => {
+    if (multiSelectionIds.value.length < 2) return;
+
+    const ids = [...new Set(multiSelectionIds.value)].filter((id) => state.elementLayout[id]);
+    if (ids.length < 2) return;
+    if (ids.some((id) => getGroupIdForElement(id))) return;
+
+    const bounds = getSelectionBounds(ids);
+    if (!bounds) return;
+
+    const groupId = createElementId('group');
+    groupedElements[groupId] = {
+      id: groupId,
+      elementIds: ids,
+      layout: {
+        x: bounds.x,
+        y: bounds.y,
+        w: bounds.w,
+        h: bounds.h,
+        rotation: 0,
+      },
+    };
+
+    selectGroup(groupId);
+  };
+
+  const cloneCurrentSelection = () => {
+    if (isGroupSelection.value) {
+      const sourceIds = [...selectedGroup.value.elementIds];
+      const clonedIds = cloneElementsByIds(sourceIds);
+      if (clonedIds.length < 2) return;
+      selectedGroupId.value = null;
+      multiSelectionIds.value = clonedIds;
+      state.selectedElementId = null;
+      groupSelectedElements();
+      return;
+    }
+
+    if (multiSelectionIds.value.length > 1) {
+      const clonedIds = cloneElementsByIds(multiSelectionIds.value);
+      if (!clonedIds.length) return;
+      if (clonedIds.length === 1) {
+        state.selectedElementId = clonedIds[0];
+        multiSelectionIds.value = [];
+      } else {
+        state.selectedElementId = null;
+        multiSelectionIds.value = clonedIds;
+      }
+      return;
+    }
+
+    cloneSelectedElement();
+  };
+
+  const deleteElementsByIds = (ids) => {
+    ids.forEach((id) => {
+      if (editingElementId.value === id) {
+        commitTextEdit();
+      }
+      if (state.customElements?.[id]) {
+        delete state.customElements[id];
+      }
+      if (state.elementLayout?.[id]) {
+        delete state.elementLayout[id];
+      }
+      if (elementMeasurements[id]) {
+        delete elementMeasurements[id];
+      }
+      if (richEditorRefs.value[id]) {
+        delete richEditorRefs.value[id];
+      }
+    });
+  };
+
+  const deleteCurrentSelection = () => {
+    if (isGroupSelection.value) {
+      deleteElementsByIds(selectedGroup.value.elementIds);
+      delete groupedElements[selectedGroupId.value];
+      selectedGroupId.value = null;
+      return;
+    }
+
+    if (multiSelectionIds.value.length > 1) {
+      deleteElementsByIds(multiSelectionIds.value);
+      multiSelectionIds.value = [];
+      return;
+    }
+
+    deleteSelectedElement();
+  };
+
+  const editSelectedTextElement = () => {
+    if (!state.selectedElementId || selectedElementType.value !== 'text') return;
+    beginTextEdit(state.selectedElementId, true);
+  };
 
 const refreshElementObservers = async () => {
     await nextTick();
@@ -958,9 +1291,6 @@ const richEditorContainerStyle = (id) => {
     const layout = state.elementLayout[id];
     return {
         opacity: `${(layout.opacity ?? 100) / 100}`,
-        minHeight: editingBoxHeight.value
-            ? `${editingBoxHeight.value}px`
-            : undefined,
         overflow: 'hidden',
     };
 };
@@ -997,9 +1327,22 @@ const getElementText = (id) => {
 };
 
 const handleElementClick = (id) => {
+  if (Date.now() < suppressElementClickUntil.value) {
+    return;
+  }
+
+  const groupId = getGroupIdForElement(id);
+  if (groupId) {
+    selectGroup(groupId);
+    return;
+  }
+
     if (editingElementId.value && editingElementId.value !== id) {
         commitTextEdit();
     }
+
+  selectedGroupId.value = null;
+  multiSelectionIds.value = [];
 
   if (!isTextElement(id)) {
     state.selectedElementId = id;
@@ -1063,8 +1406,13 @@ const onRichEditorStylesUpdate = (id, newStyles) => {
     layout.paragraphStyles = newStyles;
 };
 
-const beginTextEdit = async (id) => {
+const beginTextEdit = async (id, focusToEnd = false) => {
   if (!isTextElement(id)) return;
+  const groupId = getGroupIdForElement(id);
+  if (groupId) {
+    selectGroup(groupId);
+    return;
+  }
 
     state.selectedElementId = id;
     editingBoxHeight.value = elementMeasurements[id]?.height ?? null;
@@ -1075,6 +1423,10 @@ const beginTextEdit = async (id) => {
     editingElementId.value = id;
     clearLongPress();
     await nextTick();
+    if (focusToEnd) {
+      richEditorRefs.value[id]?.focusAtEnd?.();
+      return;
+    }
     richEditorRefs.value[id]?.$el?.querySelector('[contenteditable]')?.focus();
 };
 
@@ -1088,6 +1440,10 @@ const commitTextEdit = () => {
     editingBoxHeight.value = null;
 };
 
+  const markEditorControlInteraction = () => {
+    preserveEditorSelectionUntil.value = Date.now() + 300;
+  };
+
 const cancelTextEdit = () => {
     editingElementId.value = null;
     editingBoxHeight.value = null;
@@ -1096,6 +1452,11 @@ const cancelTextEdit = () => {
     paragraphSelection.active = false;
 };
 const onRichEditorBlur = (id, event) => {
+    if (Date.now() < preserveEditorSelectionUntil.value) {
+      commitTextEdit();
+      return;
+    }
+
     const nextTarget = event?.relatedTarget ?? null;
     if (nextTarget instanceof Element) {
         // Clic en control de propiedades → mantener edición y re-enfocar
@@ -1153,45 +1514,268 @@ const startTouchEditIntent = (event, id) => {
     longPressTimer = setTimeout(() => beginTextEdit(id), 450);
 };
 
-const startDrag = (event, id) => {
+const clearDragIntent = () => {
+    dragIntent.active = false;
+    dragIntent.pointerId = null;
+    dragIntent.elementId = null;
+  dragIntent.groupId = null;
+  dragIntent.targetType = 'element';
+    dragIntent.startX = 0;
+    dragIntent.startY = 0;
+};
+
+const clearSelectionMarquee = () => {
+  selectionMarquee.active = false;
+  selectionMarquee.pointerId = null;
+  selectionMarquee.startX = 0;
+  selectionMarquee.startY = 0;
+  selectionMarquee.currentX = 0;
+  selectionMarquee.currentY = 0;
+  marqueePreviewIds.value = [];
+};
+
+const getGroupIdForElement = (id) => {
+  for (const [groupId, group] of Object.entries(groupedElements)) {
+    if (group.elementIds.includes(id)) return groupId;
+  }
+  return null;
+};
+
+const getSelectionBounds = (ids = []) => {
+  const bounds = ids.map((id) => {
+    const layout = state.elementLayout[id];
+    if (!layout) return null;
+    const measured = elementMeasurements[id] ?? null;
+    const width = measured?.width ?? layout.w ?? 0;
+    const height = measured?.height ?? layout.h ?? 44;
+    return {
+      left: layout.x,
+      top: layout.y,
+      right: layout.x + width,
+      bottom: layout.y + height,
+    };
+  }).filter(Boolean);
+
+  if (!bounds.length) return null;
+  const left = Math.min(...bounds.map((item) => item.left));
+  const top = Math.min(...bounds.map((item) => item.top));
+  const right = Math.max(...bounds.map((item) => item.right));
+  const bottom = Math.max(...bounds.map((item) => item.bottom));
+  return {
+    x: left,
+    y: top,
+    w: Math.max(1, right - left),
+    h: Math.max(1, bottom - top),
+  };
+};
+
+const isElementSelected = (id) => {
+  if (marqueePreviewIds.value.includes(id)) return true;
+  if (isGroupSelection.value) {
+    return selectedGroup.value?.elementIds?.includes(id) ?? false;
+  }
+  if (multiSelectionIds.value.length > 1) {
+    return multiSelectionIds.value.includes(id);
+  }
+  return state.selectedElementId === id;
+};
+
+const startSelectionMarquee = (event) => {
+  if (!canvasRef.value) return;
+  const rect = canvasRef.value.getBoundingClientRect();
+  selectionMarquee.active = true;
+  selectionMarquee.pointerId = event.pointerId;
+  selectionMarquee.startX = clamp(event.clientX - rect.left, 0, rect.width);
+  selectionMarquee.startY = clamp(event.clientY - rect.top, 0, rect.height);
+  selectionMarquee.currentX = selectionMarquee.startX;
+  selectionMarquee.currentY = selectionMarquee.startY;
+  marqueePreviewIds.value = [];
+  event.currentTarget?.setPointerCapture?.(event.pointerId);
+  setDragDocumentState(true);
+};
+
+const updateSelectionMarqueePreview = () => {
+  const left = Math.min(selectionMarquee.startX, selectionMarquee.currentX);
+  const top = Math.min(selectionMarquee.startY, selectionMarquee.currentY);
+  const right = Math.max(selectionMarquee.startX, selectionMarquee.currentX);
+  const bottom = Math.max(selectionMarquee.startY, selectionMarquee.currentY);
+
+  marqueePreviewIds.value = editorElements.value
+    .map((item) => {
+      const layout = state.elementLayout[item.id];
+      if (!layout) return null;
+      const measured = elementMeasurements[item.id] ?? null;
+      const width = measured?.width ?? layout.w ?? 0;
+      const height = measured?.height ?? layout.h ?? 44;
+      const intersects = !(
+        layout.x + width < left
+        || layout.x > right
+        || layout.y + height < top
+        || layout.y > bottom
+      );
+      return intersects ? item.id : null;
+    })
+    .filter(Boolean);
+};
+
+const finalizeSelectionMarquee = () => {
+  const picked = [...new Set(marqueePreviewIds.value)];
+  clearSelectionMarquee();
+
+  if (!picked.length) {
+    clearSelection();
+    return;
+  }
+
+  if (picked.length === 1) {
+    selectedGroupId.value = null;
+    multiSelectionIds.value = [];
+    state.selectedElementId = picked[0];
+    return;
+  }
+
+  state.selectedElementId = null;
+  selectedGroupId.value = null;
+  multiSelectionIds.value = picked;
+  activePropertyPanel.value = null;
+};
+
+const selectGroup = (groupId) => {
+  if (!groupedElements[groupId]) return;
+  const bounds = getSelectionBounds(groupedElements[groupId].elementIds);
+  if (bounds) {
+    groupedElements[groupId].layout.x = bounds.x;
+    groupedElements[groupId].layout.y = bounds.y;
+    groupedElements[groupId].layout.w = bounds.w;
+    groupedElements[groupId].layout.h = bounds.h;
+  }
+  selectedGroupId.value = groupId;
+  state.selectedElementId = null;
+  multiSelectionIds.value = [];
+  activePropertyPanel.value = null;
+};
+
+const buildGroupResizeSnapshot = (groupId) => {
+  const group = groupedElements[groupId];
+  if (!group) return null;
+
+  return {
+    x: group.layout.x,
+    y: group.layout.y,
+    w: group.layout.w,
+    h: group.layout.h,
+    members: group.elementIds.map((id) => {
+      const layout = state.elementLayout[id];
+      if (!layout) return null;
+      const measured = elementMeasurements[id] ?? null;
+      const measuredHeight = measured?.height ?? layout.h ?? getEstimatedTextHeight(layout, getElementText(id));
+      return {
+        id,
+        isText: isTextElement(id),
+        x: layout.x,
+        y: layout.y,
+        w: layout.w ?? measured?.width ?? 40,
+        h: layout.h ?? measuredHeight,
+        fontSize: layout.fontSize ?? 16,
+        paragraphStyles: Array.isArray(layout.paragraphStyles)
+          ? layout.paragraphStyles.map((style) => ({ ...style }))
+          : [],
+      };
+    }).filter(Boolean),
+  };
+};
+
+const beginElementDrag = ({ pointerId, clientX, clientY }, id, captureTarget = null) => {
     const canvas = canvasRef.value;
     const layout = state.elementLayout[id];
     if (!canvas || !layout) return;
 
     state.selectedElementId = id;
+  selectedGroupId.value = null;
+  multiSelectionIds.value = [];
     drag.active = true;
     drag.mode = 'move';
-    drag.pointerId = event.pointerId;
+    drag.pointerId = pointerId;
     drag.elementId = id;
+  drag.groupId = null;
+  drag.groupSnapshot = null;
     drag.handle = null;
-    drag.startClientX = event.clientX;
-    drag.startClientY = event.clientY;
+    drag.startClientX = clientX;
+    drag.startClientY = clientY;
     drag.startX = layout.x;
     drag.startY = layout.y;
     drag.startW = layout.w;
     drag.startH = layout.h ?? 140;
     drag.startFontSize = layout.fontSize;
     clearLongPress();
+    clearDragIntent();
     setDragDocumentState(true);
 
-    event.currentTarget?.setPointerCapture?.(event.pointerId);
-    event.stopPropagation();
-    event.preventDefault();
+    captureTarget?.setPointerCapture?.(pointerId);
+  };
+
+  const handleElementPointerDown = (event, id) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    if (editingElementId.value === id) return;
+
+    const groupId = getGroupIdForElement(id);
+    if (groupId) {
+      selectGroup(groupId);
+      dragIntent.active = true;
+      dragIntent.pointerId = event.pointerId;
+      dragIntent.elementId = null;
+      dragIntent.groupId = groupId;
+      dragIntent.targetType = 'group';
+      dragIntent.startX = event.clientX;
+      dragIntent.startY = event.clientY;
+      clearLongPress();
+      return;
+    }
+
+    state.selectedElementId = id;
+    selectedGroupId.value = null;
+    multiSelectionIds.value = [];
+    dragIntent.active = true;
+    dragIntent.pointerId = event.pointerId;
+    dragIntent.elementId = id;
+    dragIntent.groupId = null;
+    dragIntent.targetType = 'element';
+    dragIntent.startX = event.clientX;
+    dragIntent.startY = event.clientY;
+
+    if (isTextElement(id)) {
+      startTouchEditIntent(event, id);
+    } else {
+      clearLongPress();
+    }
 };
 
 const startResize = (event, id, handle) => {
-    const layout = state.elementLayout[id];
+  const group = groupedElements[id] ?? null;
+  const layout = group ? group.layout : state.elementLayout[id];
     if (!layout) return;
+
+  markEditorControlInteraction();
 
     // Si estamos en modo edición, commiteamos antes de redimensionar para evitar
     // inconsistencias entre el estado interno de TipTap y paragraphStyles
     if (editingElementId.value) commitTextEdit();
 
-    state.selectedElementId = id;
+    if (group) {
+      selectGroup(id);
+      state.selectedElementId = null;
+      multiSelectionIds.value = [];
+    } else {
+      state.selectedElementId = id;
+      selectedGroupId.value = null;
+      multiSelectionIds.value = [];
+    }
     drag.active = true;
     drag.mode = 'resize';
     drag.pointerId = event.pointerId;
-    drag.elementId = id;
+    drag.elementId = group ? null : id;
+    drag.groupId = group ? id : null;
+    drag.groupSnapshot = null;
     drag.handle = handle;
     drag.startClientX = event.clientX;
     drag.startClientY = event.clientY;
@@ -1200,7 +1784,10 @@ const startResize = (event, id, handle) => {
     drag.startW = layout.w;
     drag.startH = layout.h ?? 140;
     drag.startFontSize = layout.fontSize;
-    drag.startParagraphStyles = ensureParagraphStyles(layout, getElementText(id)).map((style) => ({ ...style }));
+    drag.startParagraphStyles = group
+      ? []
+      : ensureParagraphStyles(layout, getElementText(id)).map((style) => ({ ...style }));
+    drag.groupSnapshot = group ? buildGroupResizeSnapshot(id) : null;
     clearLongPress();
     setDragDocumentState(true);
 
@@ -1212,9 +1799,12 @@ const startResize = (event, id, handle) => {
   const getPointerAngle = (event, centerX, centerY) => Math.atan2(event.clientY - centerY, event.clientX - centerX) * (180 / Math.PI);
 
   const startRotate = (event, id) => {
-    const layout = state.elementLayout[id];
-    const measured = elementMeasurements[id];
+    const group = groupedElements[id] ?? null;
+    const layout = group ? group.layout : state.elementLayout[id];
+    const measured = group ? { width: layout.w, height: layout.h } : elementMeasurements[id];
     if (!layout) return;
+
+    markEditorControlInteraction();
 
     if (editingElementId.value) commitTextEdit();
 
@@ -1223,11 +1813,20 @@ const startResize = (event, id, handle) => {
     const centerX = layout.x + (width / 2);
     const centerY = layout.y + (height / 2);
 
-    state.selectedElementId = id;
+    if (group) {
+      selectGroup(id);
+      state.selectedElementId = null;
+    } else {
+      state.selectedElementId = id;
+      selectedGroupId.value = null;
+      multiSelectionIds.value = [];
+    }
     drag.active = true;
     drag.mode = 'rotate';
     drag.pointerId = event.pointerId;
-    drag.elementId = id;
+    drag.elementId = group ? null : id;
+    drag.groupId = group ? id : null;
+    drag.groupSnapshot = null;
     drag.handle = null;
     drag.startRotation = Number(layout.rotation ?? 0);
     drag.centerX = centerX;
@@ -1244,12 +1843,30 @@ const startResize = (event, id, handle) => {
   };
 
   const resetRotation = (id) => {
+    if (groupedElements[id]) {
+      groupedElements[id].layout.rotation = 0;
+      groupedElements[id].elementIds.forEach((memberId) => {
+        const memberLayout = state.elementLayout[memberId];
+        if (memberLayout) memberLayout.rotation = 0;
+      });
+      return;
+    }
+
     const layout = state.elementLayout[id];
     if (!layout) return;
     layout.rotation = 0;
   };
 
 const moveDrag = (event) => {
+  if (selectionMarquee.active && selectionMarquee.pointerId === event.pointerId && canvasRef.value) {
+    const rect = canvasRef.value.getBoundingClientRect();
+    selectionMarquee.currentX = clamp(event.clientX - rect.left, 0, rect.width);
+    selectionMarquee.currentY = clamp(event.clientY - rect.top, 0, rect.height);
+    updateSelectionMarqueePreview();
+    if (event.cancelable) event.preventDefault();
+    return;
+  }
+
     if (toolbarDrag.active && toolbarDrag.pointerId === event.pointerId) {
         toolbarPosition.x = toolbarDrag.originX + (event.clientX - toolbarDrag.startX);
         toolbarPosition.y = toolbarDrag.originY + (event.clientY - toolbarDrag.startY);
@@ -1258,7 +1875,40 @@ const moveDrag = (event) => {
         return;
     }
 
-    if (!drag.active || drag.pointerId !== event.pointerId || !drag.elementId || !canvasRef.value) {
+    if (!drag.active && dragIntent.active && dragIntent.pointerId === event.pointerId && (dragIntent.elementId || dragIntent.groupId)) {
+      const moved = Math.hypot(event.clientX - dragIntent.startX, event.clientY - dragIntent.startY);
+
+      if (moved > 6) {
+        if (dragIntent.targetType === 'group' && dragIntent.groupId) {
+          const group = groupedElements[dragIntent.groupId];
+          if (group) {
+            drag.active = true;
+            drag.mode = 'move';
+            drag.pointerId = event.pointerId;
+            drag.elementId = null;
+            drag.groupId = dragIntent.groupId;
+            drag.handle = null;
+            drag.startClientX = event.clientX;
+            drag.startClientY = event.clientY;
+            drag.startX = group.layout.x;
+            drag.startY = group.layout.y;
+            drag.startW = group.layout.w;
+            drag.startH = group.layout.h;
+            setDragDocumentState(true);
+            clearDragIntent();
+          }
+        } else if (dragIntent.elementId) {
+          beginElementDrag({
+            pointerId: event.pointerId,
+            clientX: dragIntent.startX,
+            clientY: dragIntent.startY,
+          }, dragIntent.elementId);
+        }
+        suppressElementClickUntil.value = Date.now() + 250;
+      }
+    }
+
+    if (!drag.active || drag.pointerId !== event.pointerId || (!drag.elementId && !drag.groupId) || !canvasRef.value) {
         if (touchIntent.pointerId === event.pointerId) {
             const moved = Math.hypot(event.clientX - touchIntent.startX, event.clientY - touchIntent.startY);
             if (moved > 8) clearLongPress();
@@ -1267,8 +1917,146 @@ const moveDrag = (event) => {
     }
 
     const rect = canvasRef.value.getBoundingClientRect();
-    const layout = state.elementLayout[drag.elementId];
-    const isText = isTextElement(drag.elementId);
+    const layout = drag.groupId ? groupedElements[drag.groupId]?.layout : state.elementLayout[drag.elementId];
+    const isText = drag.groupId ? false : isTextElement(drag.elementId);
+    if (!layout) return;
+
+    if (drag.groupId) {
+      const group = groupedElements[drag.groupId];
+      if (!group) return;
+
+      if (drag.mode === 'move') {
+        const deltaX = event.clientX - drag.startClientX;
+        const deltaY = event.clientY - drag.startClientY;
+        const nextX = Math.round(clamp(drag.startX + deltaX, 0, Math.max(0, rect.width - group.layout.w - 8)));
+        const nextY = Math.round(clamp(drag.startY + deltaY, 18, Math.max(18, rect.height - group.layout.h - 8)));
+        const shiftX = nextX - group.layout.x;
+        const shiftY = nextY - group.layout.y;
+
+        group.layout.x = nextX;
+        group.layout.y = nextY;
+        group.elementIds.forEach((id) => {
+          const memberLayout = state.elementLayout[id];
+          if (!memberLayout) return;
+          memberLayout.x = Math.round((memberLayout.x ?? 0) + shiftX);
+          memberLayout.y = Math.round((memberLayout.y ?? 0) + shiftY);
+        });
+        if (event.cancelable) event.preventDefault();
+        return;
+      }
+
+      if (drag.mode === 'resize') {
+        if (event.cancelable) event.preventDefault();
+        const snapshot = drag.groupSnapshot;
+        if (!snapshot) return;
+        const deltaX = event.clientX - drag.startClientX;
+        const deltaY = event.clientY - drag.startClientY;
+        const handle = drag.handle ?? 'se';
+        const minSize = 40;
+        let nextX = snapshot.x;
+        let nextY = snapshot.y;
+        let nextW = snapshot.w;
+        let nextH = snapshot.h;
+
+        if (handle === 'n-width' || handle === 's-width') {
+          nextW = clamp(Math.round(snapshot.w + deltaX), minSize, rect.width - 8);
+          nextX = snapshot.x - ((nextW - snapshot.w) / 2);
+        } else {
+          if (handle.includes('e')) {
+            nextW = clamp(Math.round(snapshot.w + deltaX), minSize, rect.width - 8);
+          }
+          if (handle.includes('w')) {
+            nextW = clamp(Math.round(snapshot.w - deltaX), minSize, rect.width - 8);
+            nextX = snapshot.x + (snapshot.w - nextW);
+          }
+        }
+
+        if (handle === 'n-width' || handle === 's-width' || handle === 'e' || handle === 'w') {
+          nextH = snapshot.h;
+          nextY = snapshot.y;
+        } else {
+          if (handle.includes('s')) {
+            nextH = clamp(Math.round(snapshot.h + deltaY), minSize, rect.height - 8);
+          }
+          if (handle.includes('n')) {
+            nextH = clamp(Math.round(snapshot.h - deltaY), minSize, rect.height - 8);
+            nextY = snapshot.y + (snapshot.h - nextH);
+          }
+        }
+
+        nextX = clamp(Math.round(nextX), 0, Math.max(0, rect.width - nextW - 8));
+        nextY = clamp(Math.round(nextY), 18, Math.max(18, rect.height - nextH - 8));
+
+        const sx = nextW / Math.max(1, snapshot.w);
+        const sy = nextH / Math.max(1, snapshot.h);
+
+        group.layout.x = Math.round(nextX);
+        group.layout.y = Math.round(nextY);
+        group.layout.w = Math.round(nextW);
+        group.layout.h = Math.round(nextH);
+
+        snapshot.members.forEach((memberSnapshot) => {
+          const member = state.elementLayout[memberSnapshot.id];
+          if (!member) return;
+
+          const scaledX = nextX + ((memberSnapshot.x - snapshot.x) * sx);
+          const scaledY = nextY + ((memberSnapshot.y - snapshot.y) * sy);
+          const scaledW = Math.max(40, Math.round(memberSnapshot.w * sx));
+          const scaledH = Math.max(40, Math.round(memberSnapshot.h * sy));
+
+          member.x = Math.round(scaledX);
+          member.y = Math.round(scaledY);
+          member.w = scaledW;
+
+          if (!memberSnapshot.isText) {
+            member.h = scaledH;
+          }
+
+          if (memberSnapshot.isText) {
+            const scale = Math.max(0.2, Math.min(sx, sy));
+            member.fontSize = clamp(Math.round(memberSnapshot.fontSize * scale), 8, 200);
+            const baseStyles = memberSnapshot.paragraphStyles.length
+              ? memberSnapshot.paragraphStyles
+              : ensureParagraphStyles(member, getElementText(memberSnapshot.id)).map((style) => ({ ...style }));
+            member.paragraphStyles = baseStyles.map((style) => ({
+              ...style,
+              fontSize: clamp(Math.round((style.fontSize ?? memberSnapshot.fontSize) * scale), 8, 200),
+            }));
+          }
+        });
+        return;
+      }
+
+      if (drag.mode === 'rotate') {
+        const currentAngle = getPointerAngle(event, drag.centerX, drag.centerY);
+        const deltaAngle = currentAngle - drag.startAngle;
+        const radians = (deltaAngle * Math.PI) / 180;
+        const cos = Math.cos(radians);
+        const sin = Math.sin(radians);
+
+        group.layout.rotation = Math.round(((Number(group.layout.rotation ?? 0) + deltaAngle) + 540) % 360 - 180);
+        group.elementIds.forEach((id) => {
+          const member = state.elementLayout[id];
+          if (!member) return;
+          const width = Math.max(1, member.w ?? 1);
+          const height = Math.max(1, member.h ?? 44);
+          const cx = (member.x ?? 0) + width / 2;
+          const cy = (member.y ?? 0) + height / 2;
+          const dx = cx - drag.centerX;
+          const dy = cy - drag.centerY;
+          const nextCx = drag.centerX + (dx * cos) - (dy * sin);
+          const nextCy = drag.centerY + (dx * sin) + (dy * cos);
+
+          member.x = Math.round(nextCx - width / 2);
+          member.y = Math.round(nextCy - height / 2);
+          member.rotation = Math.round(((Number(member.rotation ?? 0) + deltaAngle) + 540) % 360 - 180);
+        });
+
+        drag.startAngle = currentAngle;
+        if (event.cancelable) event.preventDefault();
+        return;
+      }
+    }
 
     if (drag.mode === 'rotate') {
       const dx = event.clientX - drag.lastClientX;
@@ -1276,9 +2064,10 @@ const moveDrag = (event) => {
       const currentRotation = Number(layout.rotation ?? 0);
       const theta = (currentRotation * Math.PI) / 180;
 
-      // Tangente local del asa superior: arrastrar en ese sentido incrementa el giro horario.
-      const tangentX = Math.cos(theta);
-      const tangentY = Math.sin(theta);
+      // El asa de rotacion esta debajo del elemento, asi que su tangente local
+      // es la inversa de la usada cuando el asa estaba arriba.
+      const tangentX = -Math.cos(theta);
+      const tangentY = -Math.sin(theta);
       const projectedDelta = (dx * tangentX) + (dy * tangentY);
       const sensitivity = 0.8;
       const nextRotation = currentRotation + (projectedDelta * sensitivity);
@@ -1385,6 +2174,12 @@ const moveDrag = (event) => {
 };
 
 const endDrag = (event) => {
+  if (selectionMarquee.active && selectionMarquee.pointerId === event.pointerId) {
+    finalizeSelectionMarquee();
+    setDragDocumentState(false);
+    return;
+  }
+
     if (toolbarDrag.active && toolbarDrag.pointerId === event.pointerId) {
         toolbarDrag.active = false;
         toolbarDrag.pointerId = null;
@@ -1392,11 +2187,18 @@ const endDrag = (event) => {
         return;
     }
 
+  if (dragIntent.pointerId !== null && event.pointerId !== undefined && dragIntent.pointerId === event.pointerId) {
+    clearDragIntent();
+  }
+
     if (drag.pointerId !== null && event.pointerId !== undefined && drag.pointerId !== event.pointerId) return;
+  const wasDragging = drag.active;
     drag.active = false;
     drag.mode = 'move';
     drag.pointerId = null;
     drag.elementId = null;
+    drag.groupId = null;
+    drag.groupSnapshot = null;
     drag.handle = null;
     drag.startH = 0;
     drag.startRotation = 0;
@@ -1406,6 +2208,10 @@ const endDrag = (event) => {
     drag.lastClientX = 0;
     drag.lastClientY = 0;
     clearLongPress();
+    clearDragIntent();
+    if (wasDragging) {
+      suppressElementClickUntil.value = Date.now() + 250;
+    }
     setDragDocumentState(false);
 };
 
@@ -1454,12 +2260,16 @@ const clearSelection = () => {
   if (editingElementId.value) {
     commitTextEdit();
   }
+    selectedGroupId.value = null;
+    multiSelectionIds.value = [];
+    marqueePreviewIds.value = [];
     state.selectedElementId = null;
     activePropertyPanel.value = null;
 };
 
 const handleCanvasPointerDown = (event) => {
-    if (drag.active) return;
+    if (drag.active || selectionMarquee.active) return;
+    if (event.button !== undefined && event.button !== 0) return;
     if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
 
     // Si el fondo ya está seleccionado, permitir deseleccionar con clic
@@ -1470,16 +2280,19 @@ const handleCanvasPointerDown = (event) => {
 
     // Permitir seleccionar el fondo con doble clic
     if (event.detail === 2) {
+      selectedGroupId.value = null;
+      multiSelectionIds.value = [];
         state.selectedElementId = 'background';
         activePropertyPanel.value = 'color';
         return;
     }
 
     clearSelection();
+    startSelectionMarquee(event);
 };
 
 const handleGlobalPointerDown = (event) => {
-    if (drag.active || !state.selectedElementId) return;
+    if (drag.active || selectionMarquee.active || (!state.selectedElementId && !selectedGroupId.value && !multiSelectionIds.value.length)) return;
 
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -1515,8 +2328,33 @@ onBeforeUnmount(() => {
 });
 
 watch(editorElements, () => {
+    Object.entries(groupedElements).forEach(([groupId, group]) => {
+      group.elementIds = group.elementIds.filter((id) => Boolean(state.elementLayout[id]));
+      if (group.elementIds.length < 2) {
+        delete groupedElements[groupId];
+        if (selectedGroupId.value === groupId) {
+          selectedGroupId.value = null;
+        }
+      }
+    });
+
     refreshElementObservers();
 }, { deep: true });
+
+watch(() => state.selectedElementId, () => {
+    toolbarPosition.x = 0;
+    toolbarPosition.y = 3;
+  if (state.selectedElementId) {
+    selectedGroupId.value = null;
+    multiSelectionIds.value = [];
+  }
+});
+
+watch(selectedGroupId, (groupId) => {
+  if (!groupId) return;
+  state.selectedElementId = null;
+  activePropertyPanel.value = null;
+});
 </script>
 
 <template>
@@ -1532,17 +2370,18 @@ watch(editorElements, () => {
     <section class="relative glass soft-shadow rounded-[32px] border border-white/70 p-6 sm:p-8 dark:border-slate-700/70">
       <div class="overflow-hidden rounded-[32px] border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div
-          v-if="hasSelection"
+          v-if="hasSelection && !hasMultiSelection && !isGroupSelection && state.selectedElementId !== 'background'"
           data-editor-keep-selection="true"
-          class="pointer-events-none absolute z-[7000]"
-          :style="{ left: toolbarPosition.x + 'px', top: toolbarPosition.y + 'px' }"
+          class="pointer-events-none absolute z-50 flex justify-center"
+          :style="{ left: '70px', right: '0', top: `${toolbarPosition.y}px` }"
         >
+          <div :style="{ transform: `translateX(${toolbarPosition.x}px)` }" class="pointer-events-none">
           <div data-editor-keep-selection="true" class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90">
             <div class="card-body p-1.5">
                 <div class="flex flex-wrap items-center gap-3">
                     <button type="button" class="order-first btn btn-ghost text-lg cursor-grab active:cursor-grabbing" @pointerdown="startToolbarDrag">⋮⋮</button>
                   <button v-for="tab in selectedPropertyTabs" :key="tab.id" type="button" class="btn border-0 py-1 px-2" :class="[activePropertyPanel === tab.id ? 'btn-primary' : 'btn-outline', tab.class]"
-                        @click="activePropertyPanel = tab.id">
+                        @click="activePropertyPanel = tab.id; optionsPanelOpen = true">
                         <span v-if="tab.label" class="text-sm text-base-100-accent" :class="tab.labelClass">{{ tab.label }}</span>
                         <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl"/>
                     </button>
@@ -1554,7 +2393,6 @@ watch(editorElements, () => {
                     <button type="button" class="btn text-lg btn-outline" @click="cycleAlignment">
                       <Icon :icon="currentAlignmentIcon" class="scale-150"/>
                     </button>
-                    <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">{{ activeParagraphLabel }}</span>
                   </template>
                   <template v-else>
                     <span class="rounded-full border border-base-300 bg-base-100 px-3 py-1 text-[11px] font-medium text-base-content/70">{{ activeElementLabel }}</span>
@@ -1562,10 +2400,62 @@ watch(editorElements, () => {
                 </div>
             </div>
           </div>
+          </div>
         </div>
 
-        <div class="grid gap-0 xl:grid-cols-[320px_1fr]">
-          <aside data-editor-keep-selection="true" class="border-b border-base-300 bg-base-100 p-5 xl:border-b-0 xl:border-r">
+        <div class="relative grid gap-0" style="gridTemplateColumns: 70px 1fr">
+          <!-- Panel de Creación (vertical, siempre visible) -->
+          <div class="flex flex-col items-center gap-2 border-r border-base-300 bg-base-100 p-3 xl:border-b-0">
+            <button
+              type="button"
+              class="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-2xl border transition"
+              :class="textPanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
+              @click="textPanelOpen = true; imagePanelOpen = false; shapePanelOpen = false; optionsPanelOpen = true"
+              title="Agregar Texto"
+            >
+              <span class="text-2xl font-bold leading-none">T</span>
+              <span class="text-[9px] font-medium">Texto</span>
+            </button>
+
+            <button
+              type="button"
+              class="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-2xl border transition"
+              :class="imagePanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
+              @click="imagePanelOpen = true; textPanelOpen = false; shapePanelOpen = false; optionsPanelOpen = true"
+              title="Agregar Imagen"
+            >
+              <Icon icon="mdi:image-outline" class="text-2xl" />
+              <span class="text-[9px] font-medium">Imagen</span>
+            </button>
+
+            <button
+              type="button"
+              class="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-2xl border transition"
+              :class="shapePanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
+              @click="shapePanelOpen = true; textPanelOpen = false; imagePanelOpen = false; optionsPanelOpen = true"
+              title="Agregar Figura"
+            >
+              <Icon icon="mdi:shape-outline" class="text-2xl" />
+              <span class="text-[9px] font-medium">Figura</span>
+            </button>
+
+            <button
+              type="button"
+              class="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-2xl border transition"
+              :class="state.selectedElementId === 'background' ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
+              @click="state.selectedElementId = 'background'; activePropertyPanel = 'color'; textPanelOpen = false; imagePanelOpen = false; shapePanelOpen = false; optionsPanelOpen = true"
+              title="Ajustar Fondo"
+            >
+              <span class="flex h-10 w-10 items-center justify-center rounded-xl text-xl"
+                :class="state.selectedElementId === 'background' ? 'bg-primary/20' : 'bg-base-200'">
+                <Icon icon="mdi:palette-outline" class="text-xl" />
+              </span>
+              <span class="text-[9px] font-medium">Fondo</span>
+            </button>
+          </div>
+
+          <!-- Panel de Opciones (condicionalmente visible) -->
+          <aside v-if="optionsPanelOpen" data-editor-keep-selection="true" class="absolute top-0 z-40 w-80 border-r border-base-300 bg-base-100 p-5 overflow-y-auto" style="left: 70px; max-height: calc(100vh - 200px)">
             <div class="space-y-5">
               <div>
                 <div class="flex items-start justify-between gap-3">
@@ -1574,76 +2464,30 @@ watch(editorElements, () => {
                     <h3 class="mt-2 text-xl font-semibold text-base-content">{{ hasSelection && activePropertyPanel ? activePropertyTitle : 'Elementos' }}</h3>
                     <p v-if="hasSelection && activePropertyPanel" class="mt-2 text-sm leading-6 text-base-content/75">Elige una propiedad arriba para ver sus opciones.</p>
                   </div>
-                  <button
-                    v-if="hasSelection && activePropertyPanel"
-                    type="button"
-                    class="btn btn-ghost btn-sm btn-circle"
-                    aria-label="Cerrar propiedad activa"
-                    @click="activePropertyPanel = null"
-                  >
-                    <Icon icon="mdi:close" class="text-lg" />
-                  </button>
+                  <div class="flex gap-2">
+                    <button
+                      v-if="hasSelection && activePropertyPanel"
+                      type="button"
+                      class="btn btn-ghost btn-sm btn-circle"
+                      aria-label="Cerrar propiedad activa"
+                      @click="activePropertyPanel = null"
+                    >
+                      <Icon icon="mdi:close" class="text-lg" />
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm btn-circle"
+                      aria-label="Cerrar panel de opciones"
+                      @click="optionsPanelOpen = false; activePropertyPanel = null; textPanelOpen = false; imagePanelOpen = false; shapePanelOpen = false"
+                    >
+                      <Icon icon="mdi:close" class="text-lg" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
               <!-- Panel de inserción (siempre visible cuando no hay selección) -->
               <div v-if="!hasSelection || !activePropertyPanel" class="space-y-3">
-                <!-- Botón para seleccionar el fondo -->
-                <button
-                  type="button"
-                  class="w-full rounded-xl border-2 p-3 transition"
-                  :class="state.selectedElementId === 'background' ? 'border-primary bg-primary/15 text-primary' : 'border-base-300 bg-base-100/70 hover:border-primary/50 hover:bg-primary/10'"
-                  @click="state.selectedElementId = 'background'; activePropertyPanel = 'color'"
-                >
-                  <div class="flex items-center gap-3">
-                    <div class="h-8 w-8 rounded-lg border border-base-300" :style="{ backgroundColor: state.elementLayout.background?.backgroundColor }"></div>
-                    <div class="text-left">
-                      <p class="text-xs font-semibold uppercase tracking-[0.15em]">Fondo</p>
-                      <p class="text-[11px] text-base-content/60">{{ state.elementLayout.background?.backgroundColor }}</p>
-                    </div>
-                  </div>
-                </button>
-
-                <!-- Grid de acciones -->
-                <div class="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    class="flex flex-col items-center gap-2 rounded-2xl border p-4 transition"
-                    :class="textPanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
-                    @click="textPanelOpen = !textPanelOpen; imagePanelOpen = false; shapePanelOpen = false"
-                  >
-                    <span class="flex h-10 w-10 items-center justify-center rounded-xl text-2xl font-bold leading-none"
-                      :class="textPanelOpen ? 'bg-primary/20' : 'bg-base-200'">T</span>
-                    <span class="text-xs font-medium">Texto</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    class="flex flex-col items-center gap-2 rounded-2xl border p-4 transition"
-                    :class="imagePanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
-                    @click="imagePanelOpen = !imagePanelOpen; textPanelOpen = false; shapePanelOpen = false"
-                  >
-                    <span class="flex h-10 w-10 items-center justify-center rounded-xl"
-                      :class="imagePanelOpen ? 'bg-primary/20' : 'bg-base-200'">
-                      <Icon icon="mdi:image-outline" class="text-2xl" />
-                    </span>
-                    <span class="text-xs font-medium">Imagen</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    class="flex flex-col items-center gap-2 rounded-2xl border p-4 transition"
-                    :class="shapePanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
-                    @click="shapePanelOpen = !shapePanelOpen; textPanelOpen = false; imagePanelOpen = false"
-                  >
-                    <span class="flex h-10 w-10 items-center justify-center rounded-xl"
-                      :class="shapePanelOpen ? 'bg-primary/20' : 'bg-base-200'">
-                      <Icon icon="mdi:shape-outline" class="text-2xl" />
-                    </span>
-                    <span class="text-xs font-medium">Figura</span>
-                  </button>
-                </div>
-
                 <!-- Opciones de texto (inline) -->
                 <div v-if="textPanelOpen" class="space-y-1">
                   <button
@@ -1830,40 +2674,119 @@ watch(editorElements, () => {
                     <div class="flex items-center justify-between gap-3">
                       <div>
                         <p class="text-sm font-semibold text-base-content">Color del fondo</p>
-                        <p class="text-xs text-base-content/60">Elige un color sólido para el fondo del diseño.</p>
+                        <p class="text-xs text-base-content/60">Puedes usar color sólido o degradado.</p>
                       </div>
                       <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                        {{ state.elementLayout.background?.backgroundColor }}
+                        {{ state.elementLayout.background?.fillMode === 'gradient' ? 'degradado' : (state.elementLayout.background?.backgroundColor || 'transparent') }}
                       </span>
                     </div>
-                    <div class="mt-4 grid grid-cols-6 gap-2">
+
+                    <div class="mt-3 flex flex-wrap gap-2">
                       <button
-                        v-for="color in backgroundOptions"
-                        :key="color"
                         type="button"
-                        class="h-9 w-9 rounded-full transition hover:scale-105"
-                        :class="state.elementLayout.background?.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                        :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
-                        :title="color"
-                        @click="state.elementLayout.background.backgroundColor = color"
-                      ></button>
+                        class="btn btn-sm rounded-full"
+                        :class="state.elementLayout.background?.fillMode !== 'gradient' ? 'btn-primary' : 'btn-outline'"
+                        @click="state.elementLayout.background.fillMode = 'solid'"
+                      >
+                        Sólido
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-sm rounded-full"
+                        :class="state.elementLayout.background?.fillMode === 'gradient' ? 'btn-primary' : 'btn-outline'"
+                        @click="state.elementLayout.background.fillMode = 'gradient'"
+                      >
+                        Degradado
+                      </button>
                     </div>
-                    <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
-                      <div class="flex items-center gap-2">
-                        <input
-                          type="color"
-                          class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                          :value="normalizePickerColor(state.elementLayout.background?.backgroundColor || '#4338ca', '#4338ca')"
-                          @input="state.elementLayout.background.backgroundColor = $event.target.value"
-                        />
-                        <input
-                          :value="state.elementLayout.background?.backgroundColor"
-                          type="text"
-                          placeholder="#4338ca"
-                          class="input input-bordered input-sm flex-1"
-                          @input="state.elementLayout.background.backgroundColor = $event.target.value"
-                        />
+
+                    <div v-if="state.elementLayout.background?.fillMode !== 'gradient'" class="space-y-4">
+                      <div class="mt-4 grid grid-cols-6 gap-2">
+                        <button
+                          v-for="color in backgroundOptions"
+                          :key="'bg-color-' + color"
+                          type="button"
+                          class="h-9 w-9 rounded-full transition hover:scale-105"
+                          :class="state.elementLayout.background?.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
+                          :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
+                          :title="color"
+                          @click="state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = color"
+                        ></button>
+                      </div>
+                      <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
+                        <div class="flex items-center gap-2">
+                          <input
+                            type="color"
+                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                            :value="normalizePickerColor(state.elementLayout.background?.backgroundColor || '#4338ca', '#4338ca')"
+                            @input="state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = $event.target.value"
+                          />
+                          <input
+                            :value="state.elementLayout.background?.backgroundColor"
+                            type="text"
+                            placeholder="#4338ca"
+                            class="input input-bordered input-sm flex-1"
+                            @input="state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = $event.target.value"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-else class="space-y-4">
+                      <div class="grid grid-cols-2 gap-2">
+                        <button
+                          v-for="preset in shapeGradientOptions"
+                          :key="preset.id"
+                          type="button"
+                          class="h-10 rounded-xl border border-base-300/70 transition hover:scale-[1.01]"
+                          :class="state.elementLayout.background?.gradientStart === preset.start && state.elementLayout.background?.gradientEnd === preset.end ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : ''"
+                          :style="{ background: `linear-gradient(135deg, ${preset.start}, ${preset.end})` }"
+                          @click="applyGradientPreset('background', preset.start, preset.end)"
+                        ></button>
+                      </div>
+                      <div class="grid gap-3 sm:grid-cols-2">
+                        <div class="flex items-center gap-2">
+                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Inicio</span>
+                          <input
+                            type="color"
+                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                            :value="normalizePickerColor(state.elementLayout.background?.gradientStart || '#0ea5e9', '#0ea5e9')"
+                            @input="state.elementLayout.background.gradientStart = $event.target.value"
+                          />
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Final</span>
+                          <input
+                            type="color"
+                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                            :value="normalizePickerColor(state.elementLayout.background?.gradientEnd || '#8b5cf6', '#8b5cf6')"
+                            @input="state.elementLayout.background.gradientEnd = $event.target.value"
+                          />
+                        </div>
+                      </div>
+                      <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Dirección</label>
+                        <div class="grid grid-cols-3 gap-2 rounded-xl border border-base-300/70 bg-base-100/70 p-2">
+                          <button
+                            v-for="direction in shapeGradientDirections"
+                            :key="direction.value"
+                            type="button"
+                            class="group flex items-center justify-center rounded-lg border p-2 transition"
+                            :class="state.elementLayout.background?.gradientAngle === direction.value
+                              ? 'border-primary bg-primary/15 text-primary'
+                              : 'border-base-300/70 bg-base-100/80 text-base-content/70 hover:border-primary/50 hover:text-primary'"
+                            :title="direction.label"
+                            :aria-label="direction.label"
+                            @click="state.elementLayout.background.gradientAngle = direction.value"
+                          >
+                            <Icon :icon="direction.icon" class="text-xl" />
+                          </button>
+                        </div>
+                      </div>
+                      <div class="flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-outline btn-sm rounded-full" @click="swapGradientStops('background')">Alternar inicio/fin</button>
+                        <div class="h-8 flex-1 min-w-28 rounded-full border border-base-300/70" :style="{ background: `linear-gradient(${state.elementLayout.background?.gradientAngle || 135}deg, ${state.elementLayout.background?.gradientStart || '#0ea5e9'}, ${state.elementLayout.background?.gradientEnd || '#8b5cf6'})` }"></div>
                       </div>
                     </div>
                   </div>
@@ -2323,15 +3246,9 @@ watch(editorElements, () => {
             </div>
           </aside>
 
-          <div class="canvas-grid min-h-[680px] bg-slate-100 p-6 dark:bg-slate-950 sm:p-10">
-            <div class="mx-auto max-w-[400px] bg-white p-4 shadow-2xl dark:bg-slate-900">
-              <div ref="canvasRef" class="relative h-[620px] overflow-hidden p-7 text-white select-none touch-none" :style="{ backgroundColor: state.elementLayout.background?.backgroundColor || '#4338ca' }" @pointerdown="handleCanvasPointerDown">
-                <button
-                  type="button"
-                  class="absolute inset-0 z-0 cursor-default bg-transparent"
-                  aria-label="Deseleccionar elemento"
-                  @pointerdown.stop="clearSelection"
-                ></button>
+          <div class="canvas-grid min-h-[680px] bg-slate-100 px-6 pt-12 pb-6 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10">
+            <div class="mx-auto max-w-[400px] bg-white p-4 shadow-2xl dark:bg-slate-900" :class="state.selectedElementId === 'background' ? 'ring-2 ring-primary' : ''">
+              <div ref="canvasRef" class="relative h-[620px] overflow-hidden p-7 text-white select-none touch-none" :style="canvasBackgroundStyle" @pointerdown="handleCanvasPointerDown">
 
                 <div
                   v-for="item in editorElements"
@@ -2340,7 +3257,7 @@ watch(editorElements, () => {
                   :data-editor-id="item.id"
                   class="absolute rounded-[18px] p-0 text-left"
                   :style="elementBoxStyle(item.id)"
-                  :class="state.selectedElementId === item.id
+                  :class="isElementSelected(item.id)
                     ? (editingElementId === item.id
                         ? 'border-2 border-solid border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.35)] editor-editing-pulse'
                         : (drag.active && drag.elementId === item.id
@@ -2349,7 +3266,7 @@ watch(editorElements, () => {
                     : 'z-10 border border-transparent hover:border-white/20'"
                   @click="handleElementClick(item.id)"
                   @dblclick="beginTextEdit(item.id)"
-                  @pointerdown="startTouchEditIntent($event, item.id)"
+                  @pointerdown="handleElementPointerDown($event, item.id)"
                 >
                   <div class="relative" :class="item.type === 'text' ? '' : 'h-full w-full'" :style="elementContentStyle(item.id)">
                     <template v-if="item.type === 'text'">
@@ -2366,7 +3283,7 @@ watch(editorElements, () => {
                         @keydown.escape.stop="cancelTextEdit"
                         @keydown.ctrl.enter.stop="commitTextEdit"
                         @keydown.meta.enter.stop="commitTextEdit"
-                        @pointerdown.stop
+                        @pointerdown.stop="editingElementId === item.id ? null : handleElementPointerDown($event, item.id)"
                         @mousedown.stop
                         @dblclick.stop="beginTextEdit(item.id)"
                         @click.stop="editingElementId === item.id ? null : handleElementClick(item.id)"
@@ -2397,37 +3314,92 @@ watch(editorElements, () => {
                   </div>
                 </div>
 
-                <div v-if="state.selectedElementId" data-editor-control="true" class="pointer-events-none absolute" :style="selectedOverlayStyle">
+                <div
+                  v-if="activeSelectionIds.length && state.selectedElementId !== 'background'"
+                  data-editor-control="true"
+                  class="pointer-events-none absolute"
+                  :style="selectedActionBarStyle"
+                >
+                  <div class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90 text-base-content">
+                    <div class="flex items-center gap-1 p-1.5">
+                    <button
+                      v-if="multiSelectionIds.length > 1"
+                      data-editor-control="true"
+                      type="button"
+                      class="btn btn-ghost btn-sm font-semibold"
+                      title="Agrupar elementos"
+                      @pointerdown.stop="markEditorControlInteraction"
+                      @click.stop="groupSelectedElements"
+                    >
+                      agrupar
+                    </button>
+                    <button
+                      v-if="selectedElementType === 'text'"
+                      data-editor-control="true"
+                      type="button"
+                      class="btn btn-ghost btn-sm"
+                      title="Editar texto"
+                      @pointerdown.stop="markEditorControlInteraction"
+                      @click.stop="editSelectedTextElement"
+                    >
+                      <Icon icon="ph:pencil-simple-bold" class="text-base" />
+                    </button>
+                    <button
+                      data-editor-control="true"
+                      type="button"
+                      class="btn btn-ghost btn-sm"
+                      title="Clonar elemento"
+                      @pointerdown.stop="markEditorControlInteraction"
+                      @click.stop="cloneCurrentSelection"
+                    >
+                      <Icon icon="ph:copy-bold" class="text-base" />
+                    </button>
+                    <button
+                      data-editor-control="true"
+                      type="button"
+                      class="btn btn-ghost btn-sm text-error hover:bg-error/10"
+                      title="Eliminar elemento"
+                      @pointerdown.stop="markEditorControlInteraction"
+                      @click.stop="deleteCurrentSelection"
+                    >
+                      <Icon icon="ph:trash-bold" class="text-base" />
+                    </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="activeSelectionIds.length && state.selectedElementId !== 'background'" data-editor-control="true" class="pointer-events-none absolute" :style="selectedOverlayStyle">
                   <button
+                    v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)"
                     data-editor-control="true"
                     type="button"
-                    class="pointer-events-auto absolute -top-10 left-1/2 z-40 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border-2 border-white bg-cyan-300 text-slate-950 shadow-md cursor-grab active:cursor-grabbing touch-none"
+                    class="pointer-events-auto absolute -bottom-12 left-1/2 z-40 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border-2 border-white bg-cyan-300 text-slate-950 shadow-md touch-none"
                     title="Girar elemento"
-                    @pointerdown="startRotate($event, state.selectedElementId)"
-                    @dblclick.stop.prevent="resetRotation(state.selectedElementId)"
+                    @pointerdown="startRotate($event, overlayControlTargetId)"
+                    @dblclick.stop.prevent="resetRotation(overlayControlTargetId)"
                   >
                     <Icon icon="ph:arrow-clockwise-bold" class="text-lg" />
                   </button>
                   <span
-                    v-if="selectedElementType !== 'text'"
+                    v-if="overlayControlTargetId && (isGroupSelection || (!hasMultiSelection && selectedElementType !== 'text'))"
                     data-editor-control="true"
                     class="pointer-events-auto absolute -top-2 left-1/2 z-30 h-3 w-16 -translate-x-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
-                    @pointerdown="startResize($event, state.selectedElementId, 'n-width')"
+                    @pointerdown="startResize($event, overlayControlTargetId, 'n-width')"
                   ></span>
                   <span
-                    v-if="selectedElementType !== 'text'"
+                    v-if="overlayControlTargetId && (isGroupSelection || (!hasMultiSelection && selectedElementType !== 'text'))"
                     data-editor-control="true"
                     class="pointer-events-auto absolute -bottom-2 left-1/2 z-30 h-3 w-16 -translate-x-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
-                    @pointerdown="startResize($event, state.selectedElementId, 's-width')"
+                    @pointerdown="startResize($event, overlayControlTargetId, 's-width')"
                   ></span>
-                  <span data-editor-control="true" class="pointer-events-auto absolute -left-2 top-1/2 z-30 h-8 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'w')"></span>
-                  <span data-editor-control="true" class="pointer-events-auto absolute -right-2 top-1/2 z-30 h-8 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'e')"></span>
-                  <span data-editor-control="true" class="pointer-events-auto absolute -left-2 -top-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'nw')"></span>
-                  <span data-editor-control="true" class="pointer-events-auto absolute -right-2 -top-2 z-30 h-4 w-4 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'ne')"></span>
-                  <span data-editor-control="true" class="pointer-events-auto absolute -bottom-2 -left-2 z-30 h-4 w-4 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'sw')"></span>
-                  <span data-editor-control="true" class="pointer-events-auto absolute -bottom-2 -right-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, state.selectedElementId, 'se')"></span>
-                  <button data-editor-control="true" type="button" class="pointer-events-auto absolute -bottom-10 left-1/2 z-40 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border-2 border-white bg-cyan-300 text-sm font-black text-slate-950 shadow-md cursor-grab active:cursor-grabbing touch-none" @pointerdown="startDrag($event, state.selectedElementId)" title="Mover caja">✥</button>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -left-2 top-1/2 z-30 h-8 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'w')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -right-2 top-1/2 z-30 h-8 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'e')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -left-2 -top-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'nw')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -right-2 -top-2 z-30 h-4 w-4 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'ne')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -bottom-2 -left-2 z-30 h-4 w-4 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'sw')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -bottom-2 -right-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'se')"></span>
                 </div>
+                <div v-if="selectionMarquee.active" class="pointer-events-none absolute border border-cyan-200/90 bg-cyan-200/20" :style="marqueeRectStyle"></div>
                 <div class="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-cyan-200/30"></div>
               </div>
             </div>
