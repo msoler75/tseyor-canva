@@ -1461,20 +1461,20 @@ const clearSelection = () => {
 const handleCanvasPointerDown = (event) => {
     if (drag.active) return;
     if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
-    
+
     // Si el fondo ya está seleccionado, permitir deseleccionar con clic
     if (state.selectedElementId === 'background') {
         clearSelection();
         return;
     }
-    
+
     // Permitir seleccionar el fondo con doble clic
     if (event.detail === 2) {
         state.selectedElementId = 'background';
         activePropertyPanel.value = 'color';
         return;
     }
-    
+
     clearSelection();
 };
 
