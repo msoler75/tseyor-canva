@@ -41,6 +41,7 @@ const drag = reactive({
     elementId: null,
   groupId: null,
   groupSnapshot: null,
+  multiSnapshot: null,
     handle: null,
     offsetX: 0,
     offsetY: 0,
@@ -190,24 +191,19 @@ const shapeCategories = [
     id: 'basicas',
     label: 'Básicas',
     shapes: [
-      { id: 'square', label: 'Cuadrado' },
       { id: 'rectangle', label: 'Rectángulo' },
+      { id: 'rectangle-outline', label: 'Rectángulo recto' },
       { id: 'circle', label: 'Círculo' },
-      { id: 'ellipse', label: 'Elipse' },
-      { id: 'diamond', label: 'Rombo' },
+      { id: 'triangle-up', label: 'Triángulo' },
+      { id: 'triangle-right-angle', label: 'Triángulo rectángulo' },
       { id: 'parallelogram', label: 'Paralelogramo' },
       { id: 'trapezoid', label: 'Trapecio' },
-      { id: 'trapezoid-inv', label: 'Trapecio inv.' },
     ],
   },
   {
     id: 'poligonos',
     label: 'Polígonos',
     shapes: [
-      { id: 'triangle-up', label: 'Triángulo' },
-      { id: 'triangle-down', label: 'Triángulo inv.' },
-      { id: 'triangle-right', label: 'Triángulo der.' },
-      { id: 'triangle-left', label: 'Triángulo izq.' },
       { id: 'pentagon', label: 'Pentágono' },
       { id: 'hexagon', label: 'Hexágono' },
       { id: 'octagon', label: 'Octágono' },
@@ -228,13 +224,29 @@ const shapeCategories = [
     label: 'Flechas',
     shapes: [
       { id: 'arrow-right', label: 'Flecha →' },
-      { id: 'arrow-left', label: 'Flecha ←' },
-      { id: 'arrow-up', label: 'Flecha ↑' },
-      { id: 'arrow-down', label: 'Flecha ↓' },
+      { id: 'arrow-curved', label: 'Flecha curva' },
       { id: 'arrow-double-h', label: 'Doble H' },
-      { id: 'arrow-double-v', label: 'Doble V' },
       { id: 'chevron-right', label: 'Chevron →' },
-      { id: 'chevron-left', label: 'Chevron ←' },
+    ],
+  },
+  {
+    id: 'bocadillos',
+    label: 'Bocadillos',
+    shapes: [
+      { id: 'callout', label: 'Bocadillo clásico' },
+      { id: 'callout-ellipse', label: 'Bocadillo elipse' },
+      { id: 'callout-cloud', label: 'Bocadillo nube' },
+      { id: 'callout-burst', label: 'Bocadillo explosión' },
+    ],
+  },
+  {
+    id: 'marcos',
+    label: 'Marcos',
+    shapes: [
+      { id: 'frame', label: 'Marco clásico' },
+      { id: 'frame-rounded', label: 'Marco redondeado' },
+      { id: 'frame-thick', label: 'Marco grueso' },
+      { id: 'frame-thin', label: 'Marco fino' },
     ],
   },
   {
@@ -246,8 +258,6 @@ const shapeCategories = [
       { id: 'heart', label: 'Corazón' },
       { id: 'badge', label: 'Escudo' },
       { id: 'ribbon', label: 'Cinta' },
-      { id: 'frame', label: 'Marco' },
-      { id: 'callout', label: 'Bocadillo' },
     ],
   },
 ];
@@ -260,6 +270,7 @@ const SHAPE_CLIP_PATHS = {
   trapezoid:         'polygon(15% 0%, 85% 0%, 100% 100%, 0% 100%)',
   'trapezoid-inv':   'polygon(0% 0%, 100% 0%, 85% 100%, 15% 100%)',
   'triangle-up':     'polygon(50% 0%, 100% 100%, 0% 100%)',
+  'triangle-right-angle': 'polygon(0% 0%, 100% 100%, 0% 100%)',
   'triangle-down':   'polygon(0% 0%, 100% 0%, 50% 100%)',
   'triangle-right':  'polygon(0% 0%, 100% 50%, 0% 100%)',
   'triangle-left':   'polygon(100% 0%, 0% 50%, 100% 100%)',
@@ -269,8 +280,9 @@ const SHAPE_CLIP_PATHS = {
   'star-5':          'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
   'star-4':          'polygon(50% 0%, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0% 50%, 40% 40%)',
   'star-6':          'polygon(50% 0%, 58% 17%, 79% 7%, 71% 26%, 93% 25%, 82% 43%, 100% 50%, 82% 57%, 93% 75%, 71% 74%, 79% 93%, 58% 83%, 50% 100%, 42% 83%, 21% 93%, 29% 74%, 7% 75%, 18% 57%, 0% 50%, 18% 43%, 7% 25%, 29% 26%, 21% 7%, 42% 17%)',
-  'star-burst':      'polygon(50% 0%, 54% 35%, 65% 9%, 60% 43%, 79% 21%, 65% 50%, 91% 38%, 67% 57%, 97% 57%, 68% 65%, 93% 75%, 64% 71%, 79% 93%, 57% 79%, 58% 100%, 50% 80%, 42% 100%, 43% 79%, 21% 93%, 36% 71%, 7% 75%, 32% 65%, 3% 57%, 33% 57%, 9% 38%, 35% 50%, 21% 21%, 40% 43%, 35% 9%, 46% 35%)',
+  'star-burst':      'polygon(50% 0%, 60% 22%, 82% 18%, 78% 40%, 100% 50%, 78% 60%, 82% 82%, 60% 78%, 50% 100%, 40% 78%, 18% 82%, 22% 60%, 0% 50%, 22% 40%, 18% 18%, 40% 22%)',
   'arrow-right':     'polygon(0% 25%, 60% 25%, 60% 0%, 100% 50%, 60% 100%, 60% 75%, 0% 75%)',
+  'arrow-curved':    'polygon(70% 0%, 100% 22%, 82% 22%, 82% 50%, 62% 72%, 34% 72%, 24% 62%, 24% 46%, 40% 46%, 40% 56%, 56% 56%, 66% 46%, 66% 22%, 48% 22%)',
   'arrow-left':      'polygon(40% 0%, 40% 25%, 100% 25%, 100% 75%, 40% 75%, 40% 100%, 0% 50%)',
   'arrow-up':        'polygon(25% 40%, 0% 40%, 50% 0%, 100% 40%, 75% 40%, 75% 100%, 25% 100%)',
   'arrow-down':      'polygon(25% 0%, 75% 0%, 75% 60%, 100% 60%, 50% 100%, 0% 60%, 25% 60%)',
@@ -284,7 +296,16 @@ const SHAPE_CLIP_PATHS = {
   badge:             'polygon(50% 0%, 63% 12%, 79% 8%, 83% 25%, 98% 33%, 91% 50%, 98% 67%, 83% 75%, 79% 92%, 63% 88%, 50% 100%, 37% 88%, 21% 92%, 17% 75%, 2% 67%, 9% 50%, 2% 33%, 17% 25%, 21% 8%, 37% 12%)',
   ribbon:            'polygon(0% 0%, 100% 0%, 100% 55%, 80% 55%, 100% 100%, 50% 73%, 0% 100%, 20% 55%, 0% 55%)',
   frame:             'polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, 12% 12%, 12% 88%, 88% 88%, 88% 12%, 12% 12%)',
+  'frame-thick':     'polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, 18% 18%, 18% 82%, 82% 82%, 82% 18%, 18% 18%)',
+  'frame-thin':      'polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, 8% 8%, 8% 92%, 92% 92%, 92% 8%, 8% 8%)',
+  'frame-notch':     'polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, 14% 8%, 86% 8%, 92% 14%, 92% 86%, 86% 92%, 14% 92%, 8% 86%, 8% 14%, 14% 8%)',
   callout:           'polygon(0% 0%, 100% 0%, 100% 75%, 55% 75%, 50% 100%, 45% 75%, 0% 75%)',
+  'callout-ellipse': 'polygon(8% 42%, 12% 25%, 24% 12%, 40% 6%, 60% 6%, 76% 12%, 88% 25%, 92% 40%, 88% 55%, 76% 68%, 66% 76%, 70% 94%, 54% 82%, 38% 82%, 24% 76%, 12% 64%, 8% 52%)',
+  'callout-cloud':   'polygon(14% 60%, 8% 46%, 14% 33%, 26% 28%, 32% 18%, 46% 14%, 58% 18%, 70% 14%, 82% 22%, 88% 34%, 86% 46%, 92% 58%, 86% 70%, 74% 76%, 62% 76%, 56% 92%, 46% 78%, 32% 78%, 22% 72%)',
+  'callout-burst':   'polygon(6% 18%, 26% 10%, 44% 0%, 58% 12%, 80% 8%, 90% 24%, 100% 40%, 92% 56%, 100% 74%, 84% 84%, 68% 96%, 54% 84%, 34% 90%, 20% 82%, 6% 70%, 0% 52%, 8% 38%)',
+  'callout-top':     'polygon(0% 25%, 45% 25%, 50% 0%, 55% 25%, 100% 25%, 100% 100%, 0% 100%)',
+  'callout-left':    'polygon(20% 0%, 100% 0%, 100% 100%, 20% 100%, 20% 60%, 0% 50%, 20% 40%)',
+  'callout-right':   'polygon(0% 0%, 80% 0%, 80% 40%, 100% 50%, 80% 60%, 80% 100%, 0% 100%)',
 };
 const imagePanelTabs = [
   { id: 'insert', label: 'Insertar' },
@@ -635,6 +656,11 @@ const isTextElement = (id) => {
   return state.customElements?.[id]?.type === 'text';
 };
 
+const isAspectLockedResizeElement = (id) => {
+  const type = state.customElements?.[id]?.type;
+  return type === 'shape' || type === 'image';
+};
+
 const getMaxZIndex = () => Object.values(state.elementLayout).reduce((max, layout) => Math.max(max, layout?.zIndex ?? 0), 0);
 const getCanvasBounds = () => ({
   width: canvasRef.value?.clientWidth ?? 360,
@@ -823,16 +849,20 @@ const addShapeElement = (shapeKind) => {
   const shape = shapePresets.find((item) => item.id === shapeKind);
   if (!shape) return;
 
-  const isRectangle = shapeKind === 'rectangle';
+  const isRectangle = shapeKind === 'rectangle' || shapeKind === 'rectangle-outline';
+  const isRoundedFrame = shapeKind === 'frame-rounded';
   const layout = buildDefaultLayout({
-    w: isRectangle ? 220 : 140,
-    h: isRectangle ? 120 : 140,
+    // El rectángulo base nace cuadrado; luego el usuario puede deformarlo libremente.
+    w: isRectangle ? 140 : 140,
+    h: isRectangle ? 140 : 140,
     x: 44,
     y: 150,
-    backgroundColor: '#38bdf8',
+    backgroundColor: isRoundedFrame ? 'transparent' : '#38bdf8',
     opacity: 90,
     shadow: true,
-    border: false,
+    border: isRoundedFrame,
+    contourWidth: isRoundedFrame ? 10 : 0,
+    contourColor: '#38bdf8',
   });
   placeInsideCanvas(layout);
 
@@ -851,8 +881,19 @@ const shapeStyleFromKind = (shapeKind, base) => {
   if (shapeKind === 'circle' || shapeKind === 'ellipse') {
     return { ...base, borderRadius: '9999px' };
   }
+  if (shapeKind === 'frame-rounded') {
+    return {
+      ...base,
+      borderRadius: '22px',
+      background: 'transparent',
+      border: base.border === '0' ? '8px solid currentColor' : base.border,
+    };
+  }
+  if (shapeKind === 'rectangle-outline') {
+    return { ...base, borderRadius: '0' };
+  }
   if (shapeKind === 'rectangle') {
-    return { ...base, borderRadius: '18px' };
+    return { ...base, borderRadius: '10px' };
   }
   if (shapeKind === 'square') {
     return { ...base, borderRadius: '8px' };
@@ -967,6 +1008,31 @@ const selectedOverlayStyle = computed(() => {
       transform: 'translateX(-50%)',
     };
   });
+
+const selectedHandleMetrics = computed(() => {
+  const ids = activeSelectionIds.value;
+  const bounds = ids.length ? getSelectionBounds(ids) : null;
+  const width = Math.max(1, bounds?.w ?? 120);
+  const height = Math.max(1, bounds?.h ?? 120);
+  const minSide = Math.min(width, height);
+
+  const cornerSize = clamp(Math.round(minSide * 0.28), 8, 16);
+  const sideThickness = clamp(Math.round(minSide * 0.12), 2, 12);
+  const sideLength = clamp(Math.round(height * 0.45), 10, 32);
+  const barThickness = clamp(Math.round(minSide * 0.12), 2, 10);
+  const barLength = clamp(Math.round(width * 0.45), 14, 64);
+
+  return {
+    cornerSize: `${cornerSize}px`,
+    cornerOffset: `${-Math.round(cornerSize / 2)}px`,
+    sideThickness: `${sideThickness}px`,
+    sideOffset: `${-Math.round(sideThickness / 2)}px`,
+    sideLength: `${sideLength}px`,
+    barThickness: `${barThickness}px`,
+    barOffset: `${-Math.round(barThickness / 2)}px`,
+    barLength: `${barLength}px`,
+  };
+});
 
 const marqueeRectStyle = computed(() => {
   if (!selectionMarquee.active) return {};
@@ -1291,7 +1357,6 @@ const richEditorContainerStyle = (id) => {
     const layout = state.elementLayout[id];
     return {
         opacity: `${(layout.opacity ?? 100) / 100}`,
-        overflow: 'hidden',
     };
 };
 
@@ -1326,10 +1391,13 @@ const getElementText = (id) => {
     }
 };
 
-const handleElementClick = (id) => {
+const handleElementClick = (event, id) => {
   if (Date.now() < suppressElementClickUntil.value) {
     return;
   }
+
+  // Shift+click: ya gestionado en pointerdown, no interferir
+  if (event?.shiftKey) return;
 
   const groupId = getGroupIdForElement(id);
   if (groupId) {
@@ -1348,13 +1416,6 @@ const handleElementClick = (id) => {
     state.selectedElementId = id;
     return;
   }
-
-    // Patrón clic-para-seleccionar / clic-de-nuevo-para-editar
-    // (igual que Figma/Canva: no depende del dblclick del navegador)
-    if (state.selectedElementId === id && editingElementId.value !== id) {
-        beginTextEdit(id);
-        return;
-    }
 
     state.selectedElementId = id;
     selectedParagraphIndex.value = 0;
@@ -1732,6 +1793,61 @@ const beginElementDrag = ({ pointerId, clientX, clientY }, id, captureTarget = n
       return;
     }
 
+    // Shift+click: añadir/quitar de la selección múltiple
+    if (event.shiftKey) {
+      const current = multiSelectionIds.value.length > 1
+        ? [...multiSelectionIds.value]
+        : state.selectedElementId
+          ? [state.selectedElementId]
+          : [];
+
+      if (current.includes(id)) {
+        // Deseleccionar este elemento
+        const next = current.filter((elId) => elId !== id);
+        if (next.length === 1) {
+          state.selectedElementId = next[0];
+          selectedGroupId.value = null;
+          multiSelectionIds.value = [];
+        } else if (next.length === 0) {
+          state.selectedElementId = null;
+          selectedGroupId.value = null;
+          multiSelectionIds.value = [];
+        } else {
+          state.selectedElementId = null;
+          selectedGroupId.value = null;
+          multiSelectionIds.value = next;
+        }
+      } else {
+        // Añadir a la selección
+        const next = [...current, id];
+        state.selectedElementId = null;
+        selectedGroupId.value = null;
+        multiSelectionIds.value = next;
+        dragIntent.active = true;
+        dragIntent.pointerId = event.pointerId;
+        dragIntent.elementId = id;
+        dragIntent.groupId = null;
+        dragIntent.targetType = 'multi';
+        dragIntent.startX = event.clientX;
+        dragIntent.startY = event.clientY;
+        clearLongPress();
+      }
+      return;
+    }
+
+    // Si el elemento pertenece a la multi-selección activa, arrastrar todos juntos
+    if (multiSelectionIds.value.length > 1 && multiSelectionIds.value.includes(id)) {
+      dragIntent.active = true;
+      dragIntent.pointerId = event.pointerId;
+      dragIntent.elementId = id;
+      dragIntent.groupId = null;
+      dragIntent.targetType = 'multi';
+      dragIntent.startX = event.clientX;
+      dragIntent.startY = event.clientY;
+      clearLongPress();
+      return;
+    }
+
     state.selectedElementId = id;
     selectedGroupId.value = null;
     multiSelectionIds.value = [];
@@ -1743,11 +1859,7 @@ const beginElementDrag = ({ pointerId, clientX, clientY }, id, captureTarget = n
     dragIntent.startX = event.clientX;
     dragIntent.startY = event.clientY;
 
-    if (isTextElement(id)) {
-      startTouchEditIntent(event, id);
-    } else {
-      clearLongPress();
-    }
+    clearLongPress();
 };
 
 const startResize = (event, id, handle) => {
@@ -1897,6 +2009,21 @@ const moveDrag = (event) => {
             setDragDocumentState(true);
             clearDragIntent();
           }
+        } else if (dragIntent.targetType === 'multi' && dragIntent.elementId) {
+          const snapshot = multiSelectionIds.value
+            .map((elId) => { const l = state.elementLayout[elId]; return l ? { id: elId, startX: l.x, startY: l.y } : null; })
+            .filter(Boolean);
+          drag.active = true;
+          drag.mode = 'multi';
+          drag.pointerId = event.pointerId;
+          drag.elementId = dragIntent.elementId;
+          drag.groupId = null;
+          drag.multiSnapshot = snapshot;
+          drag.handle = null;
+          drag.startClientX = event.clientX;
+          drag.startClientY = event.clientY;
+          setDragDocumentState(true);
+          clearDragIntent();
         } else if (dragIntent.elementId) {
           beginElementDrag({
             pointerId: event.pointerId,
@@ -1909,6 +2036,7 @@ const moveDrag = (event) => {
     }
 
     if (!drag.active || drag.pointerId !== event.pointerId || (!drag.elementId && !drag.groupId) || !canvasRef.value) {
+        // para drag tipo 'multi', drag.elementId sí está seteado, así que este bloque no la afecta
         if (touchIntent.pointerId === event.pointerId) {
             const moved = Math.hypot(event.clientX - touchIntent.startX, event.clientY - touchIntent.startY);
             if (moved > 8) clearLongPress();
@@ -1928,8 +2056,8 @@ const moveDrag = (event) => {
       if (drag.mode === 'move') {
         const deltaX = event.clientX - drag.startClientX;
         const deltaY = event.clientY - drag.startClientY;
-        const nextX = Math.round(clamp(drag.startX + deltaX, 0, Math.max(0, rect.width - group.layout.w - 8)));
-        const nextY = Math.round(clamp(drag.startY + deltaY, 18, Math.max(18, rect.height - group.layout.h - 8)));
+        const nextX = Math.round(drag.startX + deltaX);
+        const nextY = Math.round(drag.startY + deltaY);
         const shiftX = nextX - group.layout.x;
         const shiftY = nextY - group.layout.y;
 
@@ -1959,8 +2087,12 @@ const moveDrag = (event) => {
         let nextH = snapshot.h;
 
         if (handle === 'n-width' || handle === 's-width') {
-          nextW = clamp(Math.round(snapshot.w + deltaX), minSize, rect.width - 8);
-          nextX = snapshot.x - ((nextW - snapshot.w) / 2);
+          if (handle === 's-width') {
+            nextH = clamp(Math.round(snapshot.h + deltaY), minSize, rect.height - 8);
+          } else {
+            nextH = clamp(Math.round(snapshot.h - deltaY), minSize, rect.height - 8);
+            nextY = snapshot.y + (snapshot.h - nextH);
+          }
         } else {
           if (handle.includes('e')) {
             nextW = clamp(Math.round(snapshot.w + deltaX), minSize, rect.width - 8);
@@ -1971,10 +2103,10 @@ const moveDrag = (event) => {
           }
         }
 
-        if (handle === 'n-width' || handle === 's-width' || handle === 'e' || handle === 'w') {
+        if (handle === 'e' || handle === 'w') {
           nextH = snapshot.h;
           nextY = snapshot.y;
-        } else {
+        } else if (handle !== 'n-width' && handle !== 's-width') {
           if (handle.includes('s')) {
             nextH = clamp(Math.round(snapshot.h + deltaY), minSize, rect.height - 8);
           }
@@ -2085,7 +2217,7 @@ const moveDrag = (event) => {
         const deltaY = event.clientY - drag.startClientY;
         const handle = drag.handle ?? 'se';
         const isSideHandle = handle === 'e' || handle === 'w';
-        const isHorizontalBarHandle = handle === 'n-width' || handle === 's-width';
+        const isVerticalBarHandle = handle === 'n-width' || handle === 's-width';
         const horizontalDelta = handle.includes('e') ? deltaX : -deltaX;
 
       if (!isText) {
@@ -2093,11 +2225,16 @@ const moveDrag = (event) => {
         const minHeight = 40;
         const minWidth = 40;
 
-        if (isHorizontalBarHandle) {
-          const nextWidth = clamp(Math.round(drag.startW + deltaX), minWidth, 460);
-          const centeredX = drag.startX - ((nextWidth - drag.startW) / 2);
-          layout.w = nextWidth;
-          layout.x = Math.round(clamp(centeredX, 0, Math.max(0, rect.width - nextWidth - 8)));
+        if (isVerticalBarHandle) {
+          const verticalDelta = handle === 's-width' ? deltaY : -deltaY;
+          const nextHeight = clamp(Math.round(currentHeight + verticalDelta), minHeight, 460);
+          layout.h = nextHeight;
+
+          if (handle === 'n-width') {
+            layout.y = Math.round(clamp(drag.startY + (currentHeight - nextHeight), 18, Math.max(18, rect.height - nextHeight - 8)));
+          } else {
+            layout.y = Math.round(clamp(drag.startY, 18, Math.max(18, rect.height - nextHeight - 8)));
+          }
           return;
         }
 
@@ -2115,8 +2252,19 @@ const moveDrag = (event) => {
         }
 
         const verticalDelta = handle.includes('s') ? deltaY : -deltaY;
-        const nextWidth = clamp(Math.round(drag.startW + horizontalDelta), minWidth, 460);
-        const nextHeight = clamp(Math.round(currentHeight + verticalDelta), minHeight, 460);
+        let nextWidth = clamp(Math.round(drag.startW + horizontalDelta), minWidth, 460);
+        let nextHeight = clamp(Math.round(currentHeight + verticalDelta), minHeight, 460);
+
+        if (isAspectLockedResizeElement(drag.elementId)) {
+          const startW = Math.max(1, drag.startW);
+          const startH = Math.max(1, currentHeight);
+          const widthScale = (drag.startW + horizontalDelta) / startW;
+          const heightScale = (currentHeight + verticalDelta) / startH;
+          const scale = Math.abs(widthScale - 1) >= Math.abs(heightScale - 1) ? widthScale : heightScale;
+          nextWidth = clamp(Math.round(startW * scale), minWidth, 460);
+          nextHeight = clamp(Math.round(startH * scale), minHeight, 460);
+        }
+
         layout.w = nextWidth;
         layout.h = nextHeight;
 
@@ -2166,10 +2314,24 @@ const moveDrag = (event) => {
         return;
     }
 
+    if (drag.mode === 'multi') {
+      if (!drag.multiSnapshot) return;
+      const deltaX = event.clientX - drag.startClientX;
+      const deltaY = event.clientY - drag.startClientY;
+      drag.multiSnapshot.forEach(({ id: elId, startX, startY }) => {
+        const l = state.elementLayout[elId];
+        if (!l) return;
+        l.x = Math.round(startX + deltaX);
+        l.y = Math.round(startY + deltaY);
+      });
+      if (event.cancelable) event.preventDefault();
+      return;
+    }
+
     const deltaX = event.clientX - drag.startClientX;
     const deltaY = event.clientY - drag.startClientY;
-    layout.x = Math.round(clamp(drag.startX + deltaX, 0, Math.max(0, rect.width - layout.w - 8)));
-    layout.y = Math.round(clamp(drag.startY + deltaY, 18, Math.max(18, rect.height - (layout.h ?? 44))));
+    layout.x = Math.round(drag.startX + deltaX);
+    layout.y = Math.round(drag.startY + deltaY);
     if (event.cancelable) event.preventDefault();
 };
 
@@ -2199,6 +2361,7 @@ const endDrag = (event) => {
     drag.elementId = null;
     drag.groupId = null;
     drag.groupSnapshot = null;
+    drag.multiSnapshot = null;
     drag.handle = null;
     drag.startH = 0;
     drag.startRotation = 0;
@@ -2308,23 +2471,33 @@ const handleGlobalPointerDown = (event) => {
     clearSelection();
 };
 
+const handleGlobalKeydown = (event) => {
+  if (editingElementId.value) return;
+  if (event.target && event.target !== document.body && ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)) return;
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    deleteCurrentSelection();
+  }
+};
+
 onMounted(() => {
-    document.addEventListener('pointerdown', handleGlobalPointerDown, true);
-    document.addEventListener('pointermove', moveDrag, { passive: false });
-    document.addEventListener('pointerup', endDrag);
-    document.addEventListener('pointercancel', endDrag);
-    refreshElementObservers();
+  document.addEventListener('pointerdown', handleGlobalPointerDown, true);
+  document.addEventListener('pointermove', moveDrag, { passive: false });
+  document.addEventListener('pointerup', endDrag);
+  document.addEventListener('pointercancel', endDrag);
+  document.addEventListener('keydown', handleGlobalKeydown);
+  refreshElementObservers();
 });
 
 onBeforeUnmount(() => {
-    document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
-    document.removeEventListener('pointermove', moveDrag);
-    document.removeEventListener('pointerup', endDrag);
-    document.removeEventListener('pointercancel', endDrag);
-    elementObservers.forEach((observer) => observer.disconnect());
-    elementObservers.clear();
-    clearLongPress();
-    setDragDocumentState(false);
+  document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+  document.removeEventListener('pointermove', moveDrag);
+  document.removeEventListener('pointerup', endDrag);
+  document.removeEventListener('pointercancel', endDrag);
+  document.removeEventListener('keydown', handleGlobalKeydown);
+  elementObservers.forEach((observer) => observer.disconnect());
+  elementObservers.clear();
+  clearLongPress();
+  setDragDocumentState(false);
 });
 
 watch(editorElements, () => {
@@ -3255,7 +3428,7 @@ watch(selectedGroupId, (groupId) => {
                   :key="item.id"
                   data-editor-element="true"
                   :data-editor-id="item.id"
-                  class="absolute rounded-[18px] p-0 text-left"
+                  class="absolute p-0 text-left"
                   :style="elementBoxStyle(item.id)"
                   :class="isElementSelected(item.id)
                     ? (editingElementId === item.id
@@ -3264,7 +3437,7 @@ watch(selectedGroupId, (groupId) => {
                             ? 'border-2 border-dashed border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'
                             : 'border-2 border-dashed border-cyan-300 bg-white/8 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'))
                     : 'z-10 border border-transparent hover:border-white/20'"
-                  @click="handleElementClick(item.id)"
+                  @click="handleElementClick($event, item.id)"
                   @dblclick="beginTextEdit(item.id)"
                   @pointerdown="handleElementPointerDown($event, item.id)"
                 >
@@ -3273,7 +3446,7 @@ watch(selectedGroupId, (groupId) => {
                       <RichTextEditor
                         :ref="(el) => { if (el) richEditorRefs[item.id] = el; else delete richEditorRefs[item.id]; }"
                         :paragraph-styles="state.elementLayout[item.id].paragraphStyles ?? []"
-                        :text="item.text"
+                        :text="item.text ?? ''"
                         :editable="editingElementId === item.id"
                         :editor-style="richEditorContainerStyle(item.id)"
                         @update:text="onRichEditorTextUpdate(item.id, $event)"
@@ -3286,7 +3459,7 @@ watch(selectedGroupId, (groupId) => {
                         @pointerdown.stop="editingElementId === item.id ? null : handleElementPointerDown($event, item.id)"
                         @mousedown.stop
                         @dblclick.stop="beginTextEdit(item.id)"
-                        @click.stop="editingElementId === item.id ? null : handleElementClick(item.id)"
+                        @click.stop="editingElementId === item.id ? null : handleElementClick($event, item.id)"
                       />
                     </template>
                     <template v-else-if="item.type === 'image'">
@@ -3383,21 +3556,23 @@ watch(selectedGroupId, (groupId) => {
                   <span
                     v-if="overlayControlTargetId && (isGroupSelection || (!hasMultiSelection && selectedElementType !== 'text'))"
                     data-editor-control="true"
-                    class="pointer-events-auto absolute -top-2 left-1/2 z-30 h-3 w-16 -translate-x-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
+                    class="pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 cursor-ns-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
+                    :style="{ top: selectedHandleMetrics.barOffset, width: selectedHandleMetrics.barLength, height: selectedHandleMetrics.barThickness }"
                     @pointerdown="startResize($event, overlayControlTargetId, 'n-width')"
                   ></span>
                   <span
                     v-if="overlayControlTargetId && (isGroupSelection || (!hasMultiSelection && selectedElementType !== 'text'))"
                     data-editor-control="true"
-                    class="pointer-events-auto absolute -bottom-2 left-1/2 z-30 h-3 w-16 -translate-x-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
+                    class="pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 cursor-ns-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
+                    :style="{ bottom: selectedHandleMetrics.barOffset, width: selectedHandleMetrics.barLength, height: selectedHandleMetrics.barThickness }"
                     @pointerdown="startResize($event, overlayControlTargetId, 's-width')"
                   ></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -left-2 top-1/2 z-30 h-8 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'w')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -right-2 top-1/2 z-30 h-8 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'e')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -left-2 -top-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'nw')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -right-2 -top-2 z-30 h-4 w-4 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'ne')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -bottom-2 -left-2 z-30 h-4 w-4 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'sw')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute -bottom-2 -right-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" @pointerdown="startResize($event, overlayControlTargetId, 'se')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute top-1/2 z-30 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.sideOffset, width: selectedHandleMetrics.sideThickness, height: selectedHandleMetrics.sideLength }" @pointerdown="startResize($event, overlayControlTargetId, 'w')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute top-1/2 z-30 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.sideOffset, width: selectedHandleMetrics.sideThickness, height: selectedHandleMetrics.sideLength }" @pointerdown="startResize($event, overlayControlTargetId, 'e')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.cornerOffset, top: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize }" @pointerdown="startResize($event, overlayControlTargetId, 'nw')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.cornerOffset, top: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize }" @pointerdown="startResize($event, overlayControlTargetId, 'ne')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.cornerOffset, bottom: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize }" @pointerdown="startResize($event, overlayControlTargetId, 'sw')"></span>
+                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.cornerOffset, bottom: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize }" @pointerdown="startResize($event, overlayControlTargetId, 'se')"></span>
                 </div>
                 <div v-if="selectionMarquee.active" class="pointer-events-none absolute border border-cyan-200/90 bg-cyan-200/20" :style="marqueeRectStyle"></div>
                 <div class="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-cyan-200/30"></div>

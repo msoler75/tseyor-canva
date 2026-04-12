@@ -60,10 +60,20 @@ function buildInitialState(sessionState) {
         darkMode: typeof sessionState.darkMode === 'boolean' ? sessionState.darkMode : savedTheme === 'dark',
         content: {
             ...base.content,
-            ...(sessionState.content ?? {}),
+            ...normalizeContentStrings(sessionState.content ?? {}),
         },
         elementLayout: mergeElementLayout(base.elementLayout, sessionState.elementLayout ?? {}),
     };
+}
+
+function normalizeContentStrings(content) {
+    const normalized = {};
+
+    Object.entries(content).forEach(([key, value]) => {
+        normalized[key] = value == null ? '' : String(value);
+    });
+
+    return normalized;
 }
 
 function mergeElementLayout(defaultLayout, sessionLayout) {
@@ -88,9 +98,9 @@ function bootstrapPersistence(saveEndpoint) {
             clearTimeout(saveTimer);
             saveTimer = setTimeout(async () => {
                 try {
-                    await axios.put(saveEndpoint, {
-                        state: JSON.parse(JSON.stringify(designerState)),
-                    });
+                    const snapshot = JSON.parse(JSON.stringify(designerState));
+                    delete snapshot.userUploadedImages;
+                    await axios.put(saveEndpoint, { state: snapshot });
                 } catch (error) {
                     console.error('Failed to persist designer session state', error);
                 }

@@ -48,6 +48,7 @@
         "@tiptap/vue-3": "^3.22.3",
         "@vitejs/plugin-vue": "^6.0.5",
         "@vue/compiler-sfc": "^3.5.32",
+        "html-to-image": "^1.11.13",
         "qrcode": "^1.5.4",
         "vue": "^3.5.32"
     }
