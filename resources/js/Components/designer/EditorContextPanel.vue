@@ -129,14 +129,12 @@ const closePanel = () => emit('closePanel');
 </script>
 
 <template>
-<aside data-editor-keep-selection="true" class="relative z-40 h-full w-80 border-r border-base-300 bg-base-100 p-5 overflow-y-auto">
+<aside data-editor-keep-selection="true" class="absolute z-40 h-full w-80 border-r border-base-300 bg-base-100 overflow-y-auto">
             <div class="space-y-5">
-              <div>
-                <div class="flex items-start justify-between gap-3">
+                <div class="w-76 fixed z-10 bg-base-100 flex items-start justify-between gap-3 p-5">
                   <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Panel contextual</p>
                     <h3 class="mt-2 text-xl font-semibold text-base-content">{{ hasSelection && activePropertyPanel ? activePropertyTitle : 'Elementos' }}</h3>
-                    <p v-if="hasSelection && activePropertyPanel" class="mt-2 text-sm leading-6 text-base-content/75">Elige una propiedad arriba para ver sus opciones.</p>
                   </div>
                   <div class="flex gap-2">
                     <button
@@ -149,7 +147,8 @@ const closePanel = () => emit('closePanel');
                     </button>
                   </div>
                 </div>
-              </div>
+
+                <div class="h-20"></div>
 
               <!-- Panel de inserción (siempre visible cuando no hay selección) -->
               <div v-if="!hasSelection || !activePropertyPanel" class="space-y-3">
@@ -454,7 +453,7 @@ const closePanel = () => emit('closePanel');
                       @swap-gradient-stops="swapShapeGradientStops"
                     />
 
-                    
+
                   </div>
 
                   <div v-else>
@@ -516,7 +515,7 @@ const closePanel = () => emit('closePanel');
                       </div>
                     </div>
 
-                    
+
                   </div>
                 </div>
               </div>
@@ -932,7 +931,7 @@ const closePanel = () => emit('closePanel');
 
                   <div class="flex flex-wrap gap-2">
                     <button type="button" class="btn btn-sm rounded-full" :class="!selectedElement.border ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = false">Sin borde</button>
-                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && (selectedElement.borderStyle || 'solid') === 'solid' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'solid'">S?lido</button>
+                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && (selectedElement.borderStyle || 'solid') === 'solid' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'solid'">Sólido</button>
                     <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dashed' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dashed'">Dashed</button>
                     <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dotted' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dotted'">Dotted</button>
                   </div>
@@ -987,10 +986,6 @@ const closePanel = () => emit('closePanel');
                     <button type="button" class="btn btn-outline btn-sm rounded-full" @click="changeLayer('back')">Al fondo</button>
                   </div>
                 </div>
-              </div>
-
-              <div class="alert border border-base-300 bg-base-100/80 text-sm leading-6 text-base-content/80">
-                Doble click para editar texto. Enter crea un nuevo parrafo; al hacer clic fuera, el texto se guarda automaticamente. Ctrl+Enter tambien confirma y Esc cancela. En touch, mantén pulsado para editar. Usa el icono inferior para mover, las esquinas para redimensionar y el icono superior para girar (doble click para volver a 0°).
               </div>
             </div>
           </aside>

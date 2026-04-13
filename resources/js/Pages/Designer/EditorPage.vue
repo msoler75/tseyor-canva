@@ -525,6 +525,15 @@ const selectedPropertyTabs = computed(() => {
   if (state.selectedElementId === 'background') return backgroundPropertyTabs;
   return selectedElementType.value === 'text' ? textPropertyTabs : visualPropertyTabs;
 });
+const hasSidebarPanelContent = computed(() => (
+  !!activePropertyPanel.value
+  || textPanelOpen.value
+  || imagePanelOpen.value
+  || shapePanelOpen.value
+));
+const isOptionsPanelVisible = computed(() => (
+  optionsPanelOpen.value && hasSidebarPanelContent.value
+));
 const activePropertyTitle = computed(() => {
   const activeTab = selectedPropertyTabs.value.find((tab) => tab.id === activePropertyPanel.value);
   return activeTab?.title ?? activeTab?.label ?? 'Propiedades';
@@ -589,6 +598,11 @@ watch([selectedElementType, hasSelection], () => {
     activePropertyPanel.value = null;
   }
 }, { immediate: true });
+watch(hasSidebarPanelContent, (hasContent) => {
+  if (!hasContent && optionsPanelOpen.value) {
+    optionsPanelOpen.value = false;
+  }
+});
 
 const paragraphStyleFields = new Set([
     'fontSize',
@@ -788,7 +802,7 @@ const canvasGridStyle = computed(() => ({
   minHeight: `${editorCanvasDimensions.value.height + 96}px`,
 }));
 const editorGridStyle = computed(() => ({
-  gridTemplateColumns: optionsPanelOpen.value ? '70px 320px 1fr' : '70px 1fr',
+  gridTemplateColumns: '70px 1fr',
 }));
 const canvasFrameStyle = computed(() => ({
   width: `${editorCanvasDimensions.value.width + 32}px`,
@@ -1698,7 +1712,8 @@ watch(selectedGroupId, (groupId) => {
 
           <!-- Panel de Opciones (condicionalmente visible) -->
           <EditorContextPanel
-            v-if="optionsPanelOpen"
+            v-if="isOptionsPanelVisible"
+            class="absolute inset-y-0 left-[70px] z-40 shadow-2xl"
             :state="state"
             :has-selection="hasSelection"
             :has-text-selection="hasTextSelection"

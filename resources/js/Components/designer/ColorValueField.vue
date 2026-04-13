@@ -31,13 +31,6 @@ const emit = defineEmits(['update']);
         :value="normalizedValue"
         @input="emit('update', $event.target.value)"
       />
-      <input
-        :value="value"
-        type="text"
-        :placeholder="placeholder"
-        class="input input-bordered input-sm flex-1"
-        @input="emit('update', $event.target.value)"
-      />
     </div>
   </div>
 </template>
