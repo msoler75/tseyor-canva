@@ -238,8 +238,11 @@ watch(() => props.editable, (val) => {
 // Si el texto externo cambia (por sync con state), reconstruimos el doc
 watch(() => [props.text, props.paragraphStyles], ([newText, newStyles]) => {
     if (suppressWatch || !editor.value) return;
-    const currentText = extractFromDoc(editor.value.state.doc).text;
-    if (currentText !== newText) {
+    const current = extractFromDoc(editor.value.state.doc);
+    const textChanged = current.text !== newText;
+    const stylesChanged = JSON.stringify(current.styles) !== JSON.stringify(newStyles ?? []);
+
+    if (textChanged || stylesChanged) {
         editor.value.commands.setContent(buildDoc(newText, newStyles), false);
     }
 }, { deep: true });

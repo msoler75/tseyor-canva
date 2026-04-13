@@ -338,6 +338,284 @@ const imageLibrary = [
   { id: 'lib-6', src: 'https://picsum.photos/seed/tseyor6/900/600', label: 'Biblioteca 6' },
 ];
 
+const HISTORY_LIMIT = 80;
+const historyStack = ref([]);
+const historyMeta = ref([]);
+const historyIndex = ref(-1);
+const historyApplying = ref(false);
+let historyTimer = null;
+
+const cloneSnapshotValue = (value) => {
+  try {
+    return structuredClone(value);
+  } catch {
+    return JSON.parse(JSON.stringify(value));
+  }
+};
+
+const buildHistorySnapshot = () => ({
+  content: cloneSnapshotValue(state.content ?? {}),
+  elementLayout: cloneSnapshotValue(state.elementLayout ?? {}),
+  customElements: cloneSnapshotValue(state.customElements ?? {}),
+});
+
+const baseElementLabels = {
+  background: 'fondo',
+  title: 'titulo',
+  subtitle: 'subtitulo',
+  meta: 'fecha y hora',
+  contact: 'contacto',
+  extra: 'texto adicional',
+};
+
+const contentFieldLabels = {
+  title: 'titulo',
+  subtitle: 'subtitulo',
+  date: 'fecha',
+  time: 'hora',
+  location: 'ubicacion',
+  platform: 'plataforma',
+  teacher: 'ponente',
+  price: 'precio',
+  contact: 'contacto',
+  extra: 'texto adicional',
+};
+
+const isPlainObject = (value) => Object.prototype.toString.call(value) === '[object Object]';
+
+const collectChangedPaths = (previousValue, nextValue, basePath = '', changedPaths = new Set()) => {
+  if (previousValue === nextValue) return changedPaths;
+
+  const previousIsArray = Array.isArray(previousValue);
+  const nextIsArray = Array.isArray(nextValue);
+  const previousIsObject = isPlainObject(previousValue);
+  const nextIsObject = isPlainObject(nextValue);
+
+  if ((previousIsArray && nextIsArray) || (previousIsObject && nextIsObject)) {
+    const keys = new Set([
+      ...Object.keys(previousValue ?? {}),
+      ...Object.keys(nextValue ?? {}),
+    ]);
+
+    if (!keys.size && basePath) {
+      changedPaths.add(basePath);
+      return changedPaths;
+    }
+
+    keys.forEach((key) => {
+      const nextPath = basePath ? `${basePath}.${key}` : String(key);
+      collectChangedPaths(previousValue?.[key], nextValue?.[key], nextPath, changedPaths);
+    });
+
+    return changedPaths;
+  }
+
+  changedPaths.add(basePath || '__root__');
+  return changedPaths;
+};
+
+const buildHistoryGroupKey = (previousSnapshot, nextSnapshot) => {
+  const normalizeHistoryPath = (path) => {
+    const parts = String(path).split('.');
+    if (!parts.length) return path;
+
+    if (parts[0] === 'elementLayout' && parts.length >= 3) {
+      const elementId = parts[1];
+      const field = parts[2];
+
+      if (field === 'x' || field === 'y') {
+        return `elementLayout.${elementId}.position`;
+      }
+
+      if (field === 'w' || field === 'h') {
+        return `elementLayout.${elementId}.size`;
+      }
+
+      if (field === 'paragraphStyles' && parts.length >= 5) {
+        const styleField = parts[4];
+        return `elementLayout.${elementId}.paragraphStyles.${styleField}`;
+      }
+
+      return `elementLayout.${elementId}.${field}`;
+    }
+
+    if (parts[0] === 'customElements' && parts.length >= 3) {
+      return `customElements.${parts[1]}.${parts[2]}`;
+    }
+
+    if (parts[0] === 'content' && parts.length >= 2) {
+      return `content.${parts[1]}`;
+    }
+
+    return path;
+  };
+
+  const changedPaths = [...collectChangedPaths(previousSnapshot ?? {}, nextSnapshot ?? {})]
+    .filter((path) => path && path !== '__root__')
+    .map((path) => normalizeHistoryPath(path))
+    .sort();
+
+  return changedPaths.length ? changedPaths.join('|') : '__noop__';
+};
+
+const getHistoryElementLabel = (snapshot, elementId) => {
+  if (baseElementLabels[elementId]) {
+    return baseElementLabels[elementId];
+  }
+
+  const customLabel = snapshot?.customElements?.[elementId]?.label;
+  if (customLabel) {
+    return String(customLabel).trim().toLowerCase();
+  }
+
+  return 'elemento';
+};
+
+const buildHistoryActionLabel = (groupKey, snapshot) => {
+  if (!groupKey || groupKey === '__initial__' || groupKey === '__noop__') {
+    return 'inicio';
+  }
+
+  const paths = groupKey.split('|').filter(Boolean);
+  if (!paths.length) return 'edicion';
+
+  const [firstPath] = paths;
+  const parts = firstPath.split('.');
+
+  if (parts[0] === 'elementLayout' && parts.length >= 3) {
+    const elementLabel = getHistoryElementLabel(snapshot, parts[1]);
+    const field = parts[2];
+
+    if (field === 'position') return `mover ${elementLabel}`;
+    if (field === 'size') return `tamano ${elementLabel}`;
+    if (field === 'rotation') return `rotacion ${elementLabel}`;
+    if (field === 'fontSize') return `tamano texto ${elementLabel}`;
+    if (field === 'paragraphStyles' && parts[3] === 'fontSize') return `tamano texto ${elementLabel}`;
+    if (field === 'color' || (field === 'paragraphStyles' && parts[3] === 'color')) return `color ${elementLabel}`;
+    if (field === 'zIndex') return `orden ${elementLabel}`;
+    if (parts[1] === 'background') return 'fondo';
+    return `editar ${elementLabel}`;
+  }
+
+  if (parts[0] === 'content' && parts.length >= 2) {
+    const label = contentFieldLabels[parts[1]] ?? 'contenido';
+    return `texto ${label}`;
+  }
+
+  if (parts[0] === 'customElements' && parts.length >= 3) {
+    const elementLabel = getHistoryElementLabel(snapshot, parts[1]);
+    if (parts[2] === 'text') return `texto ${elementLabel}`;
+    if (parts[2] === 'src') return `imagen ${elementLabel}`;
+    return `editar ${elementLabel}`;
+  }
+
+  return 'edicion';
+};
+
+const canUndo = computed(() => historyIndex.value > 0);
+const canRedo = computed(() => historyIndex.value >= 0 && historyIndex.value < historyStack.value.length - 1);
+const undoActionLabel = computed(() => canUndo.value ? (historyMeta.value[historyIndex.value]?.label ?? 'edición') : 'nada');
+const redoActionLabel = computed(() => canRedo.value ? (historyMeta.value[historyIndex.value + 1]?.label ?? 'edición') : 'nada');
+
+const pushHistorySnapshot = (options = {}) => {
+  const { force = false, allowCoalesce = false } = options;
+  if (historyApplying.value) return;
+
+  const snapshot = buildHistorySnapshot();
+  const serializedSnapshot = JSON.stringify(snapshot);
+  const currentSnapshot = historyStack.value[historyIndex.value] ?? null;
+
+  if (!force && currentSnapshot && JSON.stringify(currentSnapshot) === serializedSnapshot) {
+    return;
+  }
+
+  const groupKey = currentSnapshot ? buildHistoryGroupKey(currentSnapshot, snapshot) : '__initial__';
+  const actionLabel = buildHistoryActionLabel(groupKey, snapshot);
+  const currentMeta = historyMeta.value[historyIndex.value] ?? null;
+  const isAtHistoryHead = historyIndex.value === historyStack.value.length - 1;
+  const canCoalesce = !force && allowCoalesce && isAtHistoryHead && historyIndex.value > 0 && currentMeta?.groupKey === groupKey;
+
+  if (canCoalesce) {
+    historyStack.value[historyIndex.value] = snapshot;
+    historyMeta.value[historyIndex.value] = { groupKey, label: actionLabel };
+    return;
+  }
+
+  if (historyIndex.value < historyStack.value.length - 1) {
+    historyStack.value.splice(historyIndex.value + 1);
+    historyMeta.value.splice(historyIndex.value + 1);
+  }
+
+  historyStack.value.push(snapshot);
+  historyMeta.value.push({ groupKey, label: actionLabel });
+
+  if (historyStack.value.length > HISTORY_LIMIT) {
+    const extraItems = historyStack.value.length - HISTORY_LIMIT;
+    historyStack.value.splice(0, extraItems);
+    historyMeta.value.splice(0, extraItems);
+  }
+
+  historyIndex.value = historyStack.value.length - 1;
+};
+
+const scheduleHistorySnapshot = () => {
+  if (historyApplying.value) return;
+
+  if (historyTimer) {
+    clearTimeout(historyTimer);
+  }
+
+  historyTimer = setTimeout(() => {
+    pushHistorySnapshot({ allowCoalesce: true });
+    historyTimer = null;
+  }, 180);
+};
+
+const applyHistorySnapshot = (snapshot) => {
+  historyApplying.value = true;
+
+  state.content = cloneSnapshotValue(snapshot.content ?? {});
+  state.elementLayout = cloneSnapshotValue(snapshot.elementLayout ?? {});
+  state.customElements = Object.fromEntries(Object.entries(cloneSnapshotValue(snapshot.customElements ?? {})));
+
+  const selectedId = state.selectedElementId;
+  if (selectedId && selectedId !== 'background' && !state.elementLayout[selectedId]) {
+    clearSelection();
+  }
+
+  nextTick(() => {
+    historyApplying.value = false;
+  });
+};
+
+const performUndo = () => {
+  if (!canUndo.value) return;
+
+  if (editingElementId.value) {
+    commitTextEdit();
+  }
+
+  historyIndex.value -= 1;
+  const snapshot = historyStack.value[historyIndex.value];
+  if (snapshot) {
+    applyHistorySnapshot(snapshot);
+  }
+};
+
+const performRedo = () => {
+  if (!canRedo.value) return;
+
+  if (editingElementId.value) {
+    commitTextEdit();
+  }
+
+  historyIndex.value += 1;
+  const snapshot = historyStack.value[historyIndex.value];
+  if (snapshot) {
+    applyHistorySnapshot(snapshot);
+  }
+};
+
 const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
 const editorElements = computed(() => {
   const baseTextElements = [
@@ -2994,14 +3272,37 @@ const handleGlobalPointerDown = (event) => {
 };
 
 const handleGlobalKeydown = (event) => {
+  const targetElement = event.target instanceof Element ? event.target : null;
+  const isTypingTarget = Boolean(targetElement?.closest('input, textarea, select, [contenteditable="true"]'));
+  if (isTypingTarget) return;
+
+  const hasCommandModifier = event.ctrlKey || event.metaKey;
+  const normalizedKey = event.key.toLowerCase();
+
+  if (hasCommandModifier && !event.altKey && normalizedKey === 'z') {
+    event.preventDefault();
+    if (event.shiftKey) {
+      performRedo();
+      return;
+    }
+    performUndo();
+    return;
+  }
+
+  if (hasCommandModifier && !event.altKey && normalizedKey === 'y') {
+    event.preventDefault();
+    performRedo();
+    return;
+  }
+
   if (editingElementId.value) return;
-  if (event.target && event.target !== document.body && ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)) return;
   if (event.key === 'Delete' || event.key === 'Backspace') {
     deleteCurrentSelection();
   }
 };
 
 onMounted(() => {
+  pushHistorySnapshot({ force: true });
   document.addEventListener('pointerdown', handleGlobalPointerDown, true);
   document.addEventListener('pointermove', moveDrag, { passive: false });
   document.addEventListener('pointerup', endDrag);
@@ -3011,6 +3312,10 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (historyTimer) {
+    clearTimeout(historyTimer);
+    historyTimer = null;
+  }
   document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
   document.removeEventListener('pointermove', moveDrag);
   document.removeEventListener('pointerup', endDrag);
@@ -3035,6 +3340,14 @@ watch(editorElements, () => {
 
     refreshElementObservers();
 }, { deep: true });
+
+watch(
+  () => [state.content, state.elementLayout, state.customElements],
+  () => {
+    scheduleHistorySnapshot();
+  },
+  { deep: true }
+);
 
 watch(() => state.selectedElementId, () => {
     toolbarPosition.x = 0;
@@ -3073,6 +3386,30 @@ watch(selectedGroupId, (groupId) => {
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-3 rounded-2xl p-1 shadow-sm">
+          <button
+            type="button"
+            class="btn btn-sm btn-ghost btn-circle"
+            :class="canUndo ? 'text-base-content hover:bg-base-200' : 'text-base-content/35'"
+            :disabled="!canUndo"
+            :title="`Deshacer: ${undoActionLabel} (Ctrl/Cmd + Z)`"
+            aria-label="Deshacer"
+            @click="performUndo"
+          >
+            <Icon icon="ci:arrow-undo-up-left" class="text-2xl" />
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-ghost btn-circle"
+            :class="canRedo ? 'text-base-content hover:bg-base-200' : 'text-base-content/35'"
+            :disabled="!canRedo"
+            :title="`Rehacer: ${redoActionLabel} (Ctrl/Cmd + Y)`"
+            aria-label="Rehacer"
+            @click="performRedo"
+          >
+            <Icon icon="ci:arrow-undo-up-right" class="text-2xl" />
+          </button>
+        </div>
         <div class="flex items-center gap-2 rounded-xl border border-base-300 px-3 py-2">
           <span class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">Zoom</span>
           <input
@@ -3098,10 +3435,11 @@ watch(selectedGroupId, (groupId) => {
 
         <button
           type="button"
-          class="btn btn-sm btn-outline rounded-full"
+          class="btn btn-lg rounded-full"
           @click="state.darkMode = !state.darkMode"
+          :title="state.darkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'"
         >
-          {{ state.darkMode ? '☀️ Modo claro' : '🌙 Modo oscuro' }}
+          {{ state.darkMode ?  '🌙':'☀️' }}
         </button>
 
         <a href="/designer/export" class="btn btn-sm btn-primary rounded-full">Exportar</a>
