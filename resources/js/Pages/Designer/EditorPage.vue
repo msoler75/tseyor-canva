@@ -2,6 +2,9 @@
 import { Icon } from '@iconify/vue';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
 import RichTextEditor from '../../Components/designer/RichTextEditor.vue';
+import EditorTopBar from '../../Components/designer/EditorTopBar.vue';
+import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.vue';
+import EditorContextPanel from '../../Components/designer/EditorContextPanel.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { objectiveRecommendations } from '../../data/designer';
 import { useDesignerState } from '../../composables/useDesignerState';
@@ -3349,6 +3352,43 @@ watch(
   { deep: true }
 );
 
+const closeOptionsPanel = () => {
+  optionsPanelOpen.value = false;
+  activePropertyPanel.value = null;
+  textPanelOpen.value = false;
+  imagePanelOpen.value = false;
+  shapePanelOpen.value = false;
+};
+const openTextInsertPanel = () => {
+  textPanelOpen.value = true;
+  imagePanelOpen.value = false;
+  shapePanelOpen.value = false;
+  optionsPanelOpen.value = true;
+};
+const openImageInsertPanel = () => {
+  imagePanelOpen.value = true;
+  textPanelOpen.value = false;
+  shapePanelOpen.value = false;
+  optionsPanelOpen.value = true;
+};
+const openShapeInsertPanel = () => {
+  shapePanelOpen.value = true;
+  textPanelOpen.value = false;
+  imagePanelOpen.value = false;
+  optionsPanelOpen.value = true;
+};
+const openBackgroundPanel = () => {
+  state.selectedElementId = 'background';
+  activePropertyPanel.value = 'color';
+  textPanelOpen.value = false;
+  imagePanelOpen.value = false;
+  shapePanelOpen.value = false;
+  optionsPanelOpen.value = true;
+};
+const setImageInputRef = (element) => {
+  imageInputRef.value = element;
+};
+
 watch(() => state.selectedElementId, () => {
     toolbarPosition.x = 0;
     toolbarPosition.y = 3;
@@ -3379,72 +3419,19 @@ watch(selectedGroupId, (groupId) => {
     @toggle-dark="state.darkMode = !state.darkMode"
   >
     <div class="flex h-full min-h-0 flex-col overflow-hidden bg-base-100">
-    <nav class="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-4 py-3 shadow-sm">
-      <div class="flex items-center gap-2">
-        <span class="rounded-xl bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">Editor</span>
-        <span class="text-sm text-base-content/65">{{ state.size || 'Tamaño no definido' }}</span>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-3">
-        <div class="flex items-center gap-3 rounded-2xl p-1 shadow-sm">
-          <button
-            type="button"
-            class="btn btn-sm btn-ghost btn-circle"
-            :class="canUndo ? 'text-base-content hover:bg-base-200' : 'text-base-content/35'"
-            :disabled="!canUndo"
-            :title="`Deshacer: ${undoActionLabel} (Ctrl/Cmd + Z)`"
-            aria-label="Deshacer"
-            @click="performUndo"
-          >
-            <Icon icon="ci:arrow-undo-up-left" class="text-2xl" />
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm btn-ghost btn-circle"
-            :class="canRedo ? 'text-base-content hover:bg-base-200' : 'text-base-content/35'"
-            :disabled="!canRedo"
-            :title="`Rehacer: ${redoActionLabel} (Ctrl/Cmd + Y)`"
-            aria-label="Rehacer"
-            @click="performRedo"
-          >
-            <Icon icon="ci:arrow-undo-up-right" class="text-2xl" />
-          </button>
-        </div>
-        <div class="flex items-center gap-2 rounded-xl border border-base-300 px-3 py-2">
-          <span class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">Zoom</span>
-          <input
-            :value="zoomLevel"
-            type="range"
-            min="25"
-            max="200"
-            step="5"
-            class="range range-primary h-2 w-28"
-            @input="setZoomLevel($event.target.value)"
-          />
-          <input
-            :value="zoomLevel"
-            type="number"
-            min="25"
-            max="200"
-            step="5"
-            class="input input-bordered input-sm w-20"
-            @input="setZoomLevel($event.target.value)"
-          />
-          <span class="text-xs text-base-content/60">%</span>
-        </div>
-
-        <button
-          type="button"
-          class="btn btn-lg rounded-full"
-          @click="state.darkMode = !state.darkMode"
-          :title="state.darkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'"
-        >
-          {{ state.darkMode ?  '🌙':'☀️' }}
-        </button>
-
-        <a href="/designer/export" class="btn btn-sm btn-primary rounded-full">Exportar</a>
-      </div>
-    </nav>
+    <EditorTopBar
+      :size="state.size"
+      :can-undo="canUndo"
+      :can-redo="canRedo"
+      :undo-action-label="undoActionLabel"
+      :redo-action-label="redoActionLabel"
+      :zoom-level="zoomLevel"
+      :dark-mode="state.darkMode"
+      @undo="performUndo"
+      @redo="performRedo"
+      @update-zoom-level="setZoomLevel"
+      @toggle-dark-mode="state.darkMode = !state.darkMode"
+    />
 
     <section class="relative min-h-0 flex-1 overflow-hidden">
       <div class="h-full overflow-hidden border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
@@ -3483,923 +3470,71 @@ watch(selectedGroupId, (groupId) => {
         </div>
 
         <div class="relative grid h-full min-h-0 gap-0" :style="editorGridStyle">
-          <!-- Panel de Creación (vertical, siempre visible) -->
-          <div class="flex flex-col items-center gap-2 border-r border-base-300 bg-base-100 p-3 xl:border-b-0">
-            <button
-              type="button"
-              class="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-2xl border transition"
-              :class="textPanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
-              @click="textPanelOpen = true; imagePanelOpen = false; shapePanelOpen = false; optionsPanelOpen = true"
-              title="Agregar Texto"
-            >
-              <span class="text-2xl font-bold leading-none">T</span>
-              <span class="text-[9px] font-medium">Texto</span>
-            </button>
-
-            <button
-              type="button"
-              class="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-2xl border transition"
-              :class="imagePanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
-              @click="imagePanelOpen = true; textPanelOpen = false; shapePanelOpen = false; optionsPanelOpen = true"
-              title="Agregar Imagen"
-            >
-              <Icon icon="mdi:image-outline" class="text-2xl" />
-              <span class="text-[9px] font-medium">Imagen</span>
-            </button>
-
-            <button
-              type="button"
-              class="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-2xl border transition"
-              :class="shapePanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
-              @click="shapePanelOpen = true; textPanelOpen = false; imagePanelOpen = false; optionsPanelOpen = true"
-              title="Agregar Figura"
-            >
-              <Icon icon="mdi:shape-outline" class="text-2xl" />
-              <span class="text-[9px] font-medium">Figura</span>
-            </button>
-
-            <button
-              type="button"
-              class="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-2xl border transition"
-              :class="state.selectedElementId === 'background' ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
-              @click="state.selectedElementId = 'background'; activePropertyPanel = 'color'; textPanelOpen = false; imagePanelOpen = false; shapePanelOpen = false; optionsPanelOpen = true"
-              title="Ajustar Fondo"
-            >
-              <span class="flex h-10 w-10 items-center justify-center rounded-xl text-xl"
-                :class="state.selectedElementId === 'background' ? 'bg-primary/20' : 'bg-base-200'">
-                <Icon icon="mdi:palette-outline" class="text-xl" />
-              </span>
-              <span class="text-[9px] font-medium">Fondo</span>
-            </button>
-          </div>
+          <!-- Panel de CreaciÃ³n (vertical, siempre visible) -->
+          <EditorInsertSidebar
+            :text-panel-open="textPanelOpen"
+            :image-panel-open="imagePanelOpen"
+            :shape-panel-open="shapePanelOpen"
+            :is-background-selected="state.selectedElementId === 'background'"
+            @open-text-panel="openTextInsertPanel"
+            @open-image-panel="openImageInsertPanel"
+            @open-shape-panel="openShapeInsertPanel"
+            @select-background-panel="openBackgroundPanel"
+          />
 
           <!-- Panel de Opciones (condicionalmente visible) -->
-          <aside v-if="optionsPanelOpen" data-editor-keep-selection="true" class="relative z-40 h-full w-80 border-r border-base-300 bg-base-100 p-5 overflow-y-auto">
-            <div class="space-y-5">
-              <div>
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Panel contextual</p>
-                    <h3 class="mt-2 text-xl font-semibold text-base-content">{{ hasSelection && activePropertyPanel ? activePropertyTitle : 'Elementos' }}</h3>
-                    <p v-if="hasSelection && activePropertyPanel" class="mt-2 text-sm leading-6 text-base-content/75">Elige una propiedad arriba para ver sus opciones.</p>
-                  </div>
-                  <div class="flex gap-2">
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-sm btn-circle"
-                      aria-label="Cerrar panel de opciones"
-                      @click="optionsPanelOpen = false; activePropertyPanel = null; textPanelOpen = false; imagePanelOpen = false; shapePanelOpen = false"
-                    >
-                      <Icon icon="mdi:close" class="text-lg" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Panel de inserción (siempre visible cuando no hay selección) -->
-              <div v-if="!hasSelection || !activePropertyPanel" class="space-y-3">
-                <!-- Opciones de texto (inline) -->
-                <div v-if="textPanelOpen" class="space-y-1">
-                  <button
-                    v-for="preset in textPresets"
-                    :key="preset.id"
-                    type="button"
-                    class="w-full rounded-xl border border-base-300/70 bg-base-100/70 px-4 py-3 text-left transition hover:border-primary/50 hover:bg-primary/10"
-                    @click="addTextElement(preset.id)"
-                  >
-                    <span
-                      :style="{ fontSize: Math.min(preset.fontSize, 32) + 'px', fontWeight: preset.fontWeight === 'bold' ? '700' : '400', lineHeight: preset.lineHeight }"
-                      class="block text-base-content"
-                    >{{ preset.label }}</span>
-                  </button>
-                </div>
-
-                <!-- Opciones de imagen (inline) -->
-                <div v-if="imagePanelOpen" class="card border border-base-300 bg-base-100/80">
-                  <div class="card-body p-4">
-                    <div class="flex flex-wrap gap-2">
-                      <button
-                        v-for="tab in imagePanelTabs"
-                        :key="tab.id"
-                        type="button"
-                        class="btn btn-sm rounded-full"
-                        :class="imagePanelTab === tab.id ? 'btn-primary' : 'btn-outline'"
-                        @click="imagePanelTab = tab.id"
-                      >
-                        {{ tab.label }}
-                      </button>
-                    </div>
-
-                    <div v-if="imagePanelTab === 'insert'" class="mt-4 space-y-4">
-                      <div class="rounded-xl border border-base-300/70 bg-base-100/60 p-3">
-                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Desde tu disco</p>
-                        <button type="button" class="btn btn-primary mt-3 w-full rounded-xl" @click="triggerImagePicker">
-                          <Icon icon="mdi:folder-image" class="text-xl" />
-                          Seleccionar archivo
-                        </button>
-                        <input ref="imageInputRef" type="file" accept="image/*" class="hidden" @change="onImagePicked" />
-                      </div>
-                      <div class="rounded-xl border border-base-300/70 bg-base-100/60 p-3">
-                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Desde una URL</p>
-                        <div class="mt-3 flex items-center gap-2">
-                          <input
-                            v-model="imageUrlInput"
-                            type="url"
-                            placeholder="https://ejemplo.com/imagen.jpg"
-                            class="input input-bordered input-sm flex-1"
-                          />
-                          <button type="button" class="btn btn-outline btn-sm" @click="addImageFromUrl">Insertar</button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div v-else-if="imagePanelTab === 'library'" class="mt-4 grid grid-cols-2 gap-2">
-                      <button
-                        v-for="image in imageLibrary"
-                        :key="image.id"
-                        type="button"
-                        class="group overflow-hidden rounded-xl border border-base-300/70 bg-base-100/70"
-                        @click="addLibraryImage(image)"
-                      >
-                        <img :src="image.src" :alt="image.label" class="h-20 w-full object-cover transition group-hover:scale-105" />
-                        <span class="block px-2 py-1 text-[11px] text-base-content/70">{{ image.label }}</span>
-                      </button>
-                    </div>
-
-                    <div v-else class="mt-4">
-                      <div v-if="state.userUploadedImages.length" class="grid grid-cols-2 gap-2">
-                        <button
-                          v-for="image in state.userUploadedImages"
-                          :key="image.id"
-                          type="button"
-                          class="group overflow-hidden rounded-xl border border-base-300/70 bg-base-100/70"
-                          @click="addUploadedImage(image)"
-                        >
-                          <img :src="image.src" :alt="image.label" class="h-20 w-full object-cover transition group-hover:scale-105" />
-                          <span class="block truncate px-2 py-1 text-[11px] text-base-content/70">{{ image.label }}</span>
-                        </button>
-                      </div>
-                      <div v-else class="rounded-xl border border-base-300/70 bg-base-100/70 p-3 text-xs text-base-content/65">
-                        Aún no tienes imágenes subidas. Añade una desde la pestaña Insertar.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Opciones de figuras (inline) -->
-                <div v-if="shapePanelOpen" class="card border border-base-300 bg-base-100/80">
-                  <div class="card-body p-4">
-                    <div class="flex flex-wrap gap-1.5">
-                      <button
-                        type="button"
-                        class="btn btn-xs rounded-full"
-                        :class="shapeCategoryFilter === 'all' ? 'btn-primary' : 'btn-outline'"
-                        @click="shapeCategoryFilter = 'all'"
-                      >
-                        Todas
-                      </button>
-                      <button
-                        v-for="cat in shapeCategories"
-                        :key="cat.id"
-                        type="button"
-                        class="btn btn-xs rounded-full"
-                        :class="shapeCategoryFilter === cat.id ? 'btn-primary' : 'btn-outline'"
-                        @click="shapeCategoryFilter = cat.id"
-                      >
-                        {{ cat.label }}
-                      </button>
-                    </div>
-
-                    <template v-for="cat in shapeCategories" :key="cat.id">
-                      <div v-if="shapeCategoryFilter === 'all' || shapeCategoryFilter === cat.id" class="mt-4">
-                        <p class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/55">{{ cat.label }}</p>
-                        <div class="grid grid-cols-4 gap-2">
-                          <button
-                            v-for="shape in cat.shapes"
-                            :key="shape.id"
-                            type="button"
-                            class="group flex flex-col items-center gap-1.5 rounded-xl border border-base-300/70 bg-base-100/70 p-2 transition hover:border-primary/60 hover:bg-primary/10"
-                            :title="shape.label"
-                            @click="addShapeElement(shape.id)"
-                          >
-                            <div class="h-8 w-8 shrink-0">
-                              <div
-                                class="h-full w-full text-primary"
-                                :style="shapeStyleFromKind(shape.id, { width: '100%', height: '100%', background: 'currentColor', border: '0' })"
-                              />
-                            </div>
-                            <span class="w-full truncate text-center text-[10px] leading-tight text-base-content/70 group-hover:text-primary">{{ shape.label }}</span>
-                          </button>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-                </div>
-              </div>
-
-              <div v-else-if="activePropertyPanel === 'typography' && hasTextSelection" class="card border border-base-300 bg-base-100/80">
-                <div class="card-body p-4">
-                  <div class="flex items-center justify-between gap-3">
-                    <p class="text-sm font-semibold text-base-content">Tipo de fuente</p>
-                    <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                      {{ fontOptions.length }} fuentes
-                    </span>
-                  </div>
-                  <p class="mt-1 text-xs text-base-content/60">Lista simple: una fuente por línea y mostrada con su propio tipo de letra.</p>
-                  <p class="mt-2 text-xs font-medium text-primary/80">Estos ajustes se aplican al {{ activeParagraphLabel.toLowerCase() }}.</p>
-                  <div class="mt-3 max-h-80 overflow-y-auto border-y border-base-300/70">
-                    <button
-                      v-for="font in fontOptions"
-                      :key="font.family"
-                      type="button"
-                      class="block w-full border-b border-base-300/70 px-1 py-3 text-left transition last:border-b-0"
-                      :class="selectedTextStyle.fontFamily === font.family
-                        ? 'bg-primary/10 text-primary'
-                        : 'bg-transparent text-base-content hover:bg-base-200/50'"
-                      @click="selectedTextStyle.fontFamily = font.family"
-                    >
-                      <span class="block text-xl leading-tight" :style="{ fontFamily: font.family }">{{ font.label }}</span>
-                    </button>
-                  </div>
-                  <div class="mt-4 space-y-3">
-                    <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interletrado</label>
-                    <div class="flex items-center gap-3">
-                      <input v-model.number="selectedTextStyle.letterSpacing" type="range" min="-5" max="40" step="1" class="range range-primary flex-1" />
-                      <input v-model.number="selectedTextStyle.letterSpacing" type="number" min="-5" max="40" step="1" class="input input-bordered input-sm w-20" />
-                    </div>
-                  </div>
-                  <div class="mt-4 space-y-3">
-                    <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interlineado</label>
-                    <div class="flex items-center gap-3">
-                      <input v-model.number="selectedTextStyle.lineHeight" type="range" min="0.6" max="3" step="0.1" class="range range-primary flex-1" />
-                      <input v-model.number="selectedTextStyle.lineHeight" type="number" min="0.6" max="3" step="0.1" class="input input-bordered input-sm w-20" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div v-else-if="activePropertyPanel === 'color'" class="card border border-base-300 bg-base-100/80">
-                <div class="card-body p-4 space-y-4">
-                  <div v-if="state.selectedElementId === 'background'">
-                    <div class="flex items-center justify-between gap-3">
-                      <div>
-                        <p class="text-sm font-semibold text-base-content">Color del fondo</p>
-                        <p class="text-xs text-base-content/60">Puedes usar color sólido o degradado.</p>
-                      </div>
-                      <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                        {{ state.elementLayout.background?.fillMode === 'gradient' ? 'degradado' : (state.elementLayout.background?.backgroundColor || 'transparent') }}
-                      </span>
-                    </div>
-
-                    <div class="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        class="btn btn-sm rounded-full"
-                        :class="state.elementLayout.background?.fillMode !== 'gradient' ? 'btn-primary' : 'btn-outline'"
-                        @click="state.elementLayout.background.fillMode = 'solid'"
-                      >
-                        Sólido
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-sm rounded-full"
-                        :class="state.elementLayout.background?.fillMode === 'gradient' ? 'btn-primary' : 'btn-outline'"
-                        @click="state.elementLayout.background.fillMode = 'gradient'"
-                      >
-                        Degradado
-                      </button>
-                    </div>
-
-                    <div v-if="state.elementLayout.background?.fillMode !== 'gradient'" class="space-y-4">
-                      <div class="mt-4 grid grid-cols-6 gap-2">
-                        <button
-                          v-for="color in backgroundOptions"
-                          :key="'bg-color-' + color"
-                          type="button"
-                          class="h-9 w-9 rounded-full transition hover:scale-105"
-                          :class="state.elementLayout.background?.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                          :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
-                          :title="color"
-                          @click="state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = color"
-                        ></button>
-                      </div>
-                      <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
-                        <div class="flex items-center gap-2">
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(state.elementLayout.background?.backgroundColor || '#4338ca', '#4338ca')"
-                            @input="state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = $event.target.value"
-                          />
-                          <input
-                            :value="state.elementLayout.background?.backgroundColor"
-                            type="text"
-                            placeholder="#4338ca"
-                            class="input input-bordered input-sm flex-1"
-                            @input="state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = $event.target.value"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div v-else class="space-y-4">
-                      <div class="grid grid-cols-2 gap-2">
-                        <button
-                          v-for="preset in shapeGradientOptions"
-                          :key="preset.id"
-                          type="button"
-                          class="h-10 rounded-xl border border-base-300/70 transition hover:scale-[1.01]"
-                          :class="state.elementLayout.background?.gradientStart === preset.start && state.elementLayout.background?.gradientEnd === preset.end ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : ''"
-                          :style="{ background: `linear-gradient(135deg, ${preset.start}, ${preset.end})` }"
-                          @click="applyGradientPreset('background', preset.start, preset.end)"
-                        ></button>
-                      </div>
-                      <div class="grid gap-3 sm:grid-cols-2">
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Inicio</span>
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(state.elementLayout.background?.gradientStart || '#0ea5e9', '#0ea5e9')"
-                            @input="state.elementLayout.background.gradientStart = $event.target.value"
-                          />
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Final</span>
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(state.elementLayout.background?.gradientEnd || '#8b5cf6', '#8b5cf6')"
-                            @input="state.elementLayout.background.gradientEnd = $event.target.value"
-                          />
-                        </div>
-                      </div>
-                      <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Dirección</label>
-                        <div class="grid grid-cols-3 gap-2 rounded-xl border border-base-300/70 bg-base-100/70 p-2">
-                          <button
-                            v-for="direction in shapeGradientDirections"
-                            :key="direction.value"
-                            type="button"
-                            class="group flex items-center justify-center rounded-lg border p-2 transition"
-                            :class="state.elementLayout.background?.gradientAngle === direction.value
-                              ? 'border-primary bg-primary/15 text-primary'
-                              : 'border-base-300/70 bg-base-100/80 text-base-content/70 hover:border-primary/50 hover:text-primary'"
-                            :title="direction.label"
-                            :aria-label="direction.label"
-                            @click="state.elementLayout.background.gradientAngle = direction.value"
-                          >
-                            <Icon :icon="direction.icon" class="text-xl" />
-                          </button>
-                        </div>
-                      </div>
-                      <div class="flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-outline btn-sm rounded-full" @click="swapGradientStops('background')">Alternar inicio/fin</button>
-                        <div class="h-8 flex-1 min-w-28 rounded-full border border-base-300/70" :style="{ background: `linear-gradient(${state.elementLayout.background?.gradientAngle || 135}deg, ${state.elementLayout.background?.gradientStart || '#0ea5e9'}, ${state.elementLayout.background?.gradientEnd || '#8b5cf6'})` }"></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div v-else-if="hasTextSelection">
-                    <div class="flex items-center justify-between gap-3">
-                      <div>
-                        <p class="text-sm font-semibold text-base-content">Color del texto</p>
-                        <p class="text-xs text-base-content/60">Paleta ampliada y color personalizado.</p>
-                      </div>
-                      <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                        {{ selectedTextStyle.color }}
-                      </span>
-                    </div>
-                    <p class="mt-2 text-xs font-medium text-primary/80">El color se aplica al {{ activeParagraphLabel.toLowerCase() }}.</p>
-                    <div class="mt-4 grid grid-cols-6 gap-2">
-                      <button
-                        v-for="color in colorOptions"
-                        :key="color"
-                        type="button"
-                        class="h-9 w-9 rounded-full transition hover:scale-105"
-                        :class="selectedTextStyle.color === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                        :style="{ backgroundColor: color }"
-                        :title="color"
-                        @click="selectedTextStyle.color = color"
-                      ></button>
-                    </div>
-                    <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
-                      <div class="flex items-center gap-2">
-                        <input
-                          type="color"
-                          class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                          :value="normalizePickerColor(selectedTextStyle.color, '#ffffff')"
-                          @input="setSelectedColor('color', $event.target.value)"
-                        />
-                        <input
-                          :value="selectedTextStyle.color"
-                          type="text"
-                          placeholder="#7c3aed"
-                          class="input input-bordered input-sm flex-1"
-                          @input="setSelectedColor('color', $event.target.value)"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div v-else-if="selectedElementType === 'shape'">
-                    <div class="flex items-center justify-between gap-3">
-                      <div>
-                        <p class="text-sm font-semibold text-base-content">Color de la figura</p>
-                        <p class="text-xs text-base-content/60">Puedes usar color sólido o degradado.</p>
-                      </div>
-                      <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                        {{ selectedElement.fillMode === 'gradient' ? 'degradado' : (selectedElement.backgroundColor || 'transparent') }}
-                      </span>
-                    </div>
-
-                    <div class="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        class="btn btn-sm rounded-full"
-                        :class="selectedElement.fillMode !== 'gradient' ? 'btn-primary' : 'btn-outline'"
-                        @click="selectedElement.fillMode = 'solid'"
-                      >
-                        Sólido
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-sm rounded-full"
-                        :class="selectedElement.fillMode === 'gradient' ? 'btn-primary' : 'btn-outline'"
-                        @click="selectedElement.fillMode = 'gradient'"
-                      >
-                        Degradado
-                      </button>
-                    </div>
-
-                    <div v-if="selectedElement.fillMode !== 'gradient'" class="space-y-4">
-                      <div class="mt-4 grid grid-cols-6 gap-2">
-                        <button
-                          v-for="color in backgroundOptions"
-                          :key="'element-color-' + color"
-                          type="button"
-                          class="h-9 w-9 rounded-full transition hover:scale-105"
-                          :class="selectedElement.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                          :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
-                          :title="color"
-                          @click="selectedElement.fillMode = 'solid'; selectedElement.backgroundColor = color"
-                        ></button>
-                      </div>
-                      <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
-                        <div class="flex items-center gap-2">
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(selectedElement.backgroundColor, '#ffffff')"
-                            @input="selectedElement.fillMode = 'solid'; setSelectedColor('backgroundColor', $event.target.value)"
-                          />
-                          <input
-                            :value="selectedElement.backgroundColor"
-                            type="text"
-                            placeholder="transparent o #0ea5e9"
-                            class="input input-bordered input-sm flex-1"
-                            @input="selectedElement.fillMode = 'solid'; setSelectedColor('backgroundColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div v-else class="space-y-4">
-                      <div class="grid grid-cols-2 gap-2">
-                        <button
-                          v-for="preset in shapeGradientOptions"
-                          :key="preset.id"
-                          type="button"
-                          class="h-10 rounded-xl border border-base-300/70 transition hover:scale-[1.01]"
-                          :class="selectedElement.gradientStart === preset.start && selectedElement.gradientEnd === preset.end ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : ''"
-                          :style="{ background: `linear-gradient(135deg, ${preset.start}, ${preset.end})` }"
-                          @click="applyShapeGradientPreset(preset.start, preset.end)"
-                        ></button>
-                      </div>
-                      <div class="grid gap-3 sm:grid-cols-2">
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Inicio</span>
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(selectedElement.gradientStart || '#0ea5e9', '#0ea5e9')"
-                            @input="selectedElement.gradientStart = $event.target.value"
-                          />
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Final</span>
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(selectedElement.gradientEnd || '#8b5cf6', '#8b5cf6')"
-                            @input="selectedElement.gradientEnd = $event.target.value"
-                          />
-                        </div>
-                      </div>
-                      <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Dirección</label>
-                        <div class="grid grid-cols-3 gap-2 rounded-xl border border-base-300/70 bg-base-100/70 p-2">
-                          <button
-                            v-for="direction in shapeGradientDirections"
-                            :key="direction.value"
-                            type="button"
-                            class="group flex items-center justify-center rounded-lg border p-2 transition"
-                            :class="selectedElement.gradientAngle === direction.value
-                              ? 'border-primary bg-primary/15 text-primary'
-                              : 'border-base-300/70 bg-base-100/80 text-base-content/70 hover:border-primary/50 hover:text-primary'"
-                            :title="direction.label"
-                            :aria-label="direction.label"
-                            @click="selectedElement.gradientAngle = direction.value"
-                          >
-                            <Icon :icon="direction.icon" class="text-xl" />
-                          </button>
-                        </div>
-                      </div>
-                      <div class="flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-outline btn-sm rounded-full" @click="swapShapeGradientStops">Alternar inicio/fin</button>
-                        <div class="h-8 flex-1 min-w-28 rounded-full border border-base-300/70" :style="{ background: `linear-gradient(${selectedElement.gradientAngle || 135}deg, ${selectedElement.gradientStart || '#0ea5e9'}, ${selectedElement.gradientEnd || '#8b5cf6'})` }"></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div v-else>
-                    <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
-                      <div class="flex items-center justify-between gap-3">
-                        <div>
-                          <p class="text-sm font-semibold text-base-content">Color del marco/fondo</p>
-                          <p class="text-xs text-base-content/60">Color del contenedor de la imagen.</p>
-                        </div>
-                        <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                          {{ selectedElement.backgroundColor || 'transparent' }}
-                        </span>
-                      </div>
-                      <div class="mt-4 grid grid-cols-6 gap-2">
-                        <button
-                          v-for="color in backgroundOptions"
-                          :key="'image-frame-' + color"
-                          type="button"
-                          class="h-9 w-9 rounded-full transition hover:scale-105"
-                          :class="selectedElement.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                          :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
-                          :title="color"
-                          @click="selectedElement.backgroundColor = color"
-                        ></button>
-                      </div>
-                    </div>
-
-                    <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
-                      <div class="flex items-center justify-between gap-3">
-                        <div>
-                          <p class="text-sm font-semibold text-base-content">Tinte de imagen</p>
-                          <p class="text-xs text-base-content/60">Superposición de color sobre la foto.</p>
-                        </div>
-                        <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                          {{ selectedElement.imageTintStrength ?? 0 }}%
-                        </span>
-                      </div>
-                      <div class="mt-3 grid grid-cols-6 gap-2">
-                        <button
-                          v-for="color in colorOptions"
-                          :key="'image-tint-' + color"
-                          type="button"
-                          class="h-9 w-9 rounded-full transition hover:scale-105"
-                          :class="selectedElement.imageTintColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                          :style="{ backgroundColor: color }"
-                          :title="color"
-                          @click="selectedElement.imageTintColor = color"
-                        ></button>
-                      </div>
-                      <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
-                        <div class="flex items-center gap-2">
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(selectedElement.imageTintColor || '#0f172a', '#0f172a')"
-                            @input="setSelectedColor('imageTintColor', $event.target.value)"
-                          />
-                          <input
-                            :value="selectedElement.imageTintColor || '#0f172a'"
-                            type="text"
-                            placeholder="#0f172a"
-                            class="input input-bordered input-sm flex-1"
-                            @input="setSelectedColor('imageTintColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-                      <div class="mt-4 space-y-2">
-                        <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Intensidad del tinte</label>
-                        <div class="flex items-center gap-3">
-                          <input v-model.number="selectedElement.imageTintStrength" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.imageTintStrength" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div v-else-if="activePropertyPanel === 'effects'" class="card border border-base-300 bg-base-100/80">
-                <div class="card-body p-4 space-y-4">
-                  <template v-if="hasTextSelection">
-                    <template v-for="(effectRow, rowIndex) in textEffectRows" :key="`effect-row-${rowIndex}`">
-                      <div class="grid grid-cols-3 gap-2">
-                        <button
-                          v-for="effect in effectRow"
-                          :key="effect.id"
-                          type="button"
-                          class="text-center transition"
-                          :style="{ fontFamily: textEffectCardFontFamily }"
-                          @click="setTextEffect(effect.id)"
-                        >
-                          <span
-                            class="inline-flex h-18 w-full items-center justify-center rounded-xl border transition"
-                            :class="activeTextEffectId === effect.id
-                              ? 'border-primary bg-white ring-1 ring-primary/35'
-                              : 'border-base-300 bg-white hover:border-primary/45 hover:bg-white'"
-                          >
-                            <span :style="textEffectPreviewStyle(effect.id)">Ag</span>
-                          </span>
-                          <span class="mt-1.5 block text-[11px] font-medium text-base-content/85">{{ effect.label }}</span>
-                        </button>
-                        <div v-for="emptyIndex in Math.max(0, 3 - effectRow.length)" :key="`effect-row-${rowIndex}-empty-${emptyIndex}`"></div>
-                      </div>
-
-                      <div
-                        v-if="activeTextEffectId !== 'none' && effectRow.some((effect) => effect.id === activeTextEffectId)"
-                        class="flex flex-wrap items-end gap-3 rounded-2xl border border-base-300/70 bg-base-100/60 p-3"
-                      >
-                      <div v-if="activeTextEffectId === 'shadow'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Direccion</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.shadowAngle" type="range" min="0" max="360" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.shadowAngle" type="number" min="0" max="360" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'shadow'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Compensacion</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.shadowOffset" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.shadowOffset" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'shadow'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Desenfoque</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.shadowBlur" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.shadowBlur" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="['shadow', 'shadow1', 'shadow2'].includes(activeTextEffectId)" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Transparencia</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.shadowOpacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.shadowOpacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="['shadow', 'shadow1', 'shadow2'].includes(activeTextEffectId)" class="w-23 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
-                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
-                          <input
-                            type="color"
-                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
-                            :value="normalizePickerColor(selectedElement.shadowColor || '#000000', '#000000')"
-                            @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-
-                      <div v-if="activeTextEffectId === 'echo'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Direccion</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.shadowAngle" type="range" min="0" max="360" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.shadowAngle" type="number" min="0" max="360" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'echo'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Compensacion</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.shadowOffset" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.shadowOffset" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'echo'" class="w-23 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
-                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
-                          <input
-                            type="color"
-                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
-                            :value="normalizePickerColor(selectedElement.shadowColor || '#000000', '#000000')"
-                            @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-
-                      <div v-if="activeTextEffectId === 'glow'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Brillo</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.neonIntensity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.neonIntensity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'glow'" class="w-23 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
-                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
-                          <input
-                            type="color"
-                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
-                            :value="normalizePickerColor(selectedElement.neonColor || '#8b5cf6', '#8b5cf6')"
-                            @input="setSelectedColor('neonColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-
-                      <div v-if="activeTextEffectId === 'distort'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Direccion</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.shadowAngle" type="range" min="0" max="360" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.shadowAngle" type="number" min="0" max="360" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'distort'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Compensacion</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.shadowOffset" type="range" min="0" max="20" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.shadowOffset" type="number" min="0" max="20" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'distort'" class="w-23 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color 1</label>
-                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
-                          <input
-                            type="color"
-                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
-                            :value="normalizePickerColor(selectedElement.shadowColor || '#f0f', '#f0f')"
-                            @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'distort'" class="w-23 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color 2</label>
-                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
-                          <input
-                            type="color"
-                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
-                            :value="normalizePickerColor(selectedElement.neonColor || '#0ff', '#0ff')"
-                            @input="setSelectedColor('neonColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-
-                      <div v-if="activeTextEffectId === 'misaligned'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'misaligned'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Compensacion</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.shadowOffset" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.shadowOffset" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'misaligned'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Direccion</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.shadowAngle" type="range" min="0" max="360" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.shadowAngle" type="number" min="0" max="360" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'misaligned'" class="w-23 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
-                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
-                          <input
-                            type="color"
-                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
-                            :value="normalizePickerColor(selectedElement.shadowColor || '#000000', '#000000')"
-                            @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-
-                      <div v-if="activeTextEffectId === 'neon'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Intensidad</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.neonIntensity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.neonIntensity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-
-                      <div v-if="activeTextEffectId === 'outline'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'outline'" class="w-23 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
-                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
-                          <input
-                            type="color"
-                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
-                            :value="normalizePickerColor(selectedElement.contourColor || '#7c3aed', '#7c3aed')"
-                            @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-
-                      <div v-if="activeTextEffectId === 'hollow'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-
-                      <div v-if="activeTextEffectId === 'background'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Redondez</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.backgroundRoundness" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.backgroundRoundness" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'background'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Extender</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.backgroundPadding" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.backgroundPadding" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'background'" class="min-w-55 flex-1 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Transparencia</label>
-                        <div class="flex items-center gap-2">
-                          <input v-model.number="selectedElement.backgroundOpacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                          <input v-model.number="selectedElement.backgroundOpacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
-                        </div>
-                      </div>
-                      <div v-if="activeTextEffectId === 'background'" class="w-23 space-y-2">
-                        <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
-                        <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
-                          <input
-                            type="color"
-                            class="h-full w-full cursor-pointer rounded-lg bg-base-100"
-                            :value="normalizePickerColor(selectedElement.backgroundColor, '#ddd6fe')"
-                            @input="setSelectedColor('backgroundColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-                      </div>
-                    </template>
-
-                    <button
-                      v-if="activeTextEffectId !== 'none'"
-                      type="button"
-                      class="btn btn-primary btn-block mt-2 rounded-2xl text-sm font-semibold shadow-md"
-                      @click="setTextEffect('none')"
-                    >
-                      Quitar efecto
-                    </button>
-                  </template>
-
-                  <template v-else>
-                    <p class="text-sm text-base-content/70">Los efectos tipo Canva estan disponibles para elementos de texto.</p>
-                  </template>
-                </div>
-              </div>
-
-              <div v-else-if="activePropertyPanel === 'opacity'" class="card border border-base-300 bg-base-100/80">
-                <div class="card-body p-4">
-                  <p class="text-sm font-semibold text-base-content">Transparencia</p>
-                  <div class="mt-3 flex flex-wrap gap-2">
-                    <input v-model="selectedElement.opacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                    <input v-model="selectedElement.opacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-24" />
-                  </div>
-                </div>
-              </div>
-
-              <div v-else-if="activePropertyPanel === 'arrange'" class="card border border-base-300 bg-base-100/80">
-                <div class="card-body p-4">
-                  <p class="text-sm font-semibold text-base-content">Posición</p>
-                  <div class="mt-3 flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-outline btn-sm rounded-full" @click="changeLayer('forward')">Adelante</button>
-                    <button type="button" class="btn btn-outline btn-sm rounded-full" @click="changeLayer('backward')">Atrás</button>
-                    <button type="button" class="btn btn-outline btn-sm rounded-full" @click="changeLayer('front')">Al frente</button>
-                    <button type="button" class="btn btn-outline btn-sm rounded-full" @click="changeLayer('back')">Al fondo</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="alert border border-base-300 bg-base-100/80 text-sm leading-6 text-base-content/80">
-                Doble click para editar texto. Enter crea un nuevo parrafo; al hacer clic fuera, el texto se guarda automaticamente. Ctrl+Enter tambien confirma y Esc cancela. En touch, mantén pulsado para editar. Usa el icono inferior para mover, las esquinas para redimensionar y el icono superior para girar (doble click para volver a 0°).
-              </div>
-            </div>
-          </aside>
+          <EditorContextPanel
+            v-if="optionsPanelOpen"
+            :state="state"
+            :has-selection="hasSelection"
+            :has-text-selection="hasTextSelection"
+            :active-property-panel="activePropertyPanel"
+            :active-property-title="activePropertyTitle"
+            :text-panel-open="textPanelOpen"
+            :image-panel-open="imagePanelOpen"
+            :shape-panel-open="shapePanelOpen"
+            :text-presets="textPresets"
+            :image-panel-tabs="imagePanelTabs"
+            :image-panel-tab="imagePanelTab"
+            :image-url-input="imageUrlInput"
+            :image-library="imageLibrary"
+            :shape-category-filter="shapeCategoryFilter"
+            :shape-categories="shapeCategories"
+            :shape-style-from-kind="shapeStyleFromKind"
+            :selected-element="selectedElement"
+            :selected-element-type="selectedElementType"
+            :selected-text-style="selectedTextStyle"
+            :active-paragraph-label="activeParagraphLabel"
+            :font-options="fontOptions"
+            :color-options="colorOptions"
+            :background-options="backgroundOptions"
+            :text-effect-rows="textEffectRows"
+            :active-text-effect-id="activeTextEffectId"
+            :text-effect-options="textEffectOptions"
+            :text-effect-card-font-family="textEffectCardFontFamily"
+            :shape-gradient-options="shapeGradientOptions"
+            :shape-gradient-directions="shapeGradientDirections"
+            :normalize-picker-color="normalizePickerColor"
+            :image-input-ref-setter="setImageInputRef"
+            :add-text-element="addTextElement"
+            :trigger-image-picker="triggerImagePicker"
+            :on-image-picked="onImagePicked"
+            :add-image-from-url="addImageFromUrl"
+            :add-library-image="addLibraryImage"
+            :add-uploaded-image="addUploadedImage"
+            :add-shape-element="addShapeElement"
+            :apply-gradient-preset="applyGradientPreset"
+            :apply-shape-gradient-preset="applyShapeGradientPreset"
+            :swap-gradient-stops="swapGradientStops"
+            :swap-shape-gradient-stops="swapShapeGradientStops"
+            :set-text-effect="setTextEffect"
+            :set-selected-color="setSelectedColor"
+            :change-layer="changeLayer"
+            @close-panel="closeOptionsPanel"
+            @update-image-panel-tab="imagePanelTab = $event"
+            @update-image-url-input="imageUrlInput = $event"
+            @update-shape-category-filter="shapeCategoryFilter = $event"
+          />
 
           <div class="canvas-grid h-full overflow-auto bg-slate-100 px-6 pt-12 pb-6 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10" :style="canvasGridStyle">
             <div class="mx-auto bg-white p-4 shadow-2xl dark:bg-slate-900" :style="[canvasFrameStyle, canvasZoomStyle]" :class="state.selectedElementId === 'background' ? 'ring-2 ring-primary' : ''">
