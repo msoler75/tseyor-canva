@@ -1,6 +1,9 @@
 <script setup>
 import { computed, toRefs } from 'vue';
 import { Icon } from '@iconify/vue';
+import ColorPaletteSection from './ColorPaletteSection.vue';
+import ColorValueField from './ColorValueField.vue';
+import FillColorPanel from './FillColorPanel.vue';
 
 const props = defineProps({
   state: Object,
@@ -26,6 +29,8 @@ const props = defineProps({
   fontOptions: Array,
   colorOptions: Array,
   backgroundOptions: Array,
+  designColorOptions: Array,
+  designGradientOptions: Array,
   textEffectRows: Array,
   visualEffectRows: Array,
   activeTextEffectId: String,
@@ -77,6 +82,8 @@ const {
   fontOptions,
   colorOptions,
   backgroundOptions,
+  designColorOptions,
+  designGradientOptions,
   textEffectRows,
   visualEffectRows,
   activeTextEffectId,
@@ -339,114 +346,38 @@ const closePanel = () => emit('closePanel');
                       </span>
                     </div>
 
-                    <div class="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        class="btn btn-sm rounded-full"
-                        :class="state.elementLayout.background?.fillMode !== 'gradient' ? 'btn-primary' : 'btn-outline'"
-                        @click="state.elementLayout.background.fillMode = 'solid'"
-                      >
-                        Sólido
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-sm rounded-full"
-                        :class="state.elementLayout.background?.fillMode === 'gradient' ? 'btn-primary' : 'btn-outline'"
-                        @click="state.elementLayout.background.fillMode = 'gradient'"
-                      >
-                        Degradado
-                      </button>
-                    </div>
-
-                    <div v-if="state.elementLayout.background?.fillMode !== 'gradient'" class="space-y-4">
-                      <div class="mt-4 grid grid-cols-6 gap-2">
-                        <button
-                          v-for="color in backgroundOptions"
-                          :key="'bg-color-' + color"
-                          type="button"
-                          class="h-9 w-9 rounded-full transition hover:scale-105"
-                          :class="state.elementLayout.background?.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                          :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
-                          :title="color"
-                          @click="state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = color"
-                        ></button>
-                      </div>
-                      <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
-                        <div class="flex items-center gap-2">
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(state.elementLayout.background?.backgroundColor || '#4338ca', '#4338ca')"
-                            @input="state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = $event.target.value"
-                          />
-                          <input
-                            :value="state.elementLayout.background?.backgroundColor"
-                            type="text"
-                            placeholder="#4338ca"
-                            class="input input-bordered input-sm flex-1"
-                            @input="state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = $event.target.value"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div v-else class="space-y-4">
-                      <div class="grid grid-cols-2 gap-2">
-                        <button
-                          v-for="preset in shapeGradientOptions"
-                          :key="preset.id"
-                          type="button"
-                          class="h-10 rounded-xl border border-base-300/70 transition hover:scale-[1.01]"
-                          :class="state.elementLayout.background?.gradientStart === preset.start && state.elementLayout.background?.gradientEnd === preset.end ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : ''"
-                          :style="{ background: `linear-gradient(135deg, ${preset.start}, ${preset.end})` }"
-                          @click="applyGradientPreset('background', preset.start, preset.end)"
-                        ></button>
-                      </div>
-                      <div class="grid gap-3 sm:grid-cols-2">
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Inicio</span>
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(state.elementLayout.background?.gradientStart || '#0ea5e9', '#0ea5e9')"
-                            @input="state.elementLayout.background.gradientStart = $event.target.value"
-                          />
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Final</span>
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(state.elementLayout.background?.gradientEnd || '#8b5cf6', '#8b5cf6')"
-                            @input="state.elementLayout.background.gradientEnd = $event.target.value"
-                          />
-                        </div>
-                      </div>
-                      <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Dirección</label>
-                        <div class="grid grid-cols-3 gap-2 rounded-xl border border-base-300/70 bg-base-100/70 p-2">
-                          <button
-                            v-for="direction in shapeGradientDirections"
-                            :key="direction.value"
-                            type="button"
-                            class="group flex items-center justify-center rounded-lg border p-2 transition"
-                            :class="state.elementLayout.background?.gradientAngle === direction.value
-                              ? 'border-primary bg-primary/15 text-primary'
-                              : 'border-base-300/70 bg-base-100/80 text-base-content/70 hover:border-primary/50 hover:text-primary'"
-                            :title="direction.label"
-                            :aria-label="direction.label"
-                            @click="state.elementLayout.background.gradientAngle = direction.value"
-                          >
-                            <Icon :icon="direction.icon" class="text-xl" />
-                          </button>
-                        </div>
-                      </div>
-                      <div class="flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-outline btn-sm rounded-full" @click="swapGradientStops('background')">Alternar inicio/fin</button>
-                        <div class="h-8 flex-1 min-w-28 rounded-full border border-base-300/70" :style="{ background: `linear-gradient(${state.elementLayout.background?.gradientAngle || 135}deg, ${state.elementLayout.background?.gradientStart || '#0ea5e9'}, ${state.elementLayout.background?.gradientEnd || '#8b5cf6'})` }"></div>
-                      </div>
-                    </div>
+                    <FillColorPanel
+                      :mode="state.elementLayout.background?.fillMode || 'solid'"
+                      :design-colors="designColorOptions"
+                      :generic-colors="backgroundOptions"
+                      :selected-color="state.elementLayout.background?.backgroundColor"
+                      design-color-key-prefix="bg-design-color"
+                      generic-color-key-prefix="bg-color"
+                      transparent-preview-color="#ffffff"
+                      :custom-color-value="state.elementLayout.background?.backgroundColor"
+                      :custom-color-normalized-value="normalizePickerColor(state.elementLayout.background?.backgroundColor || '#4338ca', '#4338ca')"
+                      custom-color-placeholder="#4338ca"
+                      :design-gradients="designGradientOptions"
+                      :generic-gradients="shapeGradientOptions"
+                      :selected-gradient-start="state.elementLayout.background?.gradientStart"
+                      :selected-gradient-end="state.elementLayout.background?.gradientEnd"
+                      design-gradient-key-prefix="bg-design-gradient"
+                      generic-gradient-key-prefix="bg-gradient"
+                      :gradient-start-value="state.elementLayout.background?.gradientStart || '#0ea5e9'"
+                      :gradient-end-value="state.elementLayout.background?.gradientEnd || '#8b5cf6'"
+                      :gradient-start-normalized-value="normalizePickerColor(state.elementLayout.background?.gradientStart || '#0ea5e9', '#0ea5e9')"
+                      :gradient-end-normalized-value="normalizePickerColor(state.elementLayout.background?.gradientEnd || '#8b5cf6', '#8b5cf6')"
+                      :gradient-directions="shapeGradientDirections"
+                      :gradient-angle="state.elementLayout.background?.gradientAngle || 135"
+                      @update:mode="state.elementLayout.background.fillMode = $event"
+                      @select-solid-color="(color) => { state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = color; }"
+                      @update-custom-color="(color) => { state.elementLayout.background.fillMode = 'solid'; state.elementLayout.background.backgroundColor = color; }"
+                      @select-gradient-preset="(preset) => applyGradientPreset('background', preset.start, preset.end)"
+                      @update-gradient-start="state.elementLayout.background.gradientStart = $event"
+                      @update-gradient-end="state.elementLayout.background.gradientEnd = $event"
+                      @update-gradient-angle="state.elementLayout.background.gradientAngle = $event"
+                      @swap-gradient-stops="swapGradientStops('background')"
+                    />
                   </div>
 
                   <div v-else-if="hasTextSelection">
@@ -460,36 +391,23 @@ const closePanel = () => emit('closePanel');
                       </span>
                     </div>
                     <p class="mt-2 text-xs font-medium text-primary/80">El color se aplica al {{ activeParagraphLabel.toLowerCase() }}.</p>
-                    <div class="mt-4 grid grid-cols-6 gap-2">
-                      <button
-                        v-for="color in colorOptions"
-                        :key="color"
-                        type="button"
-                        class="h-9 w-9 rounded-full transition hover:scale-105"
-                        :class="selectedTextStyle.color === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                        :style="{ backgroundColor: color }"
-                        :title="color"
-                        @click="selectedTextStyle.color = color"
-                      ></button>
-                    </div>
-                    <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
-                      <div class="flex items-center gap-2">
-                        <input
-                          type="color"
-                          class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                          :value="normalizePickerColor(selectedTextStyle.color, '#ffffff')"
-                          @input="setSelectedColor('color', $event.target.value)"
-                        />
-                        <input
-                          :value="selectedTextStyle.color"
-                          type="text"
-                          placeholder="#7c3aed"
-                          class="input input-bordered input-sm flex-1"
-                          @input="setSelectedColor('color', $event.target.value)"
-                        />
-                      </div>
-                    </div>
+                    <ColorPaletteSection
+                      class="mt-4"
+                      :design-colors="designColorOptions"
+                      :generic-colors="colorOptions"
+                      :selected-color="selectedTextStyle.color"
+                      design-key-prefix="text-design-color"
+                      generic-key-prefix="text-color"
+                      @select="(color) => { selectedTextStyle.color = color; }"
+                    />
+                    <ColorValueField
+                      class="mt-4"
+                      label="Color custom"
+                      :value="selectedTextStyle.color"
+                      :normalized-value="normalizePickerColor(selectedTextStyle.color, '#ffffff')"
+                      placeholder="#7c3aed"
+                      @update="setSelectedColor('color', $event)"
+                    />
                   </div>
 
                   <div v-else-if="selectedElementType === 'shape'">
@@ -503,161 +421,40 @@ const closePanel = () => emit('closePanel');
                       </span>
                     </div>
 
-                    <div class="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        class="btn btn-sm rounded-full"
-                        :class="selectedElement.fillMode !== 'gradient' ? 'btn-primary' : 'btn-outline'"
-                        @click="selectedElement.fillMode = 'solid'"
-                      >
-                        Sólido
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-sm rounded-full"
-                        :class="selectedElement.fillMode === 'gradient' ? 'btn-primary' : 'btn-outline'"
-                        @click="selectedElement.fillMode = 'gradient'"
-                      >
-                        Degradado
-                      </button>
-                    </div>
+                    <FillColorPanel
+                      :mode="selectedElement.fillMode || 'solid'"
+                      :design-colors="designColorOptions"
+                      :generic-colors="backgroundOptions"
+                      :selected-color="selectedElement.backgroundColor"
+                      design-color-key-prefix="shape-design-color"
+                      generic-color-key-prefix="element-color"
+                      transparent-preview-color="#ffffff"
+                      :custom-color-value="selectedElement.backgroundColor"
+                      :custom-color-normalized-value="normalizePickerColor(selectedElement.backgroundColor, '#ffffff')"
+                      custom-color-placeholder="transparent o #0ea5e9"
+                      :design-gradients="designGradientOptions"
+                      :generic-gradients="shapeGradientOptions"
+                      :selected-gradient-start="selectedElement.gradientStart"
+                      :selected-gradient-end="selectedElement.gradientEnd"
+                      design-gradient-key-prefix="shape-design-gradient"
+                      generic-gradient-key-prefix="shape-gradient"
+                      :gradient-start-value="selectedElement.gradientStart || '#0ea5e9'"
+                      :gradient-end-value="selectedElement.gradientEnd || '#8b5cf6'"
+                      :gradient-start-normalized-value="normalizePickerColor(selectedElement.gradientStart || '#0ea5e9', '#0ea5e9')"
+                      :gradient-end-normalized-value="normalizePickerColor(selectedElement.gradientEnd || '#8b5cf6', '#8b5cf6')"
+                      :gradient-directions="shapeGradientDirections"
+                      :gradient-angle="selectedElement.gradientAngle || 135"
+                      @update:mode="selectedElement.fillMode = $event"
+                      @select-solid-color="(color) => { selectedElement.fillMode = 'solid'; selectedElement.backgroundColor = color; }"
+                      @update-custom-color="(color) => { selectedElement.fillMode = 'solid'; setSelectedColor('backgroundColor', color); }"
+                      @select-gradient-preset="(preset) => applyShapeGradientPreset(preset.start, preset.end)"
+                      @update-gradient-start="selectedElement.gradientStart = $event"
+                      @update-gradient-end="selectedElement.gradientEnd = $event"
+                      @update-gradient-angle="selectedElement.gradientAngle = $event"
+                      @swap-gradient-stops="swapShapeGradientStops"
+                    />
 
-                    <div v-if="selectedElement.fillMode !== 'gradient'" class="space-y-4">
-                      <div class="mt-4 grid grid-cols-6 gap-2">
-                        <button
-                          v-for="color in backgroundOptions"
-                          :key="'element-color-' + color"
-                          type="button"
-                          class="h-9 w-9 rounded-full transition hover:scale-105"
-                          :class="selectedElement.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                          :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
-                          :title="color"
-                          @click="selectedElement.fillMode = 'solid'; selectedElement.backgroundColor = color"
-                        ></button>
-                      </div>
-                      <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
-                        <div class="flex items-center gap-2">
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(selectedElement.backgroundColor, '#ffffff')"
-                            @input="selectedElement.fillMode = 'solid'; setSelectedColor('backgroundColor', $event.target.value)"
-                          />
-                          <input
-                            :value="selectedElement.backgroundColor"
-                            type="text"
-                            placeholder="transparent o #0ea5e9"
-                            class="input input-bordered input-sm flex-1"
-                            @input="selectedElement.fillMode = 'solid'; setSelectedColor('backgroundColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div v-else class="space-y-4">
-                      <div class="grid grid-cols-2 gap-2">
-                        <button
-                          v-for="preset in shapeGradientOptions"
-                          :key="preset.id"
-                          type="button"
-                          class="h-10 rounded-xl border border-base-300/70 transition hover:scale-[1.01]"
-                          :class="selectedElement.gradientStart === preset.start && selectedElement.gradientEnd === preset.end ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : ''"
-                          :style="{ background: `linear-gradient(135deg, ${preset.start}, ${preset.end})` }"
-                          @click="applyShapeGradientPreset(preset.start, preset.end)"
-                        ></button>
-                      </div>
-                      <div class="grid gap-3 sm:grid-cols-2">
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Inicio</span>
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(selectedElement.gradientStart || '#0ea5e9', '#0ea5e9')"
-                            @input="selectedElement.gradientStart = $event.target.value"
-                          />
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Final</span>
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(selectedElement.gradientEnd || '#8b5cf6', '#8b5cf6')"
-                            @input="selectedElement.gradientEnd = $event.target.value"
-                          />
-                        </div>
-                      </div>
-                      <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Dirección</label>
-                        <div class="grid grid-cols-3 gap-2 rounded-xl border border-base-300/70 bg-base-100/70 p-2">
-                          <button
-                            v-for="direction in shapeGradientDirections"
-                            :key="direction.value"
-                            type="button"
-                            class="group flex items-center justify-center rounded-lg border p-2 transition"
-                            :class="selectedElement.gradientAngle === direction.value
-                              ? 'border-primary bg-primary/15 text-primary'
-                              : 'border-base-300/70 bg-base-100/80 text-base-content/70 hover:border-primary/50 hover:text-primary'"
-                            :title="direction.label"
-                            :aria-label="direction.label"
-                            @click="selectedElement.gradientAngle = direction.value"
-                          >
-                            <Icon :icon="direction.icon" class="text-xl" />
-                          </button>
-                        </div>
-                      </div>
-                      <div class="flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-outline btn-sm rounded-full" @click="swapShapeGradientStops">Alternar inicio/fin</button>
-                        <div class="h-8 flex-1 min-w-28 rounded-full border border-base-300/70" :style="{ background: `linear-gradient(${selectedElement.gradientAngle || 135}deg, ${selectedElement.gradientStart || '#0ea5e9'}, ${selectedElement.gradientEnd || '#8b5cf6'})` }"></div>
-                      </div>
-                    </div>
-
-                    <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3 space-y-3">
-                      <div class="flex items-center justify-between gap-3">
-                        <div>
-                          <p class="text-sm font-semibold text-base-content">Borde</p>
-                          <p class="text-xs text-base-content/60">Activa o quita el trazo y ajusta su estilo.</p>
-                        </div>
-                        <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                          {{ selectedElement.border ? (selectedElement.borderStyle || 'solid') : 'sin borde' }}
-                        </span>
-                      </div>
-
-                      <div class="flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-sm rounded-full" :class="!selectedElement.border ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = false">Sin borde</button>
-                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && (selectedElement.borderStyle || 'solid') === 'solid' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'solid'; selectedElement.contourWidth = Math.max(1, Number(selectedElement.contourWidth || 2))">S?lido</button>
-                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dashed' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dashed'; selectedElement.contourWidth = Math.max(1, Number(selectedElement.contourWidth || 2))">Dashed</button>
-                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dotted' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dotted'; selectedElement.contourWidth = Math.max(1, Number(selectedElement.contourWidth || 2))">Dotted</button>
-                      </div>
-
-                      <template v-if="selectedElement.border">
-                        <div class="space-y-2">
-                          <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
-                          <div class="flex items-center gap-3">
-                          <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="30" step="1" class="range range-primary flex-1" @change="selectedElement.contourWidth = Math.max(1, Number(selectedElement.contourWidth || 2))" />
-                          <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="30" step="1" class="input input-bordered input-sm w-20" @change="selectedElement.contourWidth = Math.max(1, Number(selectedElement.contourWidth || 2))" />
-                          </div>
-                        </div>
-                        <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
-                          <div class="flex items-center gap-2">
-                            <input
-                              type="color"
-                              class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                              :value="normalizePickerColor(selectedElement.contourColor || '#ffffff', '#ffffff')"
-                              @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
-                            />
-                            <input
-                              :value="selectedElement.contourColor || '#ffffff'"
-                              type="text"
-                              placeholder="#ffffff"
-                              class="input input-bordered input-sm flex-1"
-                              @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
-                            />
-                          </div>
-                        </div>
-                      </template>
-                    </div>
+                    
                   </div>
 
                   <div v-else>
@@ -671,18 +468,16 @@ const closePanel = () => emit('closePanel');
                           {{ selectedElement.backgroundColor || 'transparent' }}
                         </span>
                       </div>
-                      <div class="mt-4 grid grid-cols-6 gap-2">
-                        <button
-                          v-for="color in backgroundOptions"
-                          :key="'image-frame-' + color"
-                          type="button"
-                          class="h-9 w-9 rounded-full transition hover:scale-105"
-                          :class="selectedElement.backgroundColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                          :style="{ backgroundColor: color === 'transparent' ? '#ffffff' : color }"
-                          :title="color"
-                          @click="selectedElement.backgroundColor = color"
-                        ></button>
-                      </div>
+                      <ColorPaletteSection
+                        class="mt-4"
+                        :design-colors="designColorOptions"
+                        :generic-colors="backgroundOptions"
+                        :selected-color="selectedElement.backgroundColor"
+                        design-key-prefix="image-bg-design-color"
+                        generic-key-prefix="image-frame"
+                        transparent-preview-color="#ffffff"
+                        @select="(color) => { selectedElement.backgroundColor = color; }"
+                      />
                     </div>
 
                     <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3">
@@ -695,36 +490,23 @@ const closePanel = () => emit('closePanel');
                           {{ selectedElement.imageTintStrength ?? 0 }}%
                         </span>
                       </div>
-                      <div class="mt-3 grid grid-cols-6 gap-2">
-                        <button
-                          v-for="color in colorOptions"
-                          :key="'image-tint-' + color"
-                          type="button"
-                          class="h-9 w-9 rounded-full transition hover:scale-105"
-                          :class="selectedElement.imageTintColor === color ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-100' : 'ring-1 ring-slate-200 dark:ring-slate-700'"
-                          :style="{ backgroundColor: color }"
-                          :title="color"
-                          @click="selectedElement.imageTintColor = color"
-                        ></button>
-                      </div>
-                      <div class="mt-4 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color custom</label>
-                        <div class="flex items-center gap-2">
-                          <input
-                            type="color"
-                            class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                            :value="normalizePickerColor(selectedElement.imageTintColor || '#0f172a', '#0f172a')"
-                            @input="setSelectedColor('imageTintColor', $event.target.value)"
-                          />
-                          <input
-                            :value="selectedElement.imageTintColor || '#0f172a'"
-                            type="text"
-                            placeholder="#0f172a"
-                            class="input input-bordered input-sm flex-1"
-                            @input="setSelectedColor('imageTintColor', $event.target.value)"
-                          />
-                        </div>
-                      </div>
+                      <ColorPaletteSection
+                        class="mt-3"
+                        :design-colors="designColorOptions"
+                        :generic-colors="colorOptions"
+                        :selected-color="selectedElement.imageTintColor"
+                        design-key-prefix="image-tint-design-color"
+                        generic-key-prefix="image-tint"
+                        @select="(color) => { selectedElement.imageTintColor = color; }"
+                      />
+                      <ColorValueField
+                        class="mt-4"
+                        label="Color custom"
+                        :value="selectedElement.imageTintColor || '#0f172a'"
+                        :normalized-value="normalizePickerColor(selectedElement.imageTintColor || '#0f172a', '#0f172a')"
+                        placeholder="#0f172a"
+                        @update="setSelectedColor('imageTintColor', $event)"
+                      />
                       <div class="mt-4 space-y-2">
                         <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Intensidad del tinte</label>
                         <div class="flex items-center gap-3">
@@ -734,52 +516,7 @@ const closePanel = () => emit('closePanel');
                       </div>
                     </div>
 
-                    <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3 space-y-3">
-                      <div class="flex items-center justify-between gap-3">
-                        <div>
-                          <p class="text-sm font-semibold text-base-content">Borde</p>
-                          <p class="text-xs text-base-content/60">Activa o quita el trazo y ajusta su estilo.</p>
-                        </div>
-                        <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                          {{ selectedElement.border ? (selectedElement.borderStyle || 'solid') : 'sin borde' }}
-                        </span>
-                      </div>
-
-                      <div class="flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-sm rounded-full" :class="!selectedElement.border ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = false">Sin borde</button>
-                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && (selectedElement.borderStyle || 'solid') === 'solid' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'solid'">S?lido</button>
-                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dashed' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dashed'">Dashed</button>
-                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dotted' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dotted'">Dotted</button>
-                      </div>
-
-                      <template v-if="selectedElement.border">
-                        <div class="space-y-2">
-                          <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
-                          <div class="flex items-center gap-3">
-                            <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="30" step="1" class="range range-primary flex-1" />
-                            <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="30" step="1" class="input input-bordered input-sm w-20" />
-                          </div>
-                        </div>
-                        <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-                          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
-                          <div class="flex items-center gap-2">
-                            <input
-                              type="color"
-                              class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
-                              :value="normalizePickerColor(selectedElement.contourColor || '#ffffff', '#ffffff')"
-                              @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
-                            />
-                            <input
-                              :value="selectedElement.contourColor || '#ffffff'"
-                              type="text"
-                              placeholder="#ffffff"
-                              class="input input-bordered input-sm flex-1"
-                              @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
-                            />
-                          </div>
-                        </div>
-                      </template>
-                    </div>
+                    
                   </div>
                 </div>
               </div>

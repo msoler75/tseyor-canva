@@ -99,13 +99,14 @@ const selectionMarquee = reactive({
 });
 
 const colorOptions = [
-    '#ffffff', '#f8fafc', '#111827', '#0f172a', '#7c3aed', '#8b5cf6', '#6366f1', '#3b82f6',
-    '#0ea5e9', '#06b6d4', '#14b8a6', '#10b981', '#22c55e', '#84cc16', '#eab308', '#f59e0b',
-    '#f97316', '#ef4444', '#f43f5e', '#ec4899', '#d946ef', '#c4b5fd', '#f9a8d4', '#67e8f9', '#fde68a',
+  '#000000', '#545454', '#737373', '#a6a6a6', '#b4b4b4', '#d9d9d9', '#ffffff',
+  '#ff3131', '#ff5757', '#ff66c4', '#e2a9f1', '#cb6ce6', '#8c52ff', '#5e17eb',
+  '#0097b2', '#0cc0df', '#5ce1e6', '#38b6ff', '#5170ff', '#004aad', '#1800ad',
+  '#00bf63', '#7ed957', '#c1ff72', '#ffde59', '#ffbd59', '#ff914d', '#ff751f',
 ];
 const backgroundOptions = [
-    'transparent', '#ffffff', '#f8fafc', '#e2e8f0', '#111827', '#0f172a', '#7c3aed', '#8b5cf6',
-    '#0ea5e9', '#14b8a6', '#22c55e', '#f59e0b', '#f43f5e', '#fef3c7', '#fecdd3', '#ddd6fe',
+  'transparent',
+  ...colorOptions,
 ];
 const textEffectOptions = [
   { id: 'shadow1', label: 'Sombra 1' },
@@ -132,6 +133,10 @@ const shapeGradientOptions = [
   { id: 'g6', start: '#111827', end: '#6366f1' },
   { id: 'g7', start: '#67e8f9', end: '#7c3aed' },
   { id: 'g8', start: '#fde68a', end: '#f43f5e' },
+  { id: 'g9', start: '#1d4ed8', end: '#06b6d4' },
+  { id: 'g10', start: '#7c2d12', end: '#f97316' },
+  { id: 'g11', start: '#be123c', end: '#fb7185' },
+  { id: 'g12', start: '#166534', end: '#86efac' },
 ];
 const shapeGradientDirections = [
   { value: 0, label: 'Arriba → abajo', icon: 'ph:arrow-down' },
@@ -141,6 +146,16 @@ const shapeGradientDirections = [
   { value: 180, label: 'Abajo → arriba', icon: 'ph:arrow-up' },
   { value: 270, label: 'Derecha → izquierda', icon: 'ph:arrow-left' },
 ];
+const normalizeHexCandidate = (value) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed === 'transparent') return null;
+  if (/^#[\da-f]{6}$/i.test(trimmed)) return trimmed.toLowerCase();
+  if (/^#[\da-f]{3}$/i.test(trimmed)) {
+    return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`.toLowerCase();
+  }
+  return null;
+};
 const fontOptions = [
     { label: 'Poppins', family: 'Poppins, sans-serif' },
     { label: 'Montserrat', family: 'Montserrat, sans-serif' },
@@ -409,6 +424,56 @@ const editorElements = computed(() => {
   return [...baseTextElements, ...customElements]
     .filter((item) => state.elementLayout[item.id])
     .sort((a, b) => (state.elementLayout[a.id]?.zIndex ?? 0) - (state.elementLayout[b.id]?.zIndex ?? 0));
+});
+const designColorOptions = computed(() => {
+  const seen = new Set();
+  const collected = [];
+  const pushColor = (value) => {
+    const normalized = normalizeHexCandidate(value);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    collected.push(normalized);
+  };
+
+  Object.values(state.elementLayout ?? {}).forEach((layout) => {
+    if (!layout || typeof layout !== 'object') return;
+    [
+      layout.backgroundColor,
+      layout.color,
+      layout.gradientStart,
+      layout.gradientEnd,
+      layout.contourColor,
+      layout.shadowColor,
+      layout.neonColor,
+      layout.imageTintColor,
+      layout.bubbleColor,
+    ].forEach(pushColor);
+
+    (layout.paragraphStyles ?? []).forEach((style) => pushColor(style?.color));
+  });
+
+  return collected;
+});
+const designGradientOptions = computed(() => {
+  const seen = new Set();
+  const collected = [];
+  const pushGradient = (start, end) => {
+    const normalizedStart = normalizeHexCandidate(start);
+    const normalizedEnd = normalizeHexCandidate(end);
+    if (!normalizedStart || !normalizedEnd) return;
+    const key = `${normalizedStart}-${normalizedEnd}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    collected.push({ id: `design-${seen.size}`, start: normalizedStart, end: normalizedEnd });
+  };
+
+  Object.values(state.elementLayout ?? {}).forEach((layout) => {
+    if (layout?.fillMode === 'gradient') {
+      pushGradient(layout.gradientStart, layout.gradientEnd);
+    }
+  });
+
+  return collected;
 });
 const {
   selectedElement,
@@ -1657,6 +1722,8 @@ watch(selectedGroupId, (groupId) => {
             :font-options="fontOptions"
             :color-options="colorOptions"
             :background-options="backgroundOptions"
+            :design-color-options="designColorOptions"
+            :design-gradient-options="designGradientOptions"
             :text-effect-rows="textEffectRows"
             :visual-effect-rows="visualEffectRows"
             :active-text-effect-id="activeTextEffectId"
