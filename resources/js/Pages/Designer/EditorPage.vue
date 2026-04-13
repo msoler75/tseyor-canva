@@ -1,13 +1,17 @@
 ﻿<script setup>
 import { Icon } from '@iconify/vue';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
-import RichTextEditor from '../../Components/designer/RichTextEditor.vue';
 import EditorTopBar from '../../Components/designer/EditorTopBar.vue';
 import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.vue';
 import EditorContextPanel from '../../Components/designer/EditorContextPanel.vue';
+import EditorCanvasStage from '../../Components/designer/EditorCanvasStage.vue';
+import SelectionOverlay from '../../Components/designer/SelectionOverlay.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { objectiveRecommendations } from '../../data/designer';
 import { useDesignerState } from '../../composables/useDesignerState';
+import { useEditorHistory } from '../../composables/useEditorHistory';
+import { useEditorStyles } from '../../composables/useEditorStyles';
+import { useEditorSelection } from '../../composables/useEditorSelection';
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const state = useDesignerState();
@@ -341,27 +345,6 @@ const imageLibrary = [
   { id: 'lib-6', src: 'https://picsum.photos/seed/tseyor6/900/600', label: 'Biblioteca 6' },
 ];
 
-const HISTORY_LIMIT = 80;
-const historyStack = ref([]);
-const historyMeta = ref([]);
-const historyIndex = ref(-1);
-const historyApplying = ref(false);
-let historyTimer = null;
-
-const cloneSnapshotValue = (value) => {
-  try {
-    return structuredClone(value);
-  } catch {
-    return JSON.parse(JSON.stringify(value));
-  }
-};
-
-const buildHistorySnapshot = () => ({
-  content: cloneSnapshotValue(state.content ?? {}),
-  elementLayout: cloneSnapshotValue(state.elementLayout ?? {}),
-  customElements: cloneSnapshotValue(state.customElements ?? {}),
-});
-
 const baseElementLabels = {
   background: 'fondo',
   title: 'titulo',
@@ -384,240 +367,24 @@ const contentFieldLabels = {
   extra: 'texto adicional',
 };
 
-const isPlainObject = (value) => Object.prototype.toString.call(value) === '[object Object]';
-
-const collectChangedPaths = (previousValue, nextValue, basePath = '', changedPaths = new Set()) => {
-  if (previousValue === nextValue) return changedPaths;
-
-  const previousIsArray = Array.isArray(previousValue);
-  const nextIsArray = Array.isArray(nextValue);
-  const previousIsObject = isPlainObject(previousValue);
-  const nextIsObject = isPlainObject(nextValue);
-
-  if ((previousIsArray && nextIsArray) || (previousIsObject && nextIsObject)) {
-    const keys = new Set([
-      ...Object.keys(previousValue ?? {}),
-      ...Object.keys(nextValue ?? {}),
-    ]);
-
-    if (!keys.size && basePath) {
-      changedPaths.add(basePath);
-      return changedPaths;
-    }
-
-    keys.forEach((key) => {
-      const nextPath = basePath ? `${basePath}.${key}` : String(key);
-      collectChangedPaths(previousValue?.[key], nextValue?.[key], nextPath, changedPaths);
-    });
-
-    return changedPaths;
-  }
-
-  changedPaths.add(basePath || '__root__');
-  return changedPaths;
-};
-
-const buildHistoryGroupKey = (previousSnapshot, nextSnapshot) => {
-  const normalizeHistoryPath = (path) => {
-    const parts = String(path).split('.');
-    if (!parts.length) return path;
-
-    if (parts[0] === 'elementLayout' && parts.length >= 3) {
-      const elementId = parts[1];
-      const field = parts[2];
-
-      if (field === 'x' || field === 'y') {
-        return `elementLayout.${elementId}.position`;
-      }
-
-      if (field === 'w' || field === 'h') {
-        return `elementLayout.${elementId}.size`;
-      }
-
-      if (field === 'paragraphStyles' && parts.length >= 5) {
-        const styleField = parts[4];
-        return `elementLayout.${elementId}.paragraphStyles.${styleField}`;
-      }
-
-      return `elementLayout.${elementId}.${field}`;
-    }
-
-    if (parts[0] === 'customElements' && parts.length >= 3) {
-      return `customElements.${parts[1]}.${parts[2]}`;
-    }
-
-    if (parts[0] === 'content' && parts.length >= 2) {
-      return `content.${parts[1]}`;
-    }
-
-    return path;
-  };
-
-  const changedPaths = [...collectChangedPaths(previousSnapshot ?? {}, nextSnapshot ?? {})]
-    .filter((path) => path && path !== '__root__')
-    .map((path) => normalizeHistoryPath(path))
-    .sort();
-
-  return changedPaths.length ? changedPaths.join('|') : '__noop__';
-};
-
-const getHistoryElementLabel = (snapshot, elementId) => {
-  if (baseElementLabels[elementId]) {
-    return baseElementLabels[elementId];
-  }
-
-  const customLabel = snapshot?.customElements?.[elementId]?.label;
-  if (customLabel) {
-    return String(customLabel).trim().toLowerCase();
-  }
-
-  return 'elemento';
-};
-
-const buildHistoryActionLabel = (groupKey, snapshot) => {
-  if (!groupKey || groupKey === '__initial__' || groupKey === '__noop__') {
-    return 'inicio';
-  }
-
-  const paths = groupKey.split('|').filter(Boolean);
-  if (!paths.length) return 'edicion';
-
-  const [firstPath] = paths;
-  const parts = firstPath.split('.');
-
-  if (parts[0] === 'elementLayout' && parts.length >= 3) {
-    const elementLabel = getHistoryElementLabel(snapshot, parts[1]);
-    const field = parts[2];
-
-    if (field === 'position') return `mover ${elementLabel}`;
-    if (field === 'size') return `tamano ${elementLabel}`;
-    if (field === 'rotation') return `rotacion ${elementLabel}`;
-    if (field === 'fontSize') return `tamano texto ${elementLabel}`;
-    if (field === 'paragraphStyles' && parts[3] === 'fontSize') return `tamano texto ${elementLabel}`;
-    if (field === 'color' || (field === 'paragraphStyles' && parts[3] === 'color')) return `color ${elementLabel}`;
-    if (field === 'zIndex') return `orden ${elementLabel}`;
-    if (parts[1] === 'background') return 'fondo';
-    return `editar ${elementLabel}`;
-  }
-
-  if (parts[0] === 'content' && parts.length >= 2) {
-    const label = contentFieldLabels[parts[1]] ?? 'contenido';
-    return `texto ${label}`;
-  }
-
-  if (parts[0] === 'customElements' && parts.length >= 3) {
-    const elementLabel = getHistoryElementLabel(snapshot, parts[1]);
-    if (parts[2] === 'text') return `texto ${elementLabel}`;
-    if (parts[2] === 'src') return `imagen ${elementLabel}`;
-    return `editar ${elementLabel}`;
-  }
-
-  return 'edicion';
-};
-
-const canUndo = computed(() => historyIndex.value > 0);
-const canRedo = computed(() => historyIndex.value >= 0 && historyIndex.value < historyStack.value.length - 1);
-const undoActionLabel = computed(() => canUndo.value ? (historyMeta.value[historyIndex.value]?.label ?? 'edición') : 'nada');
-const redoActionLabel = computed(() => canRedo.value ? (historyMeta.value[historyIndex.value + 1]?.label ?? 'edición') : 'nada');
-
-const pushHistorySnapshot = (options = {}) => {
-  const { force = false, allowCoalesce = false } = options;
-  if (historyApplying.value) return;
-
-  const snapshot = buildHistorySnapshot();
-  const serializedSnapshot = JSON.stringify(snapshot);
-  const currentSnapshot = historyStack.value[historyIndex.value] ?? null;
-
-  if (!force && currentSnapshot && JSON.stringify(currentSnapshot) === serializedSnapshot) {
-    return;
-  }
-
-  const groupKey = currentSnapshot ? buildHistoryGroupKey(currentSnapshot, snapshot) : '__initial__';
-  const actionLabel = buildHistoryActionLabel(groupKey, snapshot);
-  const currentMeta = historyMeta.value[historyIndex.value] ?? null;
-  const isAtHistoryHead = historyIndex.value === historyStack.value.length - 1;
-  const canCoalesce = !force && allowCoalesce && isAtHistoryHead && historyIndex.value > 0 && currentMeta?.groupKey === groupKey;
-
-  if (canCoalesce) {
-    historyStack.value[historyIndex.value] = snapshot;
-    historyMeta.value[historyIndex.value] = { groupKey, label: actionLabel };
-    return;
-  }
-
-  if (historyIndex.value < historyStack.value.length - 1) {
-    historyStack.value.splice(historyIndex.value + 1);
-    historyMeta.value.splice(historyIndex.value + 1);
-  }
-
-  historyStack.value.push(snapshot);
-  historyMeta.value.push({ groupKey, label: actionLabel });
-
-  if (historyStack.value.length > HISTORY_LIMIT) {
-    const extraItems = historyStack.value.length - HISTORY_LIMIT;
-    historyStack.value.splice(0, extraItems);
-    historyMeta.value.splice(0, extraItems);
-  }
-
-  historyIndex.value = historyStack.value.length - 1;
-};
-
-const scheduleHistorySnapshot = () => {
-  if (historyApplying.value) return;
-
-  if (historyTimer) {
-    clearTimeout(historyTimer);
-  }
-
-  historyTimer = setTimeout(() => {
-    pushHistorySnapshot({ allowCoalesce: true });
-    historyTimer = null;
-  }, 180);
-};
-
-const applyHistorySnapshot = (snapshot) => {
-  historyApplying.value = true;
-
-  state.content = cloneSnapshotValue(snapshot.content ?? {});
-  state.elementLayout = cloneSnapshotValue(snapshot.elementLayout ?? {});
-  state.customElements = Object.fromEntries(Object.entries(cloneSnapshotValue(snapshot.customElements ?? {})));
-
-  const selectedId = state.selectedElementId;
-  if (selectedId && selectedId !== 'background' && !state.elementLayout[selectedId]) {
-    clearSelection();
-  }
-
-  nextTick(() => {
-    historyApplying.value = false;
-  });
-};
-
-const performUndo = () => {
-  if (!canUndo.value) return;
-
-  if (editingElementId.value) {
-    commitTextEdit();
-  }
-
-  historyIndex.value -= 1;
-  const snapshot = historyStack.value[historyIndex.value];
-  if (snapshot) {
-    applyHistorySnapshot(snapshot);
-  }
-};
-
-const performRedo = () => {
-  if (!canRedo.value) return;
-
-  if (editingElementId.value) {
-    commitTextEdit();
-  }
-
-  historyIndex.value += 1;
-  const snapshot = historyStack.value[historyIndex.value];
-  if (snapshot) {
-    applyHistorySnapshot(snapshot);
-  }
-};
+const {
+  historyApplying,
+  canUndo,
+  canRedo,
+  undoActionLabel,
+  redoActionLabel,
+  pushHistorySnapshot,
+  scheduleHistorySnapshot,
+  performUndo,
+  performRedo,
+} = useEditorHistory({
+  state,
+  editingElementId,
+  commitTextEdit: () => commitTextEdit(),
+  clearSelection: () => clearSelection(),
+  baseElementLabels,
+  contentFieldLabels,
+});
 
 const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
 const editorElements = computed(() => {
@@ -641,57 +408,49 @@ const editorElements = computed(() => {
     .filter((item) => state.elementLayout[item.id])
     .sort((a, b) => (state.elementLayout[a.id]?.zIndex ?? 0) - (state.elementLayout[b.id]?.zIndex ?? 0));
 });
-const selectedElement = computed(() => state.elementLayout[state.selectedElementId]);
-const hasSelection = computed(() => Boolean(state.selectedElementId && selectedElement.value));
-const isGroupSelection = computed(() => Boolean(selectedGroupId.value && groupedElements[selectedGroupId.value]));
-const selectedGroup = computed(() => {
-  if (!selectedGroupId.value) return null;
-  return groupedElements[selectedGroupId.value] ?? null;
-});
-const activeSelectionIds = computed(() => {
-  if (isGroupSelection.value) {
-    return [...(selectedGroup.value?.elementIds ?? [])];
-  }
-  if (multiSelectionIds.value.length > 1) {
-    return [...multiSelectionIds.value];
-  }
-  if (state.selectedElementId) {
-    return [state.selectedElementId];
-  }
-  return [];
-});
-const hasMultiSelection = computed(() => activeSelectionIds.value.length > 1);
-const overlayControlTargetId = computed(() => (isGroupSelection.value ? selectedGroupId.value : state.selectedElementId));
-const activeElementLabel = computed(() => {
-  if (isGroupSelection.value) {
-    return `Grupo (${selectedGroup.value?.elementIds?.length ?? 0})`;
-  }
-  if (state.selectedElementId === 'background') return 'Fondo';
-  return editorElements.value.find((item) => item.id === state.selectedElementId)?.label ?? 'Elemento';
-});
-const selectedElementType = computed(() => editorElements.value.find((item) => item.id === state.selectedElementId)?.type ?? null);
-const hasTextSelection = computed(() => hasSelection.value && selectedElementType.value === 'text');
-const activeTextEffectId = computed(() => {
-  if (!hasTextSelection.value || !selectedElement.value) return 'none';
-
-  const mode = selectedElement.value.textEffectMode;
-  if (mode) return mode;
-
-  if (selectedElement.value.hollowText) return 'hollow';
-  if (selectedElement.value.backgroundColor && selectedElement.value.backgroundColor !== 'transparent') return 'background';
-  if (selectedElement.value.border) return 'outline';
-  if (selectedElement.value.shadow && selectedElement.value.shadowPreset === 'echo') return 'echo';
-  if (selectedElement.value.neonColor) return 'neon';
-  if (selectedElement.value.shadow) return 'shadow';
-
-  return 'none';
-});
-const textEffectRows = computed(() => {
-  const rows = [];
-  for (let index = 0; index < textEffectOptions.length; index += 3) {
-    rows.push(textEffectOptions.slice(index, index + 3));
-  }
-  return rows;
+const {
+  selectedElement,
+  hasSelection,
+  isGroupSelection,
+  selectedGroup,
+  activeSelectionIds,
+  hasMultiSelection,
+  overlayControlTargetId,
+  activeElementLabel,
+  selectedElementType,
+  hasTextSelection,
+  clearSelection,
+  clearSelectionMarquee,
+  getGroupIdForElement,
+  getSelectionBounds,
+  isElementSelected,
+  startSelectionMarquee,
+  updateSelectionMarqueePreview,
+  finalizeSelectionMarquee,
+  selectGroup,
+  buildGroupResizeSnapshot,
+  selectedOverlayStyle,
+  selectedActionBarStyle,
+  selectedHandleMetrics,
+  marqueeRectStyle,
+} = useEditorSelection({
+  state,
+  editorElements,
+  groupedElements,
+  selectedGroupId,
+  multiSelectionIds,
+  marqueePreviewIds,
+  selectionMarquee,
+  activePropertyPanel,
+  elementMeasurements,
+  canvasRef,
+  editingElementId,
+  commitTextEdit: () => commitTextEdit(),
+  setDragDocumentState: (...args) => setDragDocumentState(...args),
+  getEstimatedTextHeight: (...args) => getEstimatedTextHeight(...args),
+  getElementText: (...args) => getElementText(...args),
+  ensureParagraphStyles: (...args) => ensureParagraphStyles(...args),
+  isTextElement: (...args) => isTextElement(...args),
 });
 const selectedPropertyTabs = computed(() => {
   if (isGroupSelection.value || hasMultiSelection.value) return [];
@@ -700,16 +459,37 @@ const selectedPropertyTabs = computed(() => {
   return selectedElementType.value === 'text' ? textPropertyTabs : visualPropertyTabs;
 });
 const activePropertyTitle = computed(() => selectedPropertyTabs.value.find((tab) => tab.id === activePropertyPanel.value)?.label ?? 'Propiedades');
-const canvasBackgroundStyle = computed(() => {
-  const bg = state.elementLayout.background;
-  if (bg?.fillMode === 'gradient') {
-    return {
-      background: `linear-gradient(${bg.gradientAngle || 135}deg, ${bg.gradientStart || '#0ea5e9'}, ${bg.gradientEnd || '#8b5cf6'})`
-    };
-  }
-  return {
-    backgroundColor: bg?.backgroundColor || '#4338ca'
-  };
+const {
+  activeTextEffectId,
+  textEffectRows,
+  canvasBackgroundStyle,
+  normalizePickerColor,
+  setSelectedColor,
+  setTextEffect,
+  textEffectPreviewStyle,
+  applyGradientPreset,
+  swapGradientStops,
+  applyShapeGradientPreset,
+  swapShapeGradientStops,
+  isTextElement,
+  isAspectLockedResizeElement,
+  shapeStyleFromKind,
+  shapeStyle,
+  imageFrameStyle,
+  imageTintOverlayStyle,
+  elementContentStyle,
+  richEditorContainerStyle,
+  neonColorOverride,
+} = useEditorStyles({
+  state,
+  selectedElement,
+  hasTextSelection,
+  textEffectOptions,
+  getParagraphStyleFields: () => paragraphStyleFields,
+  applyParagraphStyleField: (...args) => applyParagraphStyleField(...args),
+  getParagraphStyleForElement: (...args) => getParagraphStyleForElement(...args),
+  baseTextElementIds,
+  shapeClipPaths: SHAPE_CLIP_PATHS,
 });
 const orderedLayerIds = computed(() => Object.keys(state.elementLayout).sort((a, b) => {
     const zA = state.elementLayout[a]?.zIndex ?? 0;
@@ -871,426 +651,8 @@ const activeParagraphLabel = computed(() => {
     return `Párrafos ${Math.min(first, last)}-${Math.max(first, last)} de ${n}`;
 });
 
-const normalizePickerColor = (value, fallback = '#ffffff') => {
-    if (typeof value !== 'string') return fallback;
-
-    const trimmed = value.trim();
-
-    if (/^#[\da-f]{6}$/i.test(trimmed)) return trimmed;
-    if (/^#[\da-f]{3}$/i.test(trimmed)) {
-        return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`;
-    }
-
-    return fallback;
-};
-const blendHexWithWhite = (hexColor, amountPercent = 40) => {
-  if (typeof hexColor !== 'string') return '#ffffff';
-
-  const normalized = normalizePickerColor(hexColor, '#ffffff');
-  const amount = clamp(Number(amountPercent), 0, 100) / 100;
-  const channel = (index) => Number.parseInt(normalized.slice(index, index + 2), 16);
-  const mix = (value) => Math.round(value + (255 - value) * amount).toString(16).padStart(2, '0');
-
-  const r = mix(channel(1));
-  const g = mix(channel(3));
-  const b = mix(channel(5));
-  return `#${r}${g}${b}`;
-};
-const setSelectedColor = (field, value) => {
-    if (paragraphStyleFields.has(field)) {
-        applyParagraphStyleField(field, value);
-        return;
-    }
-
-    if (!selectedElement.value) return;
-    selectedElement.value[field] = value;
-};
-const getTextEffectStrokeWidth = (layout) => {
-  const mode = layout?.textEffectMode;
-  const isTextEffectStrokeMode = mode === 'outline' || mode === 'hollow' || mode === 'misaligned';
-
-  if (!isTextEffectStrokeMode) {
-    return clamp(Number(layout?.contourWidth ?? 2), 1, 12);
-  }
-
-  return (clamp(Number(layout?.contourWidth ?? 0), 0, 100) / 100) * 12;
-};
-const setTextEffect = (effectId) => {
-  if (!selectedElement.value || !hasTextSelection.value) return;
-
-  const layout = selectedElement.value;
-  const nextEffectId = activeTextEffectId.value === effectId ? 'none' : effectId;
-  layout.textEffectMode = nextEffectId;
-
-  if (nextEffectId === 'none') {
-    layout.shadow = false;
-    layout.border = false;
-    layout.neonColor = '';
-    layout.bubbleColor = 'transparent';
-    layout.backgroundColor = 'transparent';
-    layout.hollowText = false;
-    return;
-  }
-
-  layout.hollowText = false;
-
-  if (nextEffectId === 'shadow1') {
-    layout.shadow = true;
-    layout.shadowPreset = 'hard';
-    layout.shadowColor = layout.shadowColor || '#000000';
-    layout.shadowAngle = 135;
-    layout.shadowOffset = 10;
-    layout.shadowBlur = 0;
-    layout.shadowOpacity = 20;
-    layout.border = false;
-    layout.neonColor = '';
-    layout.backgroundColor = 'transparent';
-  } else if (nextEffectId === 'shadow2') {
-    layout.shadow = true;
-    layout.shadowPreset = 'soft';
-    layout.shadowColor = layout.shadowColor || '#000000';
-    layout.shadowAngle = 145;
-    layout.shadowOffset = 12;
-    layout.shadowBlur = 6;
-    layout.shadowOpacity = 35;
-    layout.border = false;
-    layout.neonColor = '';
-    layout.backgroundColor = 'transparent';
-  } else if (nextEffectId === 'shadow') {
-    layout.shadow = true;
-    layout.shadowPreset = 'soft';
-    layout.shadowColor = layout.shadowColor || '#0f172a';
-    layout.shadowAngle = 135;
-    layout.shadowOffset = 22;
-    layout.shadowBlur = 15;
-    layout.shadowOpacity = 55;
-    layout.border = false;
-    layout.neonColor = '';
-    layout.backgroundColor = 'transparent';
-  } else if (nextEffectId === 'glow') {
-    layout.shadow = false;
-    layout.neonColor = layout.neonColor || '#8b5cf6';
-    layout.neonIntensity = layout.neonIntensity ?? 65;
-    layout.border = false;
-    layout.backgroundColor = 'transparent';
-  } else if (nextEffectId === 'echo') {
-    layout.shadow = true;
-    layout.shadowPreset = 'echo';
-    layout.shadowColor = layout.shadowColor || '#0f172a';
-    layout.shadowAngle = 60;
-    layout.shadowOffset = 15;
-    layout.shadowBlur = 0;
-    layout.shadowOpacity = 40;
-    layout.neonColor = '';
-    layout.border = false;
-    layout.backgroundColor = 'transparent';
-  } else if (nextEffectId === 'outline') {
-    layout.shadow = false;
-    layout.border = true;
-    layout.contourColor = layout.contourColor || '#7c3aed';
-    layout.contourWidth = 17;
-    layout.neonColor = '';
-    layout.backgroundColor = 'transparent';
-  } else if (nextEffectId === 'background') {
-    layout.shadow = false;
-    layout.border = false;
-    layout.neonColor = '';
-    layout.backgroundColor = layout.backgroundColor && layout.backgroundColor !== 'transparent'
-      ? layout.backgroundColor
-      : '#ddd6fe';
-    layout.backgroundRoundness = layout.backgroundRoundness ?? 50;
-    layout.backgroundPadding = 5;
-    layout.backgroundOpacity = layout.backgroundOpacity ?? 70;
-  } else if (nextEffectId === 'misaligned') {
-    layout.shadow = true;
-    layout.shadowPreset = 'soft';
-    layout.shadowColor = layout.shadowColor || '#7c3aed';
-    layout.shadowAngle = 45;
-    layout.shadowOffset = 33;
-    layout.shadowOpacity = 20;
-    layout.shadowBlur = 0;
-    layout.misalignedThickness = 2;
-    layout.contourWidth = 2;
-    layout.contourColor = layout.contourColor || '#7c3aed';
-    layout.neonColor = '';
-    layout.border = true;
-    layout.hollowText = true;
-    layout.backgroundColor = 'transparent';
-  } else if (nextEffectId === 'hollow') {
-    layout.shadow = false;
-    layout.border = true;
-    layout.hollowText = true;
-    layout.contourColor = layout.contourColor || '#7c3aed';
-    layout.contourWidth = 2;
-    layout.neonColor = '';
-    layout.backgroundColor = 'transparent';
-  } else if (nextEffectId === 'neon') {
-    layout.shadow = false;
-    layout.border = false;
-    layout.neonColor = '';
-    layout.neonIntensity = layout.neonIntensity ?? 80;
-    layout.backgroundColor = 'transparent';
-  } else if (nextEffectId === 'distort') {
-    layout.shadow = true;
-    layout.shadowPreset = 'hard';
-    layout.shadowColor = '#f0f';
-    layout.shadowAngle = 0;
-    layout.shadowOffset = 15;
-    layout.shadowBlur = 0;
-    layout.shadowOpacity = 0;
-    layout.shadowIntensity = 0;
-    layout.neonColor = '#0ff';
-    layout.neonIntensity = 0;
-    layout.border = false;
-    layout.backgroundColor = 'transparent';
-  }
-};
-const textEffectPreviewStyle = (effectId) => {
-  const base = {
-    color: '#7c3aed',
-    fontSize: '2.25rem',
-    fontWeight: '700',
-    lineHeight: '1',
-    display: 'inline-block',
-    padding: '0.12rem 0.24rem',
-    borderRadius: '0.75rem',
-    textShadow: 'none',
-    WebkitTextStroke: '0',
-    backgroundColor: 'transparent',
-    transform: 'none',
-  };
-
-  if (effectId === 'shadow1') {
-    return { ...base, textShadow: '4px 4px 0 #00000099' };
-  }
-  if (effectId === 'shadow2') {
-    return { ...base, textShadow: '3px 4px 5px #000000aa' };
-  }
-  if (effectId === 'shadow') {
-    return { ...base, textShadow: '0 10px 16px #8b5cf680' };
-  }
-  if (effectId === 'glow') {
-    return { ...base, textShadow: '0 0 8px #c4b5fd, 0 0 18px #a855f7' };
-  }
-  if (effectId === 'echo') {
-    return { ...base, textShadow: '2px 2px 0 #a855f7, 5px 5px 0 #c084fc' };
-  }
-  if (effectId === 'outline') {
-    return { ...base, color: '#7c3aed80', WebkitTextStroke: '2px #7c3aed' };
-  }
-  if (effectId === 'background') {
-    return { ...base, backgroundColor: '#ddd6fe' };
-  }
-  if (effectId === 'misaligned') {
-    return {
-      ...base,
-      fontWeight: '500',
-      color: 'transparent',
-      WebkitTextStroke: '2px #7c3aed',
-      textShadow: '4px 5px 0 #7c3aed33',
-    };
-  }
-  if (effectId === 'hollow') {
-    return { ...base, fontWeight: '500', color: 'transparent', WebkitTextStroke: '2px #7c3aed' };
-  }
-  if (effectId === 'neon') {
-    return { ...base, color: '#f5f3ff', textShadow: '0 0 8px #c4b5fd, 0 0 18px #a855f7, 0 0 30px #7c3aed' };
-  }
-  if (effectId === 'distort') {
-    return { ...base, textShadow: '-2px 0 0 #f0f, 2px 0 0 #0ff' };
-  }
-
-  return base;
-};
-  const applyGradientPreset = (target, start, end) => {
-    if (target === 'background') {
-      state.elementLayout.background.fillMode = 'gradient';
-      state.elementLayout.background.gradientStart = start;
-      state.elementLayout.background.gradientEnd = end;
-    } else if (target === 'shape' && selectedElement.value) {
-      selectedElement.value.fillMode = 'gradient';
-      selectedElement.value.gradientStart = start;
-      selectedElement.value.gradientEnd = end;
-    }
-  };
-  const swapGradientStops = (target) => {
-    if (target === 'background') {
-      const start = state.elementLayout.background.gradientStart || '#0ea5e9';
-      state.elementLayout.background.gradientStart = state.elementLayout.background.gradientEnd || '#8b5cf6';
-      state.elementLayout.background.gradientEnd = start;
-    } else if (target === 'shape' && selectedElement.value) {
-      const start = selectedElement.value.gradientStart || '#0ea5e9';
-      selectedElement.value.gradientStart = selectedElement.value.gradientEnd || '#8b5cf6';
-      selectedElement.value.gradientEnd = start;
-    }
-  };
-  const applyShapeGradientPreset = (start, end) => {
-    applyGradientPreset('shape', start, end);
-  };
-  const swapShapeGradientStops = () => {
-    swapGradientStops('shape');
-  };
 const clampToolbar = () => {
     // Sin restricciones de movimiento - libertad de arrastre completa
-};
-
-const buildTextShadow = (layout, textColor = null) => {
-    const shadows = [];
-    const shadowOffset = clamp(Number(layout.shadowOffset ?? 20), 0, 100);
-    const shadowBlur = clamp(Number(layout.shadowBlur ?? 25), 0, 100);
-    const shadowOpacity = clamp(Number(layout.shadowOpacity ?? 65), 0, 100);
-    const shadowAngle = ((Number(layout.shadowAngle ?? 135) % 360) + 360) % 360;
-    const neonIntensity = clamp(Number(layout.neonIntensity ?? 55), 0, 100);
-
-    const toShadowOffset = (distance) => {
-      const rad = (shadowAngle * Math.PI) / 180;
-      return {
-        x: Math.round(Math.cos(rad) * distance),
-        y: Math.round(Math.sin(rad) * distance),
-      };
-    };
-
-    const applyAlphaToHex = (color, alphaPercent) => {
-      if (typeof color !== 'string') return color;
-      const value = color.trim();
-      const alpha = clamp(100 - alphaPercent, 0, 100);
-
-      if (/^#[\da-f]{3}$/i.test(value)) {
-        const r = value[1];
-        const g = value[2];
-        const b = value[3];
-        const a = Math.round((alpha / 100) * 255).toString(16).padStart(2, '0');
-        return `#${r}${r}${g}${g}${b}${b}${a}`;
-      }
-
-      if (/^#[\da-f]{6}$/i.test(value)) {
-        const a = Math.round((alpha / 100) * 255).toString(16).padStart(2, '0');
-        return `${value}${a}`;
-      }
-
-      return value;
-    };
-
-    if (layout.border && !layout.hollowText) {
-      const borderColor = layout.contourColor || '#7c3aed';
-      const width = getTextEffectStrokeWidth(layout);
-      if (width <= 0) {
-        return shadows.length ? shadows.join(', ') : 'none';
-      }
-      const ring = Math.max(1, Math.round(width));
-      for (let x = -ring; x <= ring; x++) {
-        for (let y = -ring; y <= ring; y++) {
-          if (x === 0 && y === 0) continue;
-          if (x * x + y * y <= ring * ring) {
-            shadows.push(`${x}px ${y}px 0 ${borderColor}`);
-          }
-        }
-      }
-    }
-
-    if (layout.textEffectMode === 'distort') {
-        const primaryColor = layout.shadowColor || '#f0f';
-        const secondaryColor = layout.neonColor || '#0ff';
-        const distance = clamp(Math.round(clamp(Number(layout.shadowOffset ?? 15), 0, 20) * 0.2), 1, 20);
-        const offset = toShadowOffset(distance);
-        shadows.push(
-          `${offset.x}px ${offset.y}px 0 ${primaryColor}`,
-          `${-offset.x}px ${-offset.y}px 0 ${secondaryColor}`,
-        );
-    } else if (layout.shadow) {
-        const color = layout.shadowColor || '#0f172a';
-        const preset = layout.shadowPreset || 'soft';
-        const colorWithAlpha = applyAlphaToHex(color, shadowOpacity);
-        const isMisaligned = layout.textEffectMode === 'misaligned';
-
-        if (isMisaligned) {
-          const distance = Math.max(0, Math.round(shadowOffset * 0.25));
-          const offset = toShadowOffset(distance);
-          shadows.push(`${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`);
-        } else if (preset === 'hard') {
-          const distance = Math.round(shadowOffset * 0.6);
-          const offset = toShadowOffset(distance);
-          shadows.push(`${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`);
-        } else if (preset === 'echo') {
-          const distance = Math.max(1, Math.round(shadowOffset * 0.25));
-          const offset = toShadowOffset(distance);
-          shadows.push(
-            `${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`,
-            `${offset.x * 2}px ${offset.y * 2}px 0 ${colorWithAlpha}`,
-            `${offset.x * 3}px ${offset.y * 3}px 0 ${colorWithAlpha}`,
-          );
-        } else {
-          const distance = Math.round(shadowOffset * 0.6);
-          const blur = Math.round(shadowBlur * 0.8);
-          const offset = toShadowOffset(distance);
-          shadows.push(`${offset.x}px ${offset.y}px ${blur}px ${colorWithAlpha}`);
-        }
-    }
-
-    if (layout.textEffectMode === 'neon' && !layout.hollowText) {
-      const sourceColor = textColor || '#7c3aed';
-      const blurSoft = Math.round(4 + neonIntensity / 5);
-      const blurStrong = Math.round(10 + neonIntensity / 2.5);
-      const glowColor = normalizePickerColor(sourceColor, '#7c3aed');
-      shadows.push(`0 0 ${blurSoft}px ${glowColor}`, `0 0 ${blurStrong}px ${glowColor}`);
-    } else if (layout.neonColor && layout.textEffectMode !== 'distort') {
-        const blurSoft = Math.round(4 + neonIntensity / 6);
-        const blurStrong = Math.round(12 + neonIntensity / 2);
-        shadows.push(`0 0 ${blurSoft}px ${layout.neonColor}`, `0 0 ${blurStrong}px ${layout.neonColor}`);
-    }
-
-    return shadows.length ? shadows.join(', ') : 'none';
-};
-
-const buildBubbleShadow = (layout) => {
-    if (!layout.bubbleColor || layout.bubbleColor === 'transparent') return 'none';
-    return `0 10px 20px ${layout.bubbleColor}55`;
-};
-
-const buildVisualShadow = (layout) => {
-  const shadows = [];
-  const shadowIntensity = clamp(Number(layout.shadowIntensity ?? 45), 0, 100);
-  const neonIntensity = clamp(Number(layout.neonIntensity ?? 55), 0, 100);
-
-  if (layout.shadow) {
-    const color = layout.shadowColor || '#0f172a';
-    const preset = layout.shadowPreset || 'soft';
-
-    if (preset === 'hard') {
-      const distance = Math.round(1 + shadowIntensity / 12);
-      shadows.push(`${distance}px ${distance}px 0 ${color}`);
-    } else if (preset === 'lifted') {
-      const y = Math.round(8 + shadowIntensity / 4);
-      const blur = Math.round(10 + shadowIntensity / 2);
-      shadows.push(`0 ${y}px ${blur}px ${color}66`);
-    } else {
-      const y = Math.round(4 + shadowIntensity / 6);
-      const blur = Math.round(8 + shadowIntensity / 2);
-      shadows.push(`0 ${y}px ${blur}px ${color}66`);
-    }
-  }
-
-  if (layout.neonColor && layout.textEffectMode !== 'distort') {
-    const blurSoft = Math.round(4 + neonIntensity / 6);
-    const blurStrong = Math.round(12 + neonIntensity / 2);
-    shadows.push(`0 0 ${blurSoft}px ${layout.neonColor}`, `0 0 ${blurStrong}px ${layout.neonColor}`);
-  }
-
-  if (layout.bubbleColor && layout.bubbleColor !== 'transparent') {
-    shadows.push(`0 10px 20px ${layout.bubbleColor}55`);
-  }
-
-  return shadows.length ? shadows.join(', ') : 'none';
-};
-
-const isTextElement = (id) => {
-  if (baseTextElementIds.has(id)) return true;
-  return state.customElements?.[id]?.type === 'text';
-};
-
-const isAspectLockedResizeElement = (id) => {
-  const type = state.customElements?.[id]?.type;
-  return type === 'shape' || type === 'image';
 };
 
 const getMaxZIndex = () => Object.values(state.elementLayout).reduce((max, layout) => Math.max(max, layout?.zIndex ?? 0), 0);
@@ -1631,78 +993,6 @@ const addShapeElement = (shapeKind) => {
   state.selectedElementId = id;
 };
 
-// Genera estilo CSS para una figura según su shapeKind
-const shapeStyleFromKind = (shapeKind, base) => {
-  if (shapeKind === 'circle' || shapeKind === 'ellipse') {
-    return { ...base, borderRadius: '9999px' };
-  }
-  if (shapeKind === 'frame-rounded') {
-    return {
-      ...base,
-      borderRadius: '22px',
-      background: 'transparent',
-      border: base.border === '0' ? '8px solid currentColor' : base.border,
-    };
-  }
-  if (shapeKind === 'rectangle-outline') {
-    return { ...base, borderRadius: '0' };
-  }
-  if (shapeKind === 'rectangle') {
-    return { ...base, borderRadius: '10px' };
-  }
-  if (shapeKind === 'square') {
-    return { ...base, borderRadius: '8px' };
-  }
-  const clipPath = SHAPE_CLIP_PATHS[shapeKind];
-  if (clipPath) {
-    return { ...base, clipPath, border: '0' };
-  }
-  return { ...base, borderRadius: '8px' };
-};
-
-const shapeStyle = (item) => {
-  const layout = state.elementLayout[item.id];
-  const fill = layout.fillMode === 'gradient'
-    ? `linear-gradient(${layout.gradientAngle || 135}deg, ${layout.gradientStart || '#0ea5e9'}, ${layout.gradientEnd || '#8b5cf6'})`
-    : (layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : '#ffffff');
-  const base = {
-    width: '100%',
-    height: '100%',
-    background: fill,
-    boxShadow: buildVisualShadow(layout),
-    border: layout.border
-      ? `${layout.contourWidth || 1}px solid ${layout.contourColor || '#ffffff'}`
-      : '0',
-  };
-  return shapeStyleFromKind(item.shapeKind, base);
-};
-
-const imageFrameStyle = (id) => {
-  const layout = state.elementLayout[id];
-  if (!layout) return {};
-
-  return {
-    backgroundColor: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : 'rgba(255,255,255,0.2)',
-    border: layout.border
-      ? `${layout.contourWidth || 1}px solid ${layout.contourColor || '#ffffff'}`
-      : '1px solid rgba(255,255,255,0.4)',
-    boxShadow: buildVisualShadow(layout),
-  };
-};
-
-const imageTintOverlayStyle = (id) => {
-  const layout = state.elementLayout[id];
-  if (!layout) return {};
-
-  const tintStrength = clamp(Number(layout.imageTintStrength ?? 0), 0, 100);
-
-  return {
-    backgroundColor: layout.imageTintColor || '#0f172a',
-    opacity: `${tintStrength / 100}`,
-    mixBlendMode: 'multiply',
-  };
-};
-
 const elementBoxStyle = (id) => {
     const layout = state.elementLayout[id];
   const isText = isTextElement(id);
@@ -1721,87 +1011,6 @@ const elementBoxStyle = (id) => {
 
 const getEstimatedTextHeight = (layout, text = '') => ensureParagraphStyles(layout, text)
     .reduce((total, style) => total + Math.max((style.fontSize ?? layout.fontSize ?? 16) * (style.lineHeight ?? 1.3), 16), 0);
-
-const selectedOverlayStyle = computed(() => {
-    const ids = activeSelectionIds.value;
-    if (!ids.length) return {};
-
-    const bounds = getSelectionBounds(ids);
-    if (!bounds) return {};
-    let rotation = 0;
-    if (isGroupSelection.value) {
-      rotation = Number(selectedGroup.value?.layout?.rotation ?? 0);
-    } else if (ids.length === 1) {
-      rotation = Number(state.elementLayout[ids[0]]?.rotation ?? 0);
-    }
-
-    return {
-        left: `${bounds.x}px`,
-        top: `${bounds.y}px`,
-        width: `${bounds.w}px`,
-        height: `${bounds.h}px`,
-        zIndex: '6000',
-        transform: `rotate(${rotation}deg)`,
-        transformOrigin: 'center center',
-    };
-});
-
-  const selectedActionBarStyle = computed(() => {
-    const ids = activeSelectionIds.value;
-    if (!ids.length || state.selectedElementId === 'background') {
-      return {};
-    }
-
-    const bounds = getSelectionBounds(ids);
-    if (!bounds) return {};
-    const top = bounds.y - 74;
-
-    return {
-      left: `${bounds.x + (bounds.w / 2)}px`,
-      top: `${top}px`,
-      zIndex: '6100',
-      transform: 'translateX(-50%)',
-    };
-  });
-
-const selectedHandleMetrics = computed(() => {
-  const ids = activeSelectionIds.value;
-  const bounds = ids.length ? getSelectionBounds(ids) : null;
-  const width = Math.max(1, bounds?.w ?? 120);
-  const height = Math.max(1, bounds?.h ?? 120);
-  const minSide = Math.min(width, height);
-
-  const cornerSize = clamp(Math.round(minSide * 0.28), 8, 16);
-  const sideThickness = clamp(Math.round(minSide * 0.12), 2, 12);
-  const sideLength = clamp(Math.round(height * 0.45), 10, 32);
-  const barThickness = clamp(Math.round(minSide * 0.12), 2, 10);
-  const barLength = clamp(Math.round(width * 0.45), 14, 64);
-
-  return {
-    cornerSize: `${cornerSize}px`,
-    cornerOffset: `${-Math.round(cornerSize / 2)}px`,
-    sideThickness: `${sideThickness}px`,
-    sideOffset: `${-Math.round(sideThickness / 2)}px`,
-    sideLength: `${sideLength}px`,
-    barThickness: `${barThickness}px`,
-    barOffset: `${-Math.round(barThickness / 2)}px`,
-    barLength: `${barLength}px`,
-  };
-});
-
-const marqueeRectStyle = computed(() => {
-  if (!selectionMarquee.active) return {};
-  const left = Math.min(selectionMarquee.startX, selectionMarquee.currentX);
-  const top = Math.min(selectionMarquee.startY, selectionMarquee.currentY);
-  const width = Math.abs(selectionMarquee.currentX - selectionMarquee.startX);
-  const height = Math.abs(selectionMarquee.currentY - selectionMarquee.startY);
-  return {
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${width}px`,
-    height: `${height}px`,
-  };
-});
 
 const updateElementMeasurement = (id, node) => {
     if (!node) return;
@@ -2066,88 +1275,6 @@ const refreshElementObservers = async () => {
     });
 };
 
-const elementContentStyle = (id) => {
-    const layout = state.elementLayout[id];
-  const elementType = state.customElements?.[id]?.type ?? (baseTextElementIds.has(id) ? 'text' : null);
-
-  if (elementType !== 'text') {
-    return {
-      opacity: `${(layout.opacity ?? 100) / 100}`,
-    };
-  }
-
-    const hasBackground = layout.backgroundColor && layout.backgroundColor !== 'transparent';
-    const backgroundOpacity = clamp(Number(layout.backgroundOpacity ?? 70), 0, 100);
-    const backgroundExpand = clamp(Number(layout.backgroundPadding ?? 5), 0, 100);
-    const backgroundAlphaHex = Math.round((backgroundOpacity / 100) * 255).toString(16).padStart(2, '0');
-    const resolvedBackground = hasBackground && /^#[\da-f]{6}$/i.test(layout.backgroundColor)
-      ? `${layout.backgroundColor}${backgroundAlphaHex}`
-      : (hasBackground ? layout.backgroundColor : 'transparent');
-
-    return {
-        opacity: `${(layout.opacity ?? 100) / 100}`,
-        backgroundColor: resolvedBackground,
-        borderRadius: hasBackground ? `${Math.round(clamp(Number(layout.backgroundRoundness ?? 50), 0, 100) * 0.48)}px` : '0',
-        padding: hasBackground ? `${backgroundExpand}px` : '0',
-        margin: hasBackground ? `-${backgroundExpand}px` : '0',
-      color: layout.hollowText ? 'transparent' : undefined,
-        textShadow: 'none',
-        WebkitTextStroke: '0',
-        boxShadow: buildBubbleShadow(layout),
-    };
-};
-
-const paragraphContentStyle = (id, index, text = null) => {
-    const layout = state.elementLayout[id];
-    const paragraphStyle = getParagraphStyleForElement(id, index, text);
-
-    const baseColor = paragraphStyle?.color ?? layout.color ?? '#ffffff';
-    const isNeon = layout.textEffectMode === 'neon' && !layout.hollowText;
-    const displayColor = layout.hollowText
-      ? 'transparent'
-      : (isNeon ? '#ffffff' : baseColor);
-
-    const strokeWidth = getTextEffectStrokeWidth(layout);
-
-    return {
-        display: 'block',
-        fontSize: `${paragraphStyle?.fontSize ?? layout.fontSize}px`,
-      color: displayColor,
-      WebkitTextFillColor: layout.hollowText ? 'transparent' : undefined,
-        fontFamily: paragraphStyle?.fontFamily ?? layout.fontFamily ?? 'Inter, sans-serif',
-        fontStyle: paragraphStyle?.italic ? 'italic' : 'normal',
-        fontWeight: paragraphStyle?.fontWeight === 'bold' ? '700' : '500',
-        textAlign: paragraphStyle?.textAlign ?? 'left',
-        textTransform: paragraphStyle?.uppercase ? 'uppercase' : 'none',
-        letterSpacing: `${paragraphStyle?.letterSpacing ?? 0}px`,
-        lineHeight: `${paragraphStyle?.lineHeight ?? 1.3}`,
-        textShadow: buildTextShadow(layout, baseColor),
-        WebkitTextStroke: layout.border && layout.hollowText && strokeWidth > 0 ? `${strokeWidth}px ${baseColor}` : '0',
-        whiteSpace: 'pre-wrap',
-    };
-};
-
-const richEditorContainerStyle = (id) => {
-    const layout = state.elementLayout[id];
-  const firstParagraphColor = layout?.paragraphStyles?.[0]?.color ?? layout?.color ?? '#ffffff';
-  const strokeWidth = getTextEffectStrokeWidth(layout);
-    return {
-        opacity: `${(layout.opacity ?? 100) / 100}`,
-    textShadow: buildTextShadow(layout, firstParagraphColor),
-    WebkitTextStroke: layout?.border && layout?.hollowText && strokeWidth > 0
-      ? `${strokeWidth}px ${firstParagraphColor}`
-      : '0',
-    WebkitTextFillColor: layout?.hollowText ? 'transparent' : undefined,
-    color: layout?.hollowText ? 'transparent' : undefined,
-    };
-};
-
-const neonColorOverride = (id) => {
-  const layout = state.elementLayout[id];
-  if (!layout || layout.textEffectMode !== 'neon' || layout.hollowText) return null;
-  return '#ffffff';
-};
-
 const setDragDocumentState = (active) => {
     document.documentElement.style.userSelect = active ? 'none' : '';
     document.documentElement.style.touchAction = active ? 'none' : '';
@@ -2384,165 +1511,6 @@ const clearDragIntent = () => {
   dragIntent.targetType = 'element';
     dragIntent.startX = 0;
     dragIntent.startY = 0;
-};
-
-const clearSelectionMarquee = () => {
-  selectionMarquee.active = false;
-  selectionMarquee.pointerId = null;
-  selectionMarquee.startX = 0;
-  selectionMarquee.startY = 0;
-  selectionMarquee.currentX = 0;
-  selectionMarquee.currentY = 0;
-  marqueePreviewIds.value = [];
-};
-
-const getGroupIdForElement = (id) => {
-  for (const [groupId, group] of Object.entries(groupedElements)) {
-    if (group.elementIds.includes(id)) return groupId;
-  }
-  return null;
-};
-
-const getSelectionBounds = (ids = []) => {
-  const bounds = ids.map((id) => {
-    const layout = state.elementLayout[id];
-    if (!layout) return null;
-    const measured = elementMeasurements[id] ?? null;
-    const width = measured?.width ?? layout.w ?? 0;
-    const height = measured?.height ?? layout.h ?? 44;
-    return {
-      left: layout.x,
-      top: layout.y,
-      right: layout.x + width,
-      bottom: layout.y + height,
-    };
-  }).filter(Boolean);
-
-  if (!bounds.length) return null;
-  const left = Math.min(...bounds.map((item) => item.left));
-  const top = Math.min(...bounds.map((item) => item.top));
-  const right = Math.max(...bounds.map((item) => item.right));
-  const bottom = Math.max(...bounds.map((item) => item.bottom));
-  return {
-    x: left,
-    y: top,
-    w: Math.max(1, right - left),
-    h: Math.max(1, bottom - top),
-  };
-};
-
-const isElementSelected = (id) => {
-  if (marqueePreviewIds.value.includes(id)) return true;
-  if (isGroupSelection.value) {
-    return selectedGroup.value?.elementIds?.includes(id) ?? false;
-  }
-  if (multiSelectionIds.value.length > 1) {
-    return multiSelectionIds.value.includes(id);
-  }
-  return state.selectedElementId === id;
-};
-
-const startSelectionMarquee = (event) => {
-  if (!canvasRef.value) return;
-  const rect = canvasRef.value.getBoundingClientRect();
-  selectionMarquee.active = true;
-  selectionMarquee.pointerId = event.pointerId;
-  selectionMarquee.startX = clamp(event.clientX - rect.left, 0, rect.width);
-  selectionMarquee.startY = clamp(event.clientY - rect.top, 0, rect.height);
-  selectionMarquee.currentX = selectionMarquee.startX;
-  selectionMarquee.currentY = selectionMarquee.startY;
-  marqueePreviewIds.value = [];
-  event.currentTarget?.setPointerCapture?.(event.pointerId);
-  setDragDocumentState(true);
-};
-
-const updateSelectionMarqueePreview = () => {
-  const left = Math.min(selectionMarquee.startX, selectionMarquee.currentX);
-  const top = Math.min(selectionMarquee.startY, selectionMarquee.currentY);
-  const right = Math.max(selectionMarquee.startX, selectionMarquee.currentX);
-  const bottom = Math.max(selectionMarquee.startY, selectionMarquee.currentY);
-
-  marqueePreviewIds.value = editorElements.value
-    .map((item) => {
-      const layout = state.elementLayout[item.id];
-      if (!layout) return null;
-      const measured = elementMeasurements[item.id] ?? null;
-      const width = measured?.width ?? layout.w ?? 0;
-      const height = measured?.height ?? layout.h ?? 44;
-      const intersects = !(
-        layout.x + width < left
-        || layout.x > right
-        || layout.y + height < top
-        || layout.y > bottom
-      );
-      return intersects ? item.id : null;
-    })
-    .filter(Boolean);
-};
-
-const finalizeSelectionMarquee = () => {
-  const picked = [...new Set(marqueePreviewIds.value)];
-  clearSelectionMarquee();
-
-  if (!picked.length) {
-    clearSelection();
-    return;
-  }
-
-  if (picked.length === 1) {
-    selectedGroupId.value = null;
-    multiSelectionIds.value = [];
-    state.selectedElementId = picked[0];
-    return;
-  }
-
-  state.selectedElementId = null;
-  selectedGroupId.value = null;
-  multiSelectionIds.value = picked;
-  activePropertyPanel.value = null;
-};
-
-const selectGroup = (groupId) => {
-  if (!groupedElements[groupId]) return;
-  const bounds = getSelectionBounds(groupedElements[groupId].elementIds);
-  if (bounds) {
-    groupedElements[groupId].layout.x = bounds.x;
-    groupedElements[groupId].layout.y = bounds.y;
-    groupedElements[groupId].layout.w = bounds.w;
-    groupedElements[groupId].layout.h = bounds.h;
-  }
-  selectedGroupId.value = groupId;
-  state.selectedElementId = null;
-  multiSelectionIds.value = [];
-  activePropertyPanel.value = null;
-};
-
-const buildGroupResizeSnapshot = (groupId) => {
-  const group = groupedElements[groupId];
-  if (!group) return null;
-
-  return {
-    x: group.layout.x,
-    y: group.layout.y,
-    w: group.layout.w,
-    h: group.layout.h,
-    members: group.elementIds.map((id) => {
-      const layout = state.elementLayout[id];
-      if (!layout) return null;
-      const measured = elementMeasurements[id] ?? null;
-      const measuredHeight = measured?.height ?? layout.h ?? getEstimatedTextHeight(layout, getElementText(id));
-      return {
-        id,
-        isText: isTextElement(id),
-        x: layout.x,
-        y: layout.y,
-        w: layout.w ?? measured?.width ?? 40,
-        h: layout.h ?? measuredHeight,
-        fontSize: layout.fontSize ?? 16,
-        paragraphStyles: ensureParagraphStyles(layout, getElementText(id)).map((style) => ({ ...style })),
-      };
-    }).filter(Boolean),
-  };
 };
 
 const beginElementDrag = ({ pointerId, clientX, clientY }, id, captureTarget = null) => {
@@ -3222,17 +2190,6 @@ const changeLayer = (mode) => {
     });
 };
 
-const clearSelection = () => {
-  if (editingElementId.value) {
-    commitTextEdit();
-  }
-    selectedGroupId.value = null;
-    multiSelectionIds.value = [];
-    marqueePreviewIds.value = [];
-    state.selectedElementId = null;
-    activePropertyPanel.value = null;
-};
-
 const handleCanvasPointerDown = (event) => {
     if (drag.active || selectionMarquee.active) return;
     if (event.button !== undefined && event.button !== 0) return;
@@ -3315,10 +2272,6 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  if (historyTimer) {
-    clearTimeout(historyTimer);
-    historyTimer = null;
-  }
   document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
   document.removeEventListener('pointermove', moveDrag);
   document.removeEventListener('pointerup', endDrag);
@@ -3387,6 +2340,16 @@ const openBackgroundPanel = () => {
 };
 const setImageInputRef = (element) => {
   imageInputRef.value = element;
+};
+const setCanvasRef = (element) => {
+  canvasRef.value = element;
+};
+const setRichEditorRef = (id, element) => {
+  if (element) {
+    richEditorRefs.value[id] = element;
+    return;
+  }
+  delete richEditorRefs.value[id];
 };
 
 watch(() => state.selectedElementId, () => {
@@ -3512,6 +2475,7 @@ watch(selectedGroupId, (groupId) => {
             :active-text-effect-id="activeTextEffectId"
             :text-effect-options="textEffectOptions"
             :text-effect-card-font-family="textEffectCardFontFamily"
+            :text-effect-preview-style="textEffectPreviewStyle"
             :shape-gradient-options="shapeGradientOptions"
             :shape-gradient-directions="shapeGradientDirections"
             :normalize-picker-color="normalizePickerColor"
@@ -3536,168 +2500,64 @@ watch(selectedGroupId, (groupId) => {
             @update-shape-category-filter="shapeCategoryFilter = $event"
           />
 
-          <div class="canvas-grid h-full overflow-auto bg-slate-100 px-6 pt-12 pb-6 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10" :style="canvasGridStyle">
-            <div class="mx-auto bg-white p-4 shadow-2xl dark:bg-slate-900" :style="[canvasFrameStyle, canvasZoomStyle]" :class="state.selectedElementId === 'background' ? 'ring-2 ring-primary' : ''">
-              <div ref="canvasRef" class="relative overflow-visible p-7 text-white select-none touch-none" :style="{ ...canvasBackgroundStyle, ...canvasElementStyle }" @pointerdown="handleCanvasPointerDown">
-
-                <div
-                  v-for="item in editorElements"
-                  :key="item.id"
-                  data-editor-element="true"
-                  :data-editor-id="item.id"
-                  class="absolute p-0 text-left"
-                  :style="elementBoxStyle(item.id)"
-                  :class="isElementSelected(item.id)
-                    ? (editingElementId === item.id
-                        ? 'border-2 border-solid border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.35)] editor-editing-pulse'
-                        : (drag.active && drag.elementId === item.id
-                            ? 'border-2 border-dashed border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'
-                            : 'border-2 border-dashed border-cyan-300 bg-white/8 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'))
-                    : 'z-10 border border-transparent hover:border-white/20'"
-                  @click="handleElementClick($event, item.id)"
-                  @dblclick="beginTextEdit(item.id)"
-                  @pointerdown="handleElementPointerDown($event, item.id)"
-                >
-                  <div class="relative" :class="item.type === 'text' ? '' : 'h-full w-full'" :style="elementContentStyle(item.id)">
-                    <template v-if="item.type === 'text'">
-                      <RichTextEditor
-                        :ref="(el) => { if (el) richEditorRefs[item.id] = el; else delete richEditorRefs[item.id]; }"
-                        :paragraph-styles="state.elementLayout[item.id].paragraphStyles ?? []"
-                        :text="item.text ?? ''"
-                        :editable="editingElementId === item.id"
-                        :editor-style="richEditorContainerStyle(item.id)"
-                        :color-override="neonColorOverride(item.id)"
-                        :transparent-fill="!!state.elementLayout[item.id]?.hollowText"
-                        @update:text="onRichEditorTextUpdate(item.id, $event)"
-                        @update:paragraph-styles="onRichEditorStylesUpdate(item.id, $event)"
-                        @selection-change="onRichEditorSelectionChange(item.id, $event)"
-                        @blur="onRichEditorBlur(item.id, $event)"
-                        @keydown.escape.stop="cancelTextEdit"
-                        @keydown.ctrl.enter.stop="commitTextEdit"
-                        @keydown.meta.enter.stop="commitTextEdit"
-                        @pointerdown.stop="editingElementId === item.id ? null : handleElementPointerDown($event, item.id)"
-                        @mousedown.stop
-                        @dblclick.stop="beginTextEdit(item.id)"
-                        @click.stop="editingElementId === item.id ? null : handleElementClick($event, item.id)"
-                      />
-                    </template>
-                    <template v-else-if="item.type === 'image'">
-                      <div class="relative h-full w-full overflow-hidden rounded-xl" :style="imageFrameStyle(item.id)">
-                        <img
-                          v-if="item.src"
-                          :src="item.src"
-                          :alt="item.label"
-                          class="h-full w-full object-cover"
-                          draggable="false"
-                        />
-                        <div
-                          v-if="item.src && (state.elementLayout[item.id]?.imageTintStrength ?? 0) > 0"
-                          class="pointer-events-none absolute inset-0"
-                          :style="imageTintOverlayStyle(item.id)"
-                        ></div>
-                        <div v-else class="flex h-full w-full items-center justify-center text-xs font-semibold text-white/80">
-                          Imagen
-                        </div>
-                      </div>
-                    </template>
-                    <template v-else>
-                      <div class="h-full w-full" :style="shapeStyle(item)"></div>
-                    </template>
-                  </div>
-                </div>
-                <div
-                  v-if="activeSelectionIds.length && state.selectedElementId !== 'background'"
-                  data-editor-control="true"
-                  class="pointer-events-none absolute"
-                  :style="selectedActionBarStyle"
-                >
-                  <div class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90 text-base-content" :style="controlZoomStyle">
-                    <div class="flex items-center gap-1 p-1.5">
-                    <button
-                      v-if="multiSelectionIds.length > 1"
-                      data-editor-control="true"
-                      type="button"
-                      class="btn btn-ghost btn-sm font-semibold"
-                      title="Agrupar elementos"
-                      @pointerdown.stop="markEditorControlInteraction"
-                      @click.stop="groupSelectedElements"
-                    >
-                      agrupar
-                    </button>
-                    <button
-                      v-if="selectedElementType === 'text'"
-                      data-editor-control="true"
-                      type="button"
-                      class="btn btn-ghost btn-sm"
-                      title="Editar texto"
-                      @pointerdown.stop="markEditorControlInteraction"
-                      @click.stop="editSelectedTextElement"
-                    >
-                      <Icon icon="ph:pencil-simple-bold" class="text-base" />
-                    </button>
-                    <button
-                      data-editor-control="true"
-                      type="button"
-                      class="btn btn-ghost btn-sm"
-                      title="Clonar elemento"
-                      @pointerdown.stop="markEditorControlInteraction"
-                      @click.stop="cloneCurrentSelection"
-                    >
-                      <Icon icon="ph:copy-bold" class="text-base" />
-                    </button>
-                    <button
-                      data-editor-control="true"
-                      type="button"
-                      class="btn btn-ghost btn-sm text-error hover:bg-error/10"
-                      title="Eliminar elemento"
-                      @pointerdown.stop="markEditorControlInteraction"
-                      @click.stop="deleteCurrentSelection"
-                    >
-                      <Icon icon="ph:trash-bold" class="text-base" />
-                    </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-if="activeSelectionIds.length && state.selectedElementId !== 'background'" data-editor-control="true" class="pointer-events-none absolute" :style="selectedOverlayStyle">
-                  <button
-                    v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)"
-                    data-editor-control="true"
-                    type="button"
-                    class="pointer-events-auto absolute -bottom-12 left-1/2 z-40 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border-2 border-white bg-cyan-300 text-slate-950 shadow-md touch-none"
-                    :style="controlZoomStyle"
-                    title="Girar elemento"
-                    @pointerdown="startRotate($event, overlayControlTargetId)"
-                    @dblclick.stop.prevent="resetRotation(overlayControlTargetId)"
-                  >
-                    <Icon icon="ph:arrow-clockwise-bold" class="text-lg" />
-                  </button>
-                  <span
-                    v-if="overlayControlTargetId && (isGroupSelection || (!hasMultiSelection && selectedElementType !== 'text'))"
-                    data-editor-control="true"
-                    class="pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 cursor-ns-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
-                    :style="{ top: selectedHandleMetrics.barOffset, width: selectedHandleMetrics.barLength, height: selectedHandleMetrics.barThickness, ...controlZoomStyle }"
-                    @pointerdown="startResize($event, overlayControlTargetId, 'n-width')"
-                  ></span>
-                  <span
-                    v-if="overlayControlTargetId && (isGroupSelection || (!hasMultiSelection && selectedElementType !== 'text'))"
-                    data-editor-control="true"
-                    class="pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 cursor-ns-resize rounded-full border-2 border-white bg-cyan-300 touch-none"
-                    :style="{ bottom: selectedHandleMetrics.barOffset, width: selectedHandleMetrics.barLength, height: selectedHandleMetrics.barThickness, ...controlZoomStyle }"
-                    @pointerdown="startResize($event, overlayControlTargetId, 's-width')"
-                  ></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute top-1/2 z-30 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.sideOffset, width: selectedHandleMetrics.sideThickness, height: selectedHandleMetrics.sideLength, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'w')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute top-1/2 z-30 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.sideOffset, width: selectedHandleMetrics.sideThickness, height: selectedHandleMetrics.sideLength, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'e')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.cornerOffset, top: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'nw')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.cornerOffset, top: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'ne')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nesw-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ left: selectedHandleMetrics.cornerOffset, bottom: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'sw')"></span>
-                  <span v-if="overlayControlTargetId && (isGroupSelection || !hasMultiSelection)" data-editor-control="true" class="pointer-events-auto absolute z-30 cursor-nwse-resize rounded-full border-2 border-white bg-cyan-300 touch-none" :style="{ right: selectedHandleMetrics.cornerOffset, bottom: selectedHandleMetrics.cornerOffset, width: selectedHandleMetrics.cornerSize, height: selectedHandleMetrics.cornerSize, ...controlZoomStyle }" @pointerdown="startResize($event, overlayControlTargetId, 'se')"></span>
-                </div>
-                <div v-if="selectionMarquee.active" class="pointer-events-none absolute border border-cyan-200/90 bg-cyan-200/20" :style="marqueeRectStyle"></div>
-                <div class="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-cyan-200/30"></div>
-              </div>
-            </div>
-          </div>
+          <EditorCanvasStage
+            :canvas-grid-style="canvasGridStyle"
+            :canvas-frame-style="canvasFrameStyle"
+            :canvas-zoom-style="canvasZoomStyle"
+            :is-background-selected="state.selectedElementId === 'background'"
+            :canvas-background-style="canvasBackgroundStyle"
+            :canvas-element-style="canvasElementStyle"
+            :editor-elements="editorElements"
+            :drag="drag"
+            :editing-element-id="editingElementId"
+            :state="state"
+            :element-box-style="elementBoxStyle"
+            :is-element-selected="isElementSelected"
+            :element-content-style="elementContentStyle"
+            :rich-editor-container-style="richEditorContainerStyle"
+            :neon-color-override="neonColorOverride"
+            :image-frame-style="imageFrameStyle"
+            :image-tint-overlay-style="imageTintOverlayStyle"
+            :shape-style="shapeStyle"
+            :canvas-ref-setter="setCanvasRef"
+            :rich-editor-ref-setter="setRichEditorRef"
+            @canvas-pointer-down="handleCanvasPointerDown"
+            @element-click="handleElementClick($event.event, $event.id)"
+            @begin-text-edit="beginTextEdit"
+            @element-pointer-down="handleElementPointerDown($event.event, $event.id)"
+            @rich-editor-text-update="onRichEditorTextUpdate($event.id, $event.value)"
+            @rich-editor-styles-update="onRichEditorStylesUpdate($event.id, $event.value)"
+            @rich-editor-selection-change="onRichEditorSelectionChange($event.id, $event.value)"
+            @rich-editor-blur="onRichEditorBlur($event.id, $event.event)"
+            @cancel-text-edit="cancelTextEdit"
+            @commit-text-edit="commitTextEdit"
+          >
+            <template #overlay>
+              <SelectionOverlay
+                :show-selection-controls="activeSelectionIds.length && state.selectedElementId !== 'background'"
+                :show-marquee="selectionMarquee.active"
+                :show-group-button="multiSelectionIds.length > 1"
+                :show-edit-text-button="selectedElementType === 'text'"
+                :overlay-control-target-id="overlayControlTargetId"
+                :is-group-selection="isGroupSelection"
+                :has-multi-selection="hasMultiSelection"
+                :selected-element-type="selectedElementType"
+                :selected-action-bar-style="selectedActionBarStyle"
+                :selected-overlay-style="selectedOverlayStyle"
+                :selected-handle-metrics="selectedHandleMetrics"
+                :control-zoom-style="controlZoomStyle"
+                :marquee-rect-style="marqueeRectStyle"
+                @mark-editor-control-interaction="markEditorControlInteraction"
+                @group-selected-elements="groupSelectedElements"
+                @edit-selected-text-element="editSelectedTextElement"
+                @clone-current-selection="cloneCurrentSelection"
+                @delete-current-selection="deleteCurrentSelection"
+                @start-rotate="startRotate($event.event, $event.id)"
+                @reset-rotation="resetRotation"
+                @start-resize="startResize($event.event, $event.id, $event.handle)"
+              />
+            </template>
+          </EditorCanvasStage>
         </div>
       </div>
     </section>
