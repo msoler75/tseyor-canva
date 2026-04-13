@@ -177,27 +177,82 @@ export function buildBubbleShadow(layout = {}) {
 export function buildVisualShadow(layout = {}) {
   const shadows = [];
   const shadowIntensity = clamp(Number(layout.shadowIntensity ?? 45), 0, 100);
+  const shadowOffset = clamp(Number(layout.shadowOffset ?? 20), 0, 100);
+  const shadowBlur = clamp(Number(layout.shadowBlur ?? 25), 0, 100);
+  const shadowOpacity = clamp(Number(layout.shadowOpacity ?? 65), 0, 100);
+  const shadowAngle = ((Number(layout.shadowAngle ?? 135) % 360) + 360) % 360;
   const neonIntensity = clamp(Number(layout.neonIntensity ?? 55), 0, 100);
 
-  if (layout.shadow) {
+  const toShadowOffset = (distance) => {
+    const rad = (shadowAngle * Math.PI) / 180;
+    return {
+      x: Math.round(Math.cos(rad) * distance),
+      y: Math.round(Math.sin(rad) * distance),
+    };
+  };
+
+  const applyAlphaToHex = (color, alphaPercent) => {
+    if (typeof color !== 'string') return color;
+    const value = color.trim();
+    const alpha = clamp(100 - alphaPercent, 0, 100);
+
+    if (/^#[\da-f]{3}$/i.test(value)) {
+      const r = value[1];
+      const g = value[2];
+      const b = value[3];
+      const a = Math.round((alpha / 100) * 255).toString(16).padStart(2, '0');
+      return `#${r}${r}${g}${g}${b}${b}${a}`;
+    }
+
+    if (/^#[\da-f]{6}$/i.test(value)) {
+      const a = Math.round((alpha / 100) * 255).toString(16).padStart(2, '0');
+      return `${value}${a}`;
+    }
+
+    return value;
+  };
+
+  if (layout.textEffectMode === 'distort') {
+    const primaryColor = layout.shadowColor || '#f0f';
+    const secondaryColor = layout.neonColor || '#0ff';
+    const distance = clamp(Math.round(clamp(Number(layout.shadowOffset ?? 15), 0, 20) * 0.2), 1, 20);
+    const offset = toShadowOffset(distance);
+    shadows.push(
+      `${offset.x}px ${offset.y}px 0 ${primaryColor}`,
+      `${-offset.x}px ${-offset.y}px 0 ${secondaryColor}`,
+    );
+  }
+
+  if (layout.shadow && layout.textEffectMode !== 'distort') {
     const color = layout.shadowColor || '#0f172a';
     const preset = layout.shadowPreset || 'soft';
+    const colorWithAlpha = applyAlphaToHex(color, shadowOpacity);
 
     if (preset === 'hard') {
-      const distance = Math.round(1 + shadowIntensity / 12);
-      shadows.push(`${distance}px ${distance}px 0 ${color}`);
+      const distance = Math.round(shadowOffset * 0.6);
+      const offset = toShadowOffset(distance);
+      shadows.push(`${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`);
+    } else if (preset === 'echo') {
+      const distance = Math.max(1, Math.round(shadowOffset * 0.25));
+      const offset = toShadowOffset(distance);
+      shadows.push(
+        `${offset.x}px ${offset.y}px 0 ${colorWithAlpha}`,
+        `${offset.x * 2}px ${offset.y * 2}px 0 ${colorWithAlpha}`,
+        `${offset.x * 3}px ${offset.y * 3}px 0 ${colorWithAlpha}`,
+      );
     } else if (preset === 'lifted') {
       const y = Math.round(8 + shadowIntensity / 4);
       const blur = Math.round(10 + shadowIntensity / 2);
-      shadows.push(`0 ${y}px ${blur}px ${color}66`);
+      shadows.push(`0 ${y}px ${blur}px ${colorWithAlpha}`);
     } else {
-      const y = Math.round(4 + shadowIntensity / 6);
-      const blur = Math.round(8 + shadowIntensity / 2);
-      shadows.push(`0 ${y}px ${blur}px ${color}66`);
+      const distance = Math.round(shadowOffset * 0.6);
+      const blur = Math.round(shadowBlur * 0.8);
+      const offset = toShadowOffset(distance);
+      shadows.push(`${offset.x}px ${offset.y}px ${blur}px ${colorWithAlpha}`);
     }
   }
 
-  if (layout.neonColor) {
+  if (layout.neonColor && layout.textEffectMode !== 'distort') {
     const blurSoft = Math.round(4 + neonIntensity / 6);
     const blurStrong = Math.round(12 + neonIntensity / 2);
     shadows.push(`0 0 ${blurSoft}px ${layout.neonColor}`, `0 0 ${blurStrong}px ${layout.neonColor}`);

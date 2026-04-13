@@ -462,12 +462,16 @@ const selectedPropertyTabs = computed(() => {
 const activePropertyTitle = computed(() => selectedPropertyTabs.value.find((tab) => tab.id === activePropertyPanel.value)?.label ?? 'Propiedades');
 const {
   activeTextEffectId,
+  activeVisualEffectId,
   textEffectRows,
+  visualEffectRows,
   canvasBackgroundStyle,
   normalizePickerColor,
   setSelectedColor,
   setTextEffect,
+  setVisualEffect,
   textEffectPreviewStyle,
+  visualEffectPreviewStyle,
   applyGradientPreset,
   swapGradientStops,
   applyShapeGradientPreset,
@@ -1648,9 +1652,12 @@ watch(selectedGroupId, (groupId) => {
             :color-options="colorOptions"
             :background-options="backgroundOptions"
             :text-effect-rows="textEffectRows"
+            :visual-effect-rows="visualEffectRows"
             :active-text-effect-id="activeTextEffectId"
+            :active-visual-effect-id="activeVisualEffectId"
             :text-effect-card-font-family="textEffectCardFontFamily"
             :text-effect-preview-style="textEffectPreviewStyle"
+            :visual-effect-preview-style="visualEffectPreviewStyle"
             :shape-gradient-options="shapeGradientOptions"
             :shape-gradient-directions="shapeGradientDirections"
             :normalize-picker-color="normalizePickerColor"
@@ -1667,6 +1674,7 @@ watch(selectedGroupId, (groupId) => {
             :swap-gradient-stops="swapGradientStops"
             :swap-shape-gradient-stops="swapShapeGradientStops"
             :set-text-effect="setTextEffect"
+            :set-visual-effect="setVisualEffect"
             :set-selected-color="setSelectedColor"
             :change-layer="changeLayer"
             @close-panel="closeOptionsPanel"

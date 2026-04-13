@@ -27,9 +27,12 @@ const props = defineProps({
   colorOptions: Array,
   backgroundOptions: Array,
   textEffectRows: Array,
+  visualEffectRows: Array,
   activeTextEffectId: String,
+  activeVisualEffectId: String,
   textEffectCardFontFamily: String,
   textEffectPreviewStyle: Function,
+  visualEffectPreviewStyle: Function,
   shapeGradientOptions: Array,
   shapeGradientDirections: Array,
   normalizePickerColor: Function,
@@ -46,6 +49,7 @@ const props = defineProps({
   swapGradientStops: Function,
   swapShapeGradientStops: Function,
   setTextEffect: Function,
+  setVisualEffect: Function,
   setSelectedColor: Function,
   changeLayer: Function,
 });
@@ -74,9 +78,12 @@ const {
   colorOptions,
   backgroundOptions,
   textEffectRows,
+  visualEffectRows,
   activeTextEffectId,
+  activeVisualEffectId,
   textEffectCardFontFamily,
   textEffectPreviewStyle,
+  visualEffectPreviewStyle,
   shapeGradientOptions,
   shapeGradientDirections,
   normalizePickerColor,
@@ -93,6 +100,7 @@ const {
   swapGradientStops,
   swapShapeGradientStops,
   setTextEffect,
+  setVisualEffect,
   setSelectedColor,
   changeLayer,
 } = toRefs(props);
@@ -947,8 +955,134 @@ const closePanel = () => emit('closePanel');
                     </button>
                   </template>
 
+                  <template v-else-if="selectedElementType === 'shape' || selectedElementType === 'image'">
+                    <template v-for="(effectRow, rowIndex) in visualEffectRows" :key="`visual-effect-row-${rowIndex}`">
+                      <div class="grid grid-cols-3 gap-2">
+                        <button
+                          v-for="effect in effectRow"
+                          :key="effect.id"
+                          type="button"
+                          class="text-center transition"
+                          @click="setVisualEffect(effect.id)"
+                        >
+                          <span
+                            class="inline-flex h-18 w-full items-center justify-center rounded-xl border transition"
+                            :class="activeVisualEffectId === effect.id
+                              ? 'border-primary bg-white ring-1 ring-primary/35'
+                              : 'border-base-300 bg-white hover:border-primary/45 hover:bg-white'"
+                          >
+                            <span :style="visualEffectPreviewStyle(effect.id)"></span>
+                          </span>
+                          <span class="mt-1.5 block text-[11px] font-medium text-base-content/85">{{ effect.label }}</span>
+                        </button>
+                        <div v-for="emptyIndex in Math.max(0, 3 - effectRow.length)" :key="`visual-effect-row-${rowIndex}-empty-${emptyIndex}`"></div>
+                      </div>
+
+                      <div
+                        v-if="activeVisualEffectId !== 'none' && effectRow.some((effect) => effect.id === activeVisualEffectId)"
+                        class="flex flex-wrap items-end gap-3 rounded-2xl border border-base-300/70 bg-base-100/60 p-3"
+                      >
+                        <div v-if="['shadow', 'shadow1', 'shadow2', 'echo', 'distort'].includes(activeVisualEffectId)" class="min-w-55 flex-1 space-y-2">
+                          <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Direccion</label>
+                          <div class="flex items-center gap-2">
+                            <input v-model.number="selectedElement.shadowAngle" type="range" min="0" max="360" step="1" class="range range-primary flex-1" />
+                            <input v-model.number="selectedElement.shadowAngle" type="number" min="0" max="360" step="1" class="input input-bordered input-sm w-20" />
+                          </div>
+                        </div>
+                        <div v-if="['shadow', 'shadow1', 'shadow2', 'echo'].includes(activeVisualEffectId)" class="min-w-55 flex-1 space-y-2">
+                          <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Compensacion</label>
+                          <div class="flex items-center gap-2">
+                            <input v-model.number="selectedElement.shadowOffset" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                            <input v-model.number="selectedElement.shadowOffset" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                          </div>
+                        </div>
+                        <div v-if="activeVisualEffectId === 'shadow'" class="min-w-55 flex-1 space-y-2">
+                          <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Desenfoque</label>
+                          <div class="flex items-center gap-2">
+                            <input v-model.number="selectedElement.shadowBlur" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                            <input v-model.number="selectedElement.shadowBlur" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                          </div>
+                        </div>
+                        <div v-if="['shadow', 'shadow1', 'shadow2'].includes(activeVisualEffectId)" class="min-w-55 flex-1 space-y-2">
+                          <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Transparencia</label>
+                          <div class="flex items-center gap-2">
+                            <input v-model.number="selectedElement.shadowOpacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                            <input v-model.number="selectedElement.shadowOpacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                          </div>
+                        </div>
+                        <div v-if="['shadow', 'shadow1', 'shadow2', 'echo'].includes(activeVisualEffectId)" class="w-23 space-y-2">
+                          <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                          <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                            <input
+                              type="color"
+                              class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                              :value="normalizePickerColor(selectedElement.shadowColor || '#000000', '#000000')"
+                              @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
+                            />
+                          </div>
+                        </div>
+                        <div v-if="activeVisualEffectId === 'glow'" class="min-w-55 flex-1 space-y-2">
+                          <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Brillo</label>
+                          <div class="flex items-center gap-2">
+                            <input v-model.number="selectedElement.neonIntensity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                            <input v-model.number="selectedElement.neonIntensity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
+                          </div>
+                        </div>
+                        <div v-if="activeVisualEffectId === 'glow'" class="w-23 space-y-2">
+                          <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                          <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                            <input
+                              type="color"
+                              class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                              :value="normalizePickerColor(selectedElement.neonColor || '#8b5cf6', '#8b5cf6')"
+                              @input="setSelectedColor('neonColor', $event.target.value)"
+                            />
+                          </div>
+                        </div>
+                        <div v-if="activeVisualEffectId === 'distort'" class="min-w-55 flex-1 space-y-2">
+                          <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Compensacion</label>
+                          <div class="flex items-center gap-2">
+                            <input v-model.number="selectedElement.shadowOffset" type="range" min="0" max="20" step="1" class="range range-primary flex-1" />
+                            <input v-model.number="selectedElement.shadowOffset" type="number" min="0" max="20" step="1" class="input input-bordered input-sm w-20" />
+                          </div>
+                        </div>
+                        <div v-if="activeVisualEffectId === 'distort'" class="w-23 space-y-2">
+                          <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color 1</label>
+                          <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                            <input
+                              type="color"
+                              class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                              :value="normalizePickerColor(selectedElement.shadowColor || '#f0f', '#f0f')"
+                              @input="selectedElement.shadow = true; setSelectedColor('shadowColor', $event.target.value)"
+                            />
+                          </div>
+                        </div>
+                        <div v-if="activeVisualEffectId === 'distort'" class="w-23 space-y-2">
+                          <label class="block text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/60">Color 2</label>
+                          <div class="flex h-10 items-center justify-center rounded-xl border border-base-300 bg-base-100 p-1">
+                            <input
+                              type="color"
+                              class="h-full w-full cursor-pointer rounded-lg bg-base-100"
+                              :value="normalizePickerColor(selectedElement.neonColor || '#0ff', '#0ff')"
+                              @input="setSelectedColor('neonColor', $event.target.value)"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+
+                    <button
+                      v-if="activeVisualEffectId !== 'none'"
+                      type="button"
+                      class="btn btn-primary btn-block mt-2 rounded-2xl text-sm font-semibold shadow-md"
+                      @click="setVisualEffect('none')"
+                    >
+                      Quitar efecto
+                    </button>
+                  </template>
+
                   <template v-else>
-                    <p class="text-sm text-base-content/70">Los efectos tipo Canva estan disponibles para elementos de texto.</p>
+                    <p class="text-sm text-base-content/70">Los efectos disponibles aqui aplican a texto, imagenes y figuras segun el tipo seleccionado.</p>
                   </template>
                 </div>
               </div>

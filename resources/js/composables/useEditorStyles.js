@@ -8,6 +8,7 @@ import {
   buildRichEditorContainerStyle,
   buildShapeStyle,
   buildShapeStyleFromKind,
+  buildVisualShadow,
   getTextEffectStrokeWidth,
   neonColorOverrideFromLayout,
   normalizePickerColor,
@@ -46,6 +47,15 @@ export const useEditorStyles = ({
     const rows = [];
     for (let index = 0; index < textEffectOptions.length; index += 3) {
       rows.push(textEffectOptions.slice(index, index + 3));
+    }
+    return rows;
+  });
+  const visualEffectIds = new Set(['shadow1', 'shadow2', 'shadow', 'glow', 'echo', 'distort']);
+  const visualEffectOptions = computed(() => textEffectOptions.filter((effect) => visualEffectIds.has(effect.id)));
+  const visualEffectRows = computed(() => {
+    const rows = [];
+    for (let index = 0; index < visualEffectOptions.value.length; index += 3) {
+      rows.push(visualEffectOptions.value.slice(index, index + 3));
     }
     return rows;
   });
@@ -193,6 +203,84 @@ export const useEditorStyles = ({
     }
   };
 
+  const activeVisualEffectId = computed(() => {
+    if (!selectedElement.value || hasTextSelection.value) return 'none';
+
+    const mode = selectedElement.value.textEffectMode;
+    if (mode && visualEffectIds.has(mode)) return mode;
+    if (selectedElement.value.shadow && selectedElement.value.shadowPreset === 'echo') return 'echo';
+    if (selectedElement.value.neonColor) return 'glow';
+    if (selectedElement.value.shadow && selectedElement.value.shadowPreset === 'hard') return 'shadow1';
+    if (selectedElement.value.shadow) return 'shadow';
+    return 'none';
+  });
+
+  const applyVisualEffectPreset = (layout, effectId) => {
+    if (effectId === 'none') {
+      layout.textEffectMode = 'none';
+      layout.shadow = false;
+      layout.neonColor = '';
+      return;
+    }
+
+    layout.textEffectMode = effectId;
+    layout.shadow = false;
+    layout.neonColor = '';
+
+    if (effectId === 'shadow1') {
+      layout.shadow = true;
+      layout.shadowPreset = 'hard';
+      layout.shadowColor = layout.shadowColor || '#000000';
+      layout.shadowAngle = 135;
+      layout.shadowOffset = 10;
+      layout.shadowBlur = 0;
+      layout.shadowOpacity = 20;
+    } else if (effectId === 'shadow2') {
+      layout.shadow = true;
+      layout.shadowPreset = 'soft';
+      layout.shadowColor = layout.shadowColor || '#000000';
+      layout.shadowAngle = 145;
+      layout.shadowOffset = 12;
+      layout.shadowBlur = 6;
+      layout.shadowOpacity = 35;
+    } else if (effectId === 'shadow') {
+      layout.shadow = true;
+      layout.shadowPreset = 'soft';
+      layout.shadowColor = layout.shadowColor || '#0f172a';
+      layout.shadowAngle = 135;
+      layout.shadowOffset = 22;
+      layout.shadowBlur = 15;
+      layout.shadowOpacity = 55;
+    } else if (effectId === 'glow') {
+      layout.neonColor = layout.neonColor || '#8b5cf6';
+      layout.neonIntensity = layout.neonIntensity ?? 65;
+    } else if (effectId === 'echo') {
+      layout.shadow = true;
+      layout.shadowPreset = 'echo';
+      layout.shadowColor = layout.shadowColor || '#0f172a';
+      layout.shadowAngle = 60;
+      layout.shadowOffset = 15;
+      layout.shadowBlur = 0;
+      layout.shadowOpacity = 40;
+    } else if (effectId === 'distort') {
+      layout.shadow = true;
+      layout.shadowPreset = 'hard';
+      layout.shadowColor = layout.shadowColor || '#f0f';
+      layout.shadowAngle = 0;
+      layout.shadowOffset = 15;
+      layout.shadowBlur = 0;
+      layout.shadowOpacity = 0;
+      layout.neonColor = layout.neonColor || '#0ff';
+      layout.neonIntensity = 0;
+    }
+  };
+
+  const setVisualEffect = (effectId) => {
+    if (!selectedElement.value || hasTextSelection.value) return;
+    const nextEffectId = activeVisualEffectId.value === effectId ? 'none' : effectId;
+    applyVisualEffectPreset(selectedElement.value, nextEffectId);
+  };
+
   const textEffectPreviewStyle = (effectId) => {
     const base = {
       color: '#7c3aed',
@@ -229,6 +317,37 @@ export const useEditorStyles = ({
     if (effectId === 'distort') return { ...base, textShadow: '-2px 0 0 #f0f, 2px 0 0 #0ff' };
 
     return base;
+  };
+
+  const visualEffectPreviewStyle = (effectId) => {
+    const sample = {
+      textEffectMode: 'none',
+      shadow: false,
+      shadowPreset: 'soft',
+      shadowColor: '#0f172a',
+      shadowAngle: 135,
+      shadowOffset: 22,
+      shadowBlur: 15,
+      shadowOpacity: 55,
+      neonColor: '',
+      neonIntensity: 65,
+      bubbleColor: 'transparent',
+      backgroundColor: '#7c3aed',
+      border: false,
+      contourWidth: 0,
+      contourColor: '#7c3aed',
+    };
+
+    applyVisualEffectPreset(sample, effectId);
+
+    return {
+      width: '2.75rem',
+      height: '2.75rem',
+      borderRadius: '0.85rem',
+      background: 'linear-gradient(135deg, #8b5cf6, #0ea5e9)',
+      boxShadow: buildVisualShadow(sample),
+      display: 'inline-block',
+    };
   };
 
   const applyGradientPreset = (target, start, end) => {
@@ -307,12 +426,16 @@ export const useEditorStyles = ({
 
   return {
     activeTextEffectId,
+    activeVisualEffectId,
     textEffectRows,
+    visualEffectRows,
     canvasBackgroundStyle,
     normalizePickerColor,
     setSelectedColor,
     setTextEffect,
+    setVisualEffect,
     textEffectPreviewStyle,
+    visualEffectPreviewStyle,
     applyGradientPreset,
     swapGradientStops,
     applyShapeGradientPreset,
