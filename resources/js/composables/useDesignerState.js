@@ -10,11 +10,13 @@ let persistenceBootstrapped = false;
 let saveTimer;
 let saveInFlight = false;
 let queuedSave = null;
+let currentSaveEndpoint = '/designer/state';
 
 export function useDesignerState() {
     const page = usePage();
     const sessionState = page.props.designer?.state ?? null;
     const saveEndpoint = page.props.designer?.endpoints?.save ?? '/designer/state';
+    currentSaveEndpoint = saveEndpoint;
 
     if (!designerState) {
         designerState = reactive(buildInitialState(sessionState));
@@ -162,4 +164,17 @@ async function persistStateSnapshot(saveEndpoint, snapshot) {
     } finally {
         saveInFlight = false;
     }
+}
+
+export async function flushDesignerStatePersistence() {
+    if (!designerState) {
+        return;
+    }
+
+    clearTimeout(saveTimer);
+    saveTimer = null;
+
+    const snapshot = JSON.parse(JSON.stringify(designerState));
+    delete snapshot.userUploadedImages;
+    await persistStateSnapshot(currentSaveEndpoint, snapshot);
 }

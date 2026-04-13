@@ -204,6 +204,17 @@ function blendHexWithWhite(hexColor, amountPercent = 40) {
     return `#${r}${g}${b}`;
 }
 
+function getTextEffectStrokeWidth(layout = {}) {
+    const mode = layout?.textEffectMode;
+    const isTextEffectStrokeMode = mode === 'outline' || mode === 'hollow' || mode === 'misaligned';
+
+    if (!isTextEffectStrokeMode) {
+        return clamp(Number(layout?.contourWidth ?? 2), 1, 12);
+    }
+
+    return (clamp(Number(layout?.contourWidth ?? 0), 0, 100) / 100) * 12;
+}
+
 function parseSizeDetail(detail) {
     const source = String(detail || '').replace(',', '.').trim();
 
@@ -494,9 +505,23 @@ function elementContentStyle(id) {
 
 function richEditorContainerStyle(id) {
     const layout = state.elementLayout[id] ?? {};
+    const firstParagraphColor = layout?.paragraphStyles?.[0]?.color ?? layout?.color ?? '#ffffff';
+    const strokeWidth = getTextEffectStrokeWidth(layout);
     return {
         opacity: `${(layout.opacity ?? 100) / 100}`,
+        textShadow: buildTextShadow(layout, firstParagraphColor),
+        WebkitTextStroke: layout?.border && layout?.hollowText && strokeWidth > 0
+            ? `${strokeWidth}px ${firstParagraphColor}`
+            : '0',
+        WebkitTextFillColor: layout?.hollowText ? 'transparent' : undefined,
+        color: layout?.hollowText ? 'transparent' : undefined,
     };
+}
+
+function neonColorOverride(id) {
+    const layout = state.elementLayout[id] ?? {};
+    if (!layout || layout.textEffectMode !== 'neon' || layout.hollowText) return null;
+    return '#ffffff';
 }
 
 function paragraphContentStyle(id, index) {
@@ -987,6 +1012,8 @@ watch(() => state.elementLayout, () => {
                                         :text="item.text ?? ''"
                                         :editable="false"
                                         :editor-style="richEditorContainerStyle(item.id)"
+                                        :color-override="neonColorOverride(item.id)"
+                                        :transparent-fill="!!state.elementLayout[item.id]?.hollowText"
                                     />
                                 </div>
                             </template>

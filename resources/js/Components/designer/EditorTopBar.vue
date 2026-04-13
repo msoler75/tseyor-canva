@@ -2,9 +2,9 @@
 import { Icon } from '@iconify/vue';
 
 defineProps({
-  sizeLabel: {
+  size: {
     type: String,
-    default: 'TamaÃ±o no definido',
+    default: 'Tamaño no definido',
   },
   canUndo: {
     type: Boolean,
@@ -16,11 +16,11 @@ defineProps({
   },
   undoActionLabel: {
     type: String,
-    default: 'ediciÃ³n',
+    default: 'edición',
   },
   redoActionLabel: {
     type: String,
-    default: 'ediciÃ³n',
+    default: 'edición',
   },
   zoomLevel: {
     type: [Number, String],
@@ -36,10 +36,10 @@ defineProps({
   },
 });
 
-const emit = defineEmits(['undo', 'redo', 'zoomLevelChange', 'toggleDarkMode']);
+const emit = defineEmits(['undo', 'redo', 'updateZoomLevel', 'toggleDarkMode', 'exportNavigate']);
 
 const handleZoomInput = (event) => {
-  emit('zoomLevelChange', event.target.value);
+  emit('updateZoomLevel', event.target.value);
 };
 </script>
 
@@ -47,7 +47,7 @@ const handleZoomInput = (event) => {
   <nav class="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-4 py-3 shadow-sm">
     <div class="flex items-center gap-2">
       <span class="rounded-xl bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">Editor</span>
-      <span class="text-sm text-base-content/65">{{ sizeLabel || 'TamaÃ±o no definido' }}</span>
+      <span class="text-sm text-base-content/65">{{ size || 'Tamaño no definido' }}</span>
     </div>
 
     <div class="flex flex-wrap items-center gap-3">
@@ -104,10 +104,10 @@ const handleZoomInput = (event) => {
         :title="darkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'"
         @click="emit('toggleDarkMode')"
       >
-        {{ darkMode ? 'ð' : 'âï¸' }}
+        {{ darkMode ? '🌙' : '☀️' }}
       </button>
 
-      <a :href="exportHref" class="btn btn-sm btn-primary rounded-full">Exportar</a>
+      <a :href="exportHref" class="btn btn-sm btn-primary rounded-full" @click="emit('exportNavigate', $event)">Exportar</a>
     </div>
   </nav>
 </template>
