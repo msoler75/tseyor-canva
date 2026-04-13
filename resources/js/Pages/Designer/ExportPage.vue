@@ -15,6 +15,7 @@ import {
     buildImageFrameStyle,
     buildImageTintOverlayStyle,
     buildRichEditorContainerStyle,
+    buildShapeRenderModel,
     buildShapeStyle,
     neonColorOverrideFromLayout,
     parseSizeDetail,
@@ -217,6 +218,10 @@ function neonColorOverride(id) {
 
 function shapeStyle(item) {
     return buildShapeStyle(state.elementLayout[item.id] ?? {}, item.shapeKind, SHAPE_CLIP_PATHS);
+}
+
+function shapeRenderModel(item) {
+    return buildShapeRenderModel(state.elementLayout[item.id] ?? {}, item.shapeKind, SHAPE_CLIP_PATHS);
 }
 
 function imageFrameStyle(id) {
@@ -628,7 +633,31 @@ watch(() => state.elementLayout, () => {
                             </template>
 
                             <template v-else>
-                                <div :style="shapeStyle(item)"></div>
+                                <div class="relative h-full w-full">
+                                    <div class="h-full w-full" :style="shapeRenderModel(item).outerStyle"></div>
+                                    <div
+                                        v-if="shapeRenderModel(item).innerStyle"
+                                        class="pointer-events-none absolute inset-0"
+                                        :style="shapeRenderModel(item).innerStyle"
+                                    ></div>
+                                    <svg
+                                        v-if="shapeRenderModel(item).svgStroke"
+                                        class="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+                                        viewBox="0 0 100 100"
+                                        preserveAspectRatio="none"
+                                    >
+                                        <polygon
+                                            :points="shapeRenderModel(item).svgStroke.points"
+                                            fill="none"
+                                            :stroke="shapeRenderModel(item).svgStroke.stroke"
+                                            :stroke-width="shapeRenderModel(item).svgStroke.strokeWidth"
+                                            :stroke-dasharray="shapeRenderModel(item).svgStroke.dasharray"
+                                            :stroke-linecap="shapeRenderModel(item).svgStroke.linecap"
+                                            :stroke-linejoin="shapeRenderModel(item).svgStroke.linejoin"
+                                            vector-effect="non-scaling-stroke"
+                                        />
+                                    </svg>
+                                </div>
                             </template>
                         </div>
                     </div>

@@ -173,6 +173,7 @@ const textPropertyTabs = [
 ];
 const visualPropertyTabs = [
   { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
+  { id: 'border', icon: 'radix-icons:border-width', title: 'Borde', class: 'order-first' },
   { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
   { id: 'effects', label: 'Efectos', class: 'order-last' },
   { id: 'arrange', label: 'Posición', class: 'order-last' },
@@ -459,7 +460,10 @@ const selectedPropertyTabs = computed(() => {
   if (state.selectedElementId === 'background') return backgroundPropertyTabs;
   return selectedElementType.value === 'text' ? textPropertyTabs : visualPropertyTabs;
 });
-const activePropertyTitle = computed(() => selectedPropertyTabs.value.find((tab) => tab.id === activePropertyPanel.value)?.label ?? 'Propiedades');
+const activePropertyTitle = computed(() => {
+  const activeTab = selectedPropertyTabs.value.find((tab) => tab.id === activePropertyPanel.value);
+  return activeTab?.title ?? activeTab?.label ?? 'Propiedades';
+});
 const {
   activeTextEffectId,
   activeVisualEffectId,
@@ -481,6 +485,7 @@ const {
   isAspectLockedResizeElement,
   shapeStyleFromKind,
   shapeStyle,
+  shapeRenderModel,
   imageFrameStyle,
   imageTintOverlayStyle,
   elementContentStyle,
@@ -767,6 +772,7 @@ const buildDefaultLayout = (overrides = {}) => ({
   color: '#ffffff',
   shadow: false,
   border: false,
+  borderStyle: 'solid',
   fontFamily: 'Inter, sans-serif',
   opacity: 100,
   fontWeight: 'regular',
@@ -777,7 +783,7 @@ const buildDefaultLayout = (overrides = {}) => ({
   lineHeight: 1.4,
   shadowPreset: 'soft',
   shadowColor: '#0f172a',
-  contourWidth: 0,
+  contourWidth: 2,
   contourColor: '#ffffff',
   hollowText: false,
   neonColor: '',
@@ -1702,6 +1708,7 @@ watch(selectedGroupId, (groupId) => {
             :image-frame-style="imageFrameStyle"
             :image-tint-overlay-style="imageTintOverlayStyle"
             :shape-style="shapeStyle"
+            :shape-render-model="shapeRenderModel"
             :canvas-ref-setter="setCanvasRef"
             :rich-editor-ref-setter="setRichEditorRef"
             @canvas-pointer-down="handleCanvasPointerDown"

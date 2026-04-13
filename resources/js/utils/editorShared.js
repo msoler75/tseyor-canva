@@ -2,6 +2,18 @@ export const BASE_TEXT_ELEMENT_IDS = new Set(['title', 'subtitle', 'meta', 'cont
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
+export function buildBorderCss(layout = {}, { defaultColor = '#ffffff', fallbackWhenDisabled = '0' } = {}) {
+  if (!layout.border) {
+    return fallbackWhenDisabled;
+  }
+
+  const width = Math.max(1, Number(layout.contourWidth || 1));
+  const style = layout.borderStyle || 'solid';
+  const color = layout.contourColor || defaultColor;
+
+  return `${width}px ${style} ${color}`;
+}
+
 export function buildEditorElements(state) {
   const metaText = [state.content?.date, state.content?.time].filter(Boolean).join(' · ');
   const baseTextElements = [
@@ -305,12 +317,87 @@ export function buildShapeStyle(layout = {}, shapeKind, shapeClipPaths = {}) {
     height: '100%',
     background: fill,
     boxShadow: buildVisualShadow(layout),
-    border: layout.border
-      ? `${layout.contourWidth || 1}px solid ${layout.contourColor || '#ffffff'}`
-      : '0',
+    border: buildBorderCss(layout, { defaultColor: '#ffffff', fallbackWhenDisabled: '0' }),
   };
 
   return buildShapeStyleFromKind(shapeKind, base, shapeClipPaths);
+}
+
+export function buildShapeRenderModel(layout = {}, shapeKind, shapeClipPaths = {}) {
+  const clipPath = shapeClipPaths[shapeKind] ?? null;
+  const usesClipPath = Boolean(clipPath);
+  const borderWidth = Math.max(1, Number(layout.contourWidth || 1));
+  const fill = layout.fillMode === 'gradient'
+    ? `linear-gradient(${layout.gradientAngle || 135}deg, ${layout.gradientStart || '#0ea5e9'}, ${layout.gradientEnd || '#8b5cf6'})`
+    : (layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : '#ffffff');
+
+  if (!layout.border || !usesClipPath) {
+    return {
+      outerStyle: buildShapeStyle(layout, shapeKind, shapeClipPaths),
+      innerStyle: null,
+      svgStroke: null,
+    };
+  }
+
+  const polygonMatch = clipPath.match(/^polygon\((.+)\)$/i);
+  const points = polygonMatch
+    ? polygonMatch[1]
+        .split(',')
+        .map((point) => point.trim().replace(/\s+/g, ' '))
+        .map((point) => point.replace(/%/g, ''))
+        .join(' ')
+    : null;
+
+  if ((layout.borderStyle === 'dashed' || layout.borderStyle === 'dotted') && points) {
+    return {
+      outerStyle: buildShapeStyleFromKind(shapeKind, {
+        width: '100%',
+        height: '100%',
+        background: fill,
+        boxShadow: buildVisualShadow(layout),
+        border: '0',
+      }, shapeClipPaths),
+      innerStyle: null,
+      svgStroke: {
+        points,
+        stroke: layout.contourColor || '#ffffff',
+        strokeWidth: borderWidth,
+        dasharray: layout.borderStyle === 'dashed'
+          ? `${borderWidth * 4} ${borderWidth * 2}`
+          : `0 ${borderWidth * 2.2}`,
+        linecap: layout.borderStyle === 'dotted' ? 'round' : 'butt',
+        linejoin: 'round',
+      },
+    };
+  }
+
+  const width = Math.max(1, Number(layout.w || 1));
+  const height = Math.max(1, Number(layout.h || 1));
+  const scaleX = Math.max(0.1, (width - (borderWidth * 2)) / width);
+  const scaleY = Math.max(0.1, (height - (borderWidth * 2)) / height);
+
+  const outerStyle = buildShapeStyleFromKind(shapeKind, {
+    width: '100%',
+    height: '100%',
+    background: layout.contourColor || '#ffffff',
+    boxShadow: buildVisualShadow(layout),
+    border: '0',
+  }, shapeClipPaths);
+
+  const innerStyle = buildShapeStyleFromKind(shapeKind, {
+    width: '100%',
+    height: '100%',
+    background: fill,
+    border: '0',
+    transform: `scale(${scaleX}, ${scaleY})`,
+    transformOrigin: 'center center',
+  }, shapeClipPaths);
+
+  return {
+    outerStyle,
+    innerStyle,
+    svgStroke: null,
+  };
 }
 
 export function buildImageFrameStyle(layout = {}) {
@@ -320,9 +407,7 @@ export function buildImageFrameStyle(layout = {}) {
     overflow: 'hidden',
     borderRadius: '12px',
     backgroundColor: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : 'rgba(255,255,255,0.2)',
-    border: layout.border
-      ? `${layout.contourWidth || 1}px solid ${layout.contourColor || '#ffffff'}`
-      : '1px solid rgba(255,255,255,0.4)',
+    border: buildBorderCss(layout, { defaultColor: '#ffffff', fallbackWhenDisabled: '0' }),
     boxShadow: buildVisualShadow(layout),
   };
 }

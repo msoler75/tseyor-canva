@@ -6,6 +6,7 @@ import {
   buildImageFrameStyle,
   buildImageTintOverlayStyle,
   buildRichEditorContainerStyle,
+  buildShapeRenderModel,
   buildShapeStyle,
   buildShapeStyleFromKind,
   buildVisualShadow,
@@ -19,6 +20,7 @@ const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 export const useEditorStyles = ({
   state,
   selectedElement,
+  selectedElementType,
   hasTextSelection,
   textEffectOptions,
   getParagraphStyleFields,
@@ -281,6 +283,40 @@ export const useEditorStyles = ({
     applyVisualEffectPreset(selectedElement.value, nextEffectId);
   };
 
+  const toComplementaryColor = (value, fallback = '#7c3aed') => {
+    const normalized = normalizePickerColor(value, fallback);
+    const r = 255 - Number.parseInt(normalized.slice(1, 3), 16);
+    const g = 255 - Number.parseInt(normalized.slice(3, 5), 16);
+    const b = 255 - Number.parseInt(normalized.slice(5, 7), 16);
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  };
+
+  const getInitialBorderColor = () => {
+    if (!selectedElement.value) return '#ffffff';
+    if (selectedElementType?.value === 'image') return '#facc15';
+
+    const shapeBaseColor = selectedElement.value.fillMode === 'gradient'
+      ? (selectedElement.value.gradientStart || '#0ea5e9')
+      : (selectedElement.value.backgroundColor && selectedElement.value.backgroundColor !== 'transparent'
+        ? selectedElement.value.backgroundColor
+        : '#0ea5e9');
+
+    return toComplementaryColor(shapeBaseColor, '#7c3aed');
+  };
+
+  const activateBorderStyle = (style = 'solid') => {
+    if (!selectedElement.value) return;
+    const wasEnabled = !!selectedElement.value.border;
+
+    selectedElement.value.border = true;
+    selectedElement.value.borderStyle = style;
+    selectedElement.value.contourWidth = Math.max(1, Number(selectedElement.value.contourWidth || 2));
+
+    if (!wasEnabled && (!selectedElement.value.contourColor || selectedElement.value.contourColor === '#ffffff')) {
+      selectedElement.value.contourColor = getInitialBorderColor();
+    }
+  };
+
   const textEffectPreviewStyle = (effectId) => {
     const base = {
       color: '#7c3aed',
@@ -395,6 +431,7 @@ export const useEditorStyles = ({
   const shapeStyleFromKind = (shapeKind, base) => buildShapeStyleFromKind(shapeKind, base, shapeClipPaths);
 
   const shapeStyle = (item) => buildShapeStyle(state.elementLayout[item.id], item.shapeKind, shapeClipPaths);
+  const shapeRenderModel = (item) => buildShapeRenderModel(state.elementLayout[item.id], item.shapeKind, shapeClipPaths);
 
   const elementBoxStyle = (id) => {
     const layout = state.elementLayout[id];
@@ -434,6 +471,7 @@ export const useEditorStyles = ({
     setSelectedColor,
     setTextEffect,
     setVisualEffect,
+    activateBorderStyle,
     textEffectPreviewStyle,
     visualEffectPreviewStyle,
     applyGradientPreset,
@@ -445,6 +483,7 @@ export const useEditorStyles = ({
     isAspectLockedResizeElement,
     shapeStyleFromKind,
     shapeStyle,
+    shapeRenderModel,
     imageFrameStyle,
     imageTintOverlayStyle,
     elementContentStyle,

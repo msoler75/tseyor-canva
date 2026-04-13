@@ -611,6 +611,53 @@ const closePanel = () => emit('closePanel');
                         <div class="h-8 flex-1 min-w-28 rounded-full border border-base-300/70" :style="{ background: `linear-gradient(${selectedElement.gradientAngle || 135}deg, ${selectedElement.gradientStart || '#0ea5e9'}, ${selectedElement.gradientEnd || '#8b5cf6'})` }"></div>
                       </div>
                     </div>
+
+                    <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3 space-y-3">
+                      <div class="flex items-center justify-between gap-3">
+                        <div>
+                          <p class="text-sm font-semibold text-base-content">Borde</p>
+                          <p class="text-xs text-base-content/60">Activa o quita el trazo y ajusta su estilo.</p>
+                        </div>
+                        <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                          {{ selectedElement.border ? (selectedElement.borderStyle || 'solid') : 'sin borde' }}
+                        </span>
+                      </div>
+
+                      <div class="flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-sm rounded-full" :class="!selectedElement.border ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = false">Sin borde</button>
+                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && (selectedElement.borderStyle || 'solid') === 'solid' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'solid'; selectedElement.contourWidth = Math.max(1, Number(selectedElement.contourWidth || 2))">S?lido</button>
+                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dashed' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dashed'; selectedElement.contourWidth = Math.max(1, Number(selectedElement.contourWidth || 2))">Dashed</button>
+                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dotted' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dotted'; selectedElement.contourWidth = Math.max(1, Number(selectedElement.contourWidth || 2))">Dotted</button>
+                      </div>
+
+                      <template v-if="selectedElement.border">
+                        <div class="space-y-2">
+                          <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
+                          <div class="flex items-center gap-3">
+                          <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="30" step="1" class="range range-primary flex-1" @change="selectedElement.contourWidth = Math.max(1, Number(selectedElement.contourWidth || 2))" />
+                          <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="30" step="1" class="input input-bordered input-sm w-20" @change="selectedElement.contourWidth = Math.max(1, Number(selectedElement.contourWidth || 2))" />
+                          </div>
+                        </div>
+                        <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                          <div class="flex items-center gap-2">
+                            <input
+                              type="color"
+                              class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                              :value="normalizePickerColor(selectedElement.contourColor || '#ffffff', '#ffffff')"
+                              @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
+                            />
+                            <input
+                              :value="selectedElement.contourColor || '#ffffff'"
+                              type="text"
+                              placeholder="#ffffff"
+                              class="input input-bordered input-sm flex-1"
+                              @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
+                            />
+                          </div>
+                        </div>
+                      </template>
+                    </div>
                   </div>
 
                   <div v-else>
@@ -685,6 +732,53 @@ const closePanel = () => emit('closePanel');
                           <input v-model.number="selectedElement.imageTintStrength" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-20" />
                         </div>
                       </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-base-300/70 bg-base-100/60 p-3 space-y-3">
+                      <div class="flex items-center justify-between gap-3">
+                        <div>
+                          <p class="text-sm font-semibold text-base-content">Borde</p>
+                          <p class="text-xs text-base-content/60">Activa o quita el trazo y ajusta su estilo.</p>
+                        </div>
+                        <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                          {{ selectedElement.border ? (selectedElement.borderStyle || 'solid') : 'sin borde' }}
+                        </span>
+                      </div>
+
+                      <div class="flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-sm rounded-full" :class="!selectedElement.border ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = false">Sin borde</button>
+                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && (selectedElement.borderStyle || 'solid') === 'solid' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'solid'">S?lido</button>
+                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dashed' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dashed'">Dashed</button>
+                        <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dotted' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dotted'">Dotted</button>
+                      </div>
+
+                      <template v-if="selectedElement.border">
+                        <div class="space-y-2">
+                          <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
+                          <div class="flex items-center gap-3">
+                            <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="30" step="1" class="range range-primary flex-1" />
+                            <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="30" step="1" class="input input-bordered input-sm w-20" />
+                          </div>
+                        </div>
+                        <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                          <div class="flex items-center gap-2">
+                            <input
+                              type="color"
+                              class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                              :value="normalizePickerColor(selectedElement.contourColor || '#ffffff', '#ffffff')"
+                              @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
+                            />
+                            <input
+                              :value="selectedElement.contourColor || '#ffffff'"
+                              type="text"
+                              placeholder="#ffffff"
+                              class="input input-bordered input-sm flex-1"
+                              @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
+                            />
+                          </div>
+                        </div>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -1083,6 +1177,55 @@ const closePanel = () => emit('closePanel');
 
                   <template v-else>
                     <p class="text-sm text-base-content/70">Los efectos disponibles aqui aplican a texto, imagenes y figuras segun el tipo seleccionado.</p>
+                  </template>
+                </div>
+              </div>
+
+              <div v-else-if="activePropertyPanel === 'border' && (selectedElementType === 'shape' || selectedElementType === 'image')" class="card border border-base-300 bg-base-100/80">
+                <div class="card-body p-4 space-y-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-semibold text-base-content">Borde</p>
+                      <p class="text-xs text-base-content/60">Activa o quita el trazo y ajusta su estilo.</p>
+                    </div>
+                    <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                      {{ selectedElement.border ? (selectedElement.borderStyle || 'solid') : 'sin borde' }}
+                    </span>
+                  </div>
+
+                  <div class="flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-sm rounded-full" :class="!selectedElement.border ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = false">Sin borde</button>
+                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && (selectedElement.borderStyle || 'solid') === 'solid' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'solid'">S?lido</button>
+                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dashed' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dashed'">Dashed</button>
+                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dotted' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dotted'">Dotted</button>
+                  </div>
+
+                  <template v-if="selectedElement.border">
+                    <div class="space-y-2">
+                      <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Grosor</label>
+                      <div class="flex items-center gap-3">
+                        <input v-model.number="selectedElement.contourWidth" type="range" min="1" max="30" step="1" class="range range-primary flex-1" />
+                        <input v-model.number="selectedElement.contourWidth" type="number" min="1" max="30" step="1" class="input input-bordered input-sm w-20" />
+                      </div>
+                    </div>
+                    <div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Color</label>
+                      <div class="flex items-center gap-2">
+                        <input
+                          type="color"
+                          class="h-10 w-12 cursor-pointer rounded-xl border border-base-300 bg-base-100 p-1"
+                          :value="normalizePickerColor(selectedElement.contourColor || '#ffffff', '#ffffff')"
+                          @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
+                        />
+                        <input
+                          :value="selectedElement.contourColor || '#ffffff'"
+                          type="text"
+                          placeholder="#ffffff"
+                          class="input input-bordered input-sm flex-1"
+                          @input="selectedElement.border = true; setSelectedColor('contourColor', $event.target.value)"
+                        />
+                      </div>
+                    </div>
                   </template>
                 </div>
               </div>

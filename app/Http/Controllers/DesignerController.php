@@ -92,6 +92,7 @@ class DesignerController extends Controller
             'state.elementLayout.*.color' => ['nullable', 'string', 'max:32'],
             'state.elementLayout.*.shadow' => ['nullable', 'boolean'],
             'state.elementLayout.*.border' => ['nullable', 'boolean'],
+            'state.elementLayout.*.borderStyle' => ['nullable', 'string', 'in:solid,dashed,dotted'],
             'state.elementLayout.*.fontFamily' => ['nullable', 'string', 'max:120'],
             'state.elementLayout.*.opacity' => ['nullable', 'numeric', 'between:0,100'],
             'state.elementLayout.*.fontWeight' => ['nullable', 'string', 'max:20'],
