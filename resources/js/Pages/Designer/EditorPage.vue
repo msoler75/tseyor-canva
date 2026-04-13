@@ -472,6 +472,7 @@ const {
   swapGradientStops,
   applyShapeGradientPreset,
   swapShapeGradientStops,
+  elementBoxStyle,
   isTextElement,
   isAspectLockedResizeElement,
   shapeStyleFromKind,
@@ -966,22 +967,6 @@ const addShapeElement = (shapeKind) => {
     [id]: layout,
   };
   state.selectedElementId = id;
-};
-
-const elementBoxStyle = (id) => {
-    const layout = state.elementLayout[id];
-  const isText = isTextElement(id);
-  const rotation = Number(layout.rotation ?? 0);
-
-    return {
-        left: `${layout.x}px`,
-        top: `${layout.y}px`,
-        width: `${layout.w}px`,
-    height: isText ? 'auto' : `${layout.h ?? 140}px`,
-        zIndex: `${layout.zIndex ?? 1}`,
-    transform: `rotate(${rotation}deg)`,
-    transformOrigin: 'center center',
-    };
 };
 
 const getEstimatedTextHeight = (layout, text = '') => ensureParagraphStyles(layout, text)
