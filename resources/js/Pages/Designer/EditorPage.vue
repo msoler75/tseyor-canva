@@ -43,7 +43,6 @@ const paragraphSelection = reactive({ start: 0, end: 0, active: false });
 const activePropertyPanel = ref(null);
 const toolbarPosition = reactive({ x: 0, y: 3 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
-let longPressTimer = null;
 const drag = reactive({
     active: false,
     mode: 'move',
@@ -653,10 +652,6 @@ const activeParagraphLabel = computed(() => {
     return `Párrafos ${Math.min(first, last)}-${Math.max(first, last)} de ${n}`;
 });
 
-const clampToolbar = () => {
-    // Sin restricciones de movimiento - libertad de arrastre completa
-};
-
 const getMaxZIndex = () => Object.values(state.elementLayout).reduce((max, layout) => Math.max(max, layout?.zIndex ?? 0), 0);
 const resolvedSizeOption = computed(() => {
   const objectiveRules = objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic;
@@ -854,31 +849,9 @@ const addTextElement = (presetId) => {
   state.selectedElementId = id;
 };
 
-const openImagePanel = () => {
-  imagePanelOpen.value = true;
-  imagePanelTab.value = 'insert';
-};
-
 const closeImagePanel = () => {
   imagePanelOpen.value = false;
   imageUrlInput.value = '';
-};
-
-const openShapePanel = () => {
-  shapePanelOpen.value = true;
-  shapeCategoryFilter.value = 'all';
-};
-
-const closeShapePanel = () => {
-  shapePanelOpen.value = false;
-};
-
-const openTextPanel = () => {
-  textPanelOpen.value = true;
-};
-
-const closeTextPanel = () => {
-  textPanelOpen.value = false;
 };
 
 const addImageElementFromSrc = (src, label = 'Imagen') => {
@@ -1691,7 +1664,6 @@ watch(selectedGroupId, (groupId) => {
             :background-options="backgroundOptions"
             :text-effect-rows="textEffectRows"
             :active-text-effect-id="activeTextEffectId"
-            :text-effect-options="textEffectOptions"
             :text-effect-card-font-family="textEffectCardFontFamily"
             :text-effect-preview-style="textEffectPreviewStyle"
             :shape-gradient-options="shapeGradientOptions"

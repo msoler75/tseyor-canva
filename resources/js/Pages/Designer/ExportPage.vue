@@ -190,20 +190,6 @@ function normalizePickerColor(value, fallback = '#ffffff') {
     return fallback;
 }
 
-function blendHexWithWhite(hexColor, amountPercent = 40) {
-    if (typeof hexColor !== 'string') return '#ffffff';
-
-    const normalized = normalizePickerColor(hexColor, '#ffffff');
-    const amount = clamp(Number(amountPercent), 0, 100) / 100;
-    const channel = (index) => Number.parseInt(normalized.slice(index, index + 2), 16);
-    const mix = (value) => Math.round(value + (255 - value) * amount).toString(16).padStart(2, '0');
-
-    const r = mix(channel(1));
-    const g = mix(channel(3));
-    const b = mix(channel(5));
-    return `#${r}${g}${b}`;
-}
-
 function getTextEffectStrokeWidth(layout = {}) {
     const mode = layout?.textEffectMode;
     const isTextEffectStrokeMode = mode === 'outline' || mode === 'hollow' || mode === 'misaligned';
@@ -522,37 +508,6 @@ function neonColorOverride(id) {
     const layout = state.elementLayout[id] ?? {};
     if (!layout || layout.textEffectMode !== 'neon' || layout.hollowText) return null;
     return '#ffffff';
-}
-
-function paragraphContentStyle(id, index) {
-    const layout = state.elementLayout[id] ?? {};
-    const paragraphStyle = getParagraphStyleForElement(id, index);
-    const baseColor = paragraphStyle.color ?? layout.color ?? '#ffffff';
-    const isNeon = layout.textEffectMode === 'neon' && !layout.hollowText;
-    const displayColor = layout.hollowText
-        ? 'transparent'
-        : (isNeon ? '#ffffff' : baseColor);
-
-    return {
-        margin: '0',
-        padding: '0',
-        boxSizing: 'border-box',
-        textIndent: '0',
-        display: 'block',
-        fontSize: `${paragraphStyle.fontSize}px`,
-        color: displayColor,
-        WebkitTextFillColor: layout.hollowText ? 'transparent' : undefined,
-        fontFamily: paragraphStyle.fontFamily,
-        fontStyle: paragraphStyle.italic ? 'italic' : 'normal',
-        fontWeight: paragraphStyle.fontWeight === 'bold' ? '700' : '500',
-        textAlign: paragraphStyle.textAlign,
-        textTransform: paragraphStyle.uppercase ? 'uppercase' : 'none',
-        letterSpacing: `${paragraphStyle.letterSpacing}px`,
-        lineHeight: `${paragraphStyle.lineHeight}`,
-        textShadow: buildTextShadow(layout, baseColor),
-        WebkitTextStroke: layout.border && layout.hollowText ? `${layout.contourWidth || 1}px ${baseColor}` : '0',
-        whiteSpace: 'pre-wrap',
-    };
 }
 
 function shapeStyleFromKind(shapeKind, base) {
