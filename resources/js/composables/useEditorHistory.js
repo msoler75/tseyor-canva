@@ -55,6 +55,7 @@ export const useEditorHistory = ({
   const historyMeta = ref([]);
   const historyIndex = ref(-1);
   const historyApplying = ref(false);
+  const historyMuted = ref(false);
   let historyTimer = null;
 
   const buildHistorySnapshot = () => ({
@@ -168,7 +169,7 @@ export const useEditorHistory = ({
 
   const pushHistorySnapshot = (options = {}) => {
     const { force = false, allowCoalesce = false } = options;
-    if (historyApplying.value) return;
+    if (historyApplying.value || historyMuted.value) return;
 
     const snapshot = buildHistorySnapshot();
     const serializedSnapshot = JSON.stringify(snapshot);
@@ -208,7 +209,7 @@ export const useEditorHistory = ({
   };
 
   const scheduleHistorySnapshot = () => {
-    if (historyApplying.value) return;
+    if (historyApplying.value || historyMuted.value) return;
 
     if (historyTimer) {
       clearTimeout(historyTimer);
@@ -235,6 +236,46 @@ export const useEditorHistory = ({
     nextTick(() => {
       historyApplying.value = false;
     });
+  };
+
+  const replaceImageAssetSource = ({ assetId = null, previousSrc = null, nextSrc, storagePath = null }) => {
+    if (!nextSrc) return;
+
+    historyStack.value = historyStack.value.map((snapshot) => {
+      const nextSnapshot = cloneSnapshotValue(snapshot);
+
+      Object.entries(nextSnapshot.customElements ?? {}).forEach(([id, element]) => {
+        if (!element || element.type !== 'image') return;
+
+        const sameAsset = assetId && element.assetId === assetId;
+        const sameSource = previousSrc && (element.src === previousSrc || element.pendingDataUrl === previousSrc);
+
+        if (!sameAsset && !sameSource) {
+          return;
+        }
+
+        nextSnapshot.customElements[id] = {
+          ...element,
+          src: nextSrc,
+          pendingDataUrl: null,
+          storagePath,
+          needsUpload: false,
+        };
+      });
+
+      return nextSnapshot;
+    });
+  };
+
+  const mutateWithoutHistory = async (callback) => {
+    historyMuted.value = true;
+
+    try {
+      callback();
+      await nextTick();
+    } finally {
+      historyMuted.value = false;
+    }
   };
 
   const performUndo = () => {
@@ -282,5 +323,7 @@ export const useEditorHistory = ({
     scheduleHistorySnapshot,
     performUndo,
     performRedo,
+    replaceImageAssetSource,
+    mutateWithoutHistory,
   };
 };

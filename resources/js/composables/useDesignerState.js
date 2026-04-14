@@ -12,6 +12,31 @@ let saveInFlight = false;
 let queuedSave = null;
 let currentSaveEndpoint = '/designer/state';
 
+function normalizeUploadedAssetUrl(value) {
+    if (typeof value !== 'string' || !value) {
+        return value;
+    }
+
+    try {
+        const url = new URL(value, window.location.origin);
+
+        if (url.pathname.startsWith('/storage/designer/uploads/')) {
+            url.pathname = `/designer${url.pathname}`;
+            return url.toString();
+        }
+
+        return typeof window !== 'undefined' && value.startsWith('/')
+            ? `${window.location.origin}${url.pathname}${url.search}${url.hash}`
+            : value;
+    } catch {
+        if (value.startsWith('/storage/designer/uploads/')) {
+            return `/designer${value}`;
+        }
+
+        return value;
+    }
+}
+
 export function useDesignerState() {
     const page = usePage();
     const sessionState = page.props.designer?.state ?? null;
@@ -72,6 +97,7 @@ function buildInitialState(sessionState) {
         },
         elementLayout: mergedElementLayout,
         customElements: normalizeCustomElements(sessionState.customElements, mergedElementLayout),
+        userUploadedImages: normalizeUserUploadedImages(sessionState.userUploadedImages),
     };
 }
 
@@ -82,7 +108,16 @@ function normalizeCustomElements(customElements, elementLayout) {
         return Object.fromEntries(
             Object.entries(customElements).map(([id, element]) => [
                 id,
-                { ...(element ?? {}), id: String((element ?? {}).id ?? id) },
+                {
+                    ...(element ?? {}),
+                    id: String((element ?? {}).id ?? id),
+                    src: normalizeUploadedAssetUrl((element ?? {}).src),
+                    assetId: (element ?? {}).assetId ? String((element ?? {}).assetId) : null,
+                    pendingDataUrl: typeof (element ?? {}).pendingDataUrl === 'string' ? (element ?? {}).pendingDataUrl : null,
+                    storagePath: typeof (element ?? {}).storagePath === 'string' ? (element ?? {}).storagePath : null,
+                    uploadStatus: typeof (element ?? {}).uploadStatus === 'string' ? (element ?? {}).uploadStatus : null,
+                    needsUpload: Boolean((element ?? {}).needsUpload),
+                },
             ])
         );
     }
@@ -96,10 +131,36 @@ function normalizeCustomElements(customElements, elementLayout) {
         normalized[String(candidateId)] = {
             ...element,
             id: String(candidateId),
+            src: normalizeUploadedAssetUrl(element.src),
+            assetId: element.assetId ? String(element.assetId) : null,
+            pendingDataUrl: typeof element.pendingDataUrl === 'string' ? element.pendingDataUrl : null,
+            storagePath: typeof element.storagePath === 'string' ? element.storagePath : null,
+            uploadStatus: typeof element.uploadStatus === 'string' ? element.uploadStatus : null,
+            needsUpload: Boolean(element.needsUpload),
         };
     });
 
     return normalized;
+}
+
+function normalizeUserUploadedImages(userUploadedImages) {
+    if (!Array.isArray(userUploadedImages)) {
+        return [];
+    }
+
+    return userUploadedImages
+        .filter((image) => image && typeof image === 'object')
+        .map((image, index) => ({
+            id: String(image.id ?? image.assetId ?? `upload-${index}`),
+            assetId: String(image.assetId ?? image.id ?? `upload-${index}`),
+            label: image.label == null ? 'Subida' : String(image.label),
+            src: image.src == null ? '' : normalizeUploadedAssetUrl(String(image.src)),
+            pendingDataUrl: typeof image.pendingDataUrl === 'string' ? image.pendingDataUrl : null,
+            storagePath: typeof image.storagePath === 'string' ? image.storagePath : null,
+            uploadStatus: typeof image.uploadStatus === 'string' ? image.uploadStatus : 'done',
+            needsUpload: Boolean(image.needsUpload),
+            errorMessage: image.errorMessage == null ? null : String(image.errorMessage),
+        }));
 }
 
 function normalizeContentStrings(content) {
@@ -135,7 +196,6 @@ function bootstrapPersistence(saveEndpoint) {
             saveTimer = setTimeout(async () => {
                 try {
                     const snapshot = JSON.parse(JSON.stringify(designerState));
-                    delete snapshot.userUploadedImages;
                     await persistStateSnapshot(saveEndpoint, snapshot);
                 } catch (error) {
                     console.error('Failed to persist designer session state', error);
@@ -175,6 +235,5 @@ export async function flushDesignerStatePersistence() {
     saveTimer = null;
 
     const snapshot = JSON.parse(JSON.stringify(designerState));
-    delete snapshot.userUploadedImages;
     await persistStateSnapshot(currentSaveEndpoint, snapshot);
 }

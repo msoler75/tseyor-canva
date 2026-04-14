@@ -4,8 +4,12 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DesignerController extends Controller
 {
@@ -141,7 +145,22 @@ class DesignerController extends Controller
             'state.customElements.*.label' => ['nullable', 'string', 'max:120'],
             'state.customElements.*.text' => ['nullable', 'string', 'max:2000'],
             'state.customElements.*.shapeKind' => ['nullable', 'string', 'max:60'],
-            'state.customElements.*.src' => ['nullable', 'string', 'max:4096'],
+            'state.customElements.*.src' => ['nullable', 'string'],
+            'state.customElements.*.assetId' => ['nullable', 'string', 'max:120'],
+            'state.customElements.*.pendingDataUrl' => ['nullable', 'string'],
+            'state.customElements.*.storagePath' => ['nullable', 'string', 'max:1024'],
+            'state.customElements.*.uploadStatus' => ['nullable', 'string', 'in:pending,uploading,done,error'],
+            'state.customElements.*.needsUpload' => ['nullable', 'boolean'],
+            'state.userUploadedImages' => ['nullable', 'array'],
+            'state.userUploadedImages.*.id' => ['nullable', 'string', 'max:120'],
+            'state.userUploadedImages.*.label' => ['nullable', 'string', 'max:255'],
+            'state.userUploadedImages.*.src' => ['nullable', 'string'],
+            'state.userUploadedImages.*.assetId' => ['nullable', 'string', 'max:120'],
+            'state.userUploadedImages.*.pendingDataUrl' => ['nullable', 'string'],
+            'state.userUploadedImages.*.storagePath' => ['nullable', 'string', 'max:1024'],
+            'state.userUploadedImages.*.uploadStatus' => ['nullable', 'string', 'in:pending,uploading,done,error'],
+            'state.userUploadedImages.*.needsUpload' => ['nullable', 'boolean'],
+            'state.userUploadedImages.*.errorMessage' => ['nullable', 'string', 'max:255'],
         ]);
 
         $request->session()->put(self::SESSION_KEY, $validated['state']);
@@ -157,6 +176,43 @@ class DesignerController extends Controller
 
         return response()->json([
             'reset' => true,
+        ]);
+    }
+
+    public function storeUpload(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'image', 'max:20480'],
+            'assetId' => ['nullable', 'string', 'max:120'],
+            'label' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $file = $validated['file'];
+        $sessionFolder = trim((string) $request->session()->getId());
+        $folder = sprintf('designer/uploads/%s', $sessionFolder !== '' ? $sessionFolder : 'guest');
+        $extension = $file->guessExtension() ?: $file->extension() ?: 'bin';
+        $filename = sprintf('%s.%s', Str::uuid()->toString(), $extension);
+        $path = $file->storeAs($folder, $filename, 'public');
+
+        return response()->json([
+            'uploaded' => true,
+            'assetId' => $validated['assetId'] ?? null,
+            'label' => $validated['label'] ?? $file->getClientOriginalName(),
+            'path' => $path,
+            'url' => route('designer.uploads.show', ['path' => $path]),
+        ]);
+    }
+
+    public function showUpload(string $path): BinaryFileResponse
+    {
+        abort_unless(Storage::disk('public')->exists($path), 404);
+
+        $absolutePath = Storage::disk('public')->path($path);
+        $mimeType = File::mimeType($absolutePath) ?: 'application/octet-stream';
+
+        return response()->file($absolutePath, [
+            'Content-Type' => $mimeType,
+            'Cache-Control' => 'public, max-age=31536000',
         ]);
     }
 

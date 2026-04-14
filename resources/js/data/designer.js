@@ -298,4 +298,5 @@ export const initialDesignerState = {
         contact: { x: 36, y: 368, w: 230, zIndex: 20, fontSize: 15, color: '#e9d5ff', shadow: false, border: false, fontFamily: 'Inter, sans-serif', opacity: 100, fontWeight: 'regular', italic: false, uppercase: false, textAlign: 'left', letterSpacing: 0, lineHeight: 1.3, shadowPreset: 'soft', shadowColor: '#0f172a', contourWidth: 0, contourColor: '#ffffff', neonColor: '', bubbleColor: '', backgroundColor: 'transparent' },
         extra: { x: 36, y: 410, w: 270, zIndex: 10, fontSize: 15, color: '#ede9fe', shadow: false, border: false, fontFamily: 'Inter, sans-serif', opacity: 100, fontWeight: 'regular', italic: false, uppercase: false, textAlign: 'left', letterSpacing: 0, lineHeight: 1.4, shadowPreset: 'soft', shadowColor: '#0f172a', contourWidth: 0, contourColor: '#ffffff', neonColor: '', bubbleColor: '', backgroundColor: 'transparent' },
     },
+    userUploadedImages: [],
 };

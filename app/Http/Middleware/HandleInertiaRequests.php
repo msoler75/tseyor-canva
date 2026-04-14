@@ -43,6 +43,13 @@ class HandleInertiaRequests extends Middleware
                 'endpoints' => [
                     'save' => route('designer.state.save'),
                     'reset' => route('designer.state.reset'),
+                    'upload' => route('designer.uploads.store'),
+                ],
+                'imageUploads' => [
+                    'maxWidth' => config('designer.image_uploads.max_width'),
+                    'maxHeight' => config('designer.image_uploads.max_height'),
+                    'jpegQuality' => config('designer.image_uploads.jpeg_quality'),
+                    'webpQuality' => config('designer.image_uploads.webp_quality'),
                 ],
             ],
         ];

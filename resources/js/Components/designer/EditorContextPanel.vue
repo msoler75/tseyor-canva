@@ -48,6 +48,8 @@ const props = defineProps({
   addImageFromUrl: Function,
   addLibraryImage: Function,
   addUploadedImage: Function,
+  getUploadProgress: Function,
+  retryUploadedImage: Function,
   addShapeElement: Function,
   applyGradientPreset: Function,
   applyShapeGradientPreset: Function,
@@ -101,6 +103,8 @@ const {
   addImageFromUrl,
   addLibraryImage,
   addUploadedImage,
+  getUploadProgress,
+  retryUploadedImage,
   addShapeElement,
   applyGradientPreset,
   applyShapeGradientPreset,
@@ -189,9 +193,10 @@ const closePanel = () => emit('closePanel');
                         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Desde tu disco</p>
                         <button type="button" class="btn btn-primary mt-3 w-full rounded-xl" @click="triggerImagePicker">
                           <Icon icon="mdi:folder-image" class="text-xl" />
-                          Seleccionar archivo
+                          Seleccionar imágenes
                         </button>
-                        <input :ref="imageInputRefSetter" type="file" accept="image/*" class="hidden" @change="onImagePicked" />
+                        <p class="mt-2 text-[11px] text-base-content/60">Puedes elegir varias imágenes; se subirán al servidor en segundo plano.</p>
+                        <input :ref="imageInputRefSetter" type="file" accept="image/*" multiple class="hidden" @change="onImagePicked" />
                       </div>
                       <div class="rounded-xl border border-base-300/70 bg-base-100/60 p-3">
                         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Desde una URL</p>
@@ -226,11 +231,47 @@ const closePanel = () => emit('closePanel');
                           v-for="image in state.userUploadedImages"
                           :key="image.id"
                           type="button"
-                          class="group overflow-hidden rounded-xl border border-base-300/70 bg-base-100/70"
+                          class="group relative overflow-hidden rounded-xl border border-base-300/70 bg-base-100/70 text-left"
                           @click="addUploadedImage(image)"
                         >
                           <img :src="image.src" :alt="image.label" class="h-20 w-full object-cover transition group-hover:scale-105" />
-                          <span class="block truncate px-2 py-1 text-[11px] text-base-content/70">{{ image.label }}</span>
+                          <div class="px-2 py-1.5">
+                            <div class="flex items-start justify-between gap-2">
+                              <span class="block truncate text-[11px] text-base-content/70">{{ image.label }}</span>
+                              <span
+                                class="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em]"
+                                :class="image.uploadStatus === 'done'
+                                  ? 'bg-emerald-500/15 text-emerald-700'
+                                  : image.uploadStatus === 'error'
+                                    ? 'bg-red-500/15 text-red-600'
+                                    : 'bg-amber-500/15 text-amber-700'"
+                              >
+                                {{ image.uploadStatus === 'done' ? 'OK' : image.uploadStatus === 'error' ? 'Error' : 'Subiendo' }}
+                              </span>
+                            </div>
+                            <div v-if="image.uploadStatus !== 'done'" class="mt-2">
+                              <div class="h-1.5 overflow-hidden rounded-full bg-base-300/70">
+                                <div
+                                  class="h-full rounded-full bg-primary transition-all"
+                                  :style="{ width: `${getUploadProgress?.(image.assetId ?? image.id) ?? 0}%` }"
+                                ></div>
+                              </div>
+                              <div class="mt-1 flex items-center justify-between gap-2">
+                                <span class="text-[10px] text-base-content/60">
+                                  {{ getUploadProgress?.(image.assetId ?? image.id) ?? 0 }}%
+                                </span>
+                                <button
+                                  v-if="image.uploadStatus === 'error'"
+                                  type="button"
+                                  class="btn btn-ghost btn-xs min-h-0 h-auto px-1.5 py-0.5 text-[10px]"
+                                  @click.stop="retryUploadedImage(image)"
+                                >
+                                  Reintentar
+                                </button>
+                              </div>
+                              <p v-if="image.errorMessage" class="mt-1 text-[10px] text-red-600">{{ image.errorMessage }}</p>
+                            </div>
+                          </div>
                         </button>
                       </div>
                       <div v-else class="rounded-xl border border-base-300/70 bg-base-100/70 p-3 text-xs text-base-content/65">

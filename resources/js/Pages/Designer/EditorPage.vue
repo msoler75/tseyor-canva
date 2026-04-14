@@ -1,5 +1,7 @@
 ﻿<script setup>
+import axios from 'axios';
 import { Icon } from '@iconify/vue';
+import { usePage } from '@inertiajs/vue3';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
 import EditorTopBar from '../../Components/designer/EditorTopBar.vue';
 import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.vue';
@@ -14,8 +16,10 @@ import { useEditorHistory } from '../../composables/useEditorHistory';
 import { useEditorStyles } from '../../composables/useEditorStyles';
 import { useEditorSelection } from '../../composables/useEditorSelection';
 import { useEditorInteractions } from '../../composables/useEditorInteractions';
+import { dataUrlToFile, extractImageFilesFromDataTransfer, fileToDataUrl, hasFilesInTransfer, isDataImageUrl, isEditableTarget, optimizeImageFile } from '../../utils/imageUploads';
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
+const page = usePage();
 const state = useDesignerState();
 if (!state.customElements || Array.isArray(state.customElements)) {
   state.customElements = Object.fromEntries(Object.entries(state.customElements ?? {}));
@@ -23,6 +27,13 @@ if (!state.customElements || Array.isArray(state.customElements)) {
 if (!state.userUploadedImages) {
   state.userUploadedImages = [];
 }
+const uploadEndpoint = computed(() => page.props.designer?.endpoints?.upload ?? '/designer/uploads');
+const imageUploadProcessingConfig = computed(() => page.props.designer?.imageUploads ?? {
+  maxWidth: 2400,
+  maxHeight: 2400,
+  jpegQuality: 95,
+  webpQuality: 95,
+});
 const canvasRef = ref(null);
 const zoomLevel = ref(100);
 const imageInputRef = ref(null);
@@ -41,8 +52,11 @@ const editingBoxHeight = ref(null);
 const selectedParagraphIndex = ref(0);
 const paragraphSelection = reactive({ start: 0, end: 0, active: false });
 const activePropertyPanel = ref(null);
+const fileDragActive = ref(false);
 const toolbarPosition = reactive({ x: 0, y: 3 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
+const uploadProgressByAssetId = reactive({});
+const activeUploadAssetIds = new Set();
 const drag = reactive({
     active: false,
     mode: 'move',
@@ -394,6 +408,8 @@ const {
   scheduleHistorySnapshot,
   performUndo,
   performRedo,
+  replaceImageAssetSource,
+  mutateWithoutHistory,
 } = useEditorHistory({
   state,
   editingElementId,
@@ -944,27 +960,157 @@ const closeImagePanel = () => {
   imageUrlInput.value = '';
 };
 
-const addImageElementFromSrc = (src, label = 'Imagen') => {
-  if (!src) return;
+const requestImmediateStateFlush = () => {
+  flushDesignerStatePersistence().catch((error) => {
+    console.error('No se pudo persistir inmediatamente el estado del editor', error);
+  });
+};
 
-  const id = createElementId('image');
-  const layout = buildDefaultLayout({
-    w: 220,
-    h: 160,
-    x: getInsertX(220),
+const getUploadedImageIndexByAssetId = (assetId) => state.userUploadedImages.findIndex(
+  (image) => image?.assetId === assetId || image?.id === assetId
+);
+
+const getUploadedImageByAssetId = (assetId) => {
+  const index = getUploadedImageIndexByAssetId(assetId);
+  return index >= 0 ? state.userUploadedImages[index] : null;
+};
+
+const upsertUploadedImage = (entry) => {
+  if (!entry?.assetId) return null;
+
+  const normalizedEntry = {
+    id: entry.id ?? entry.assetId,
+    assetId: entry.assetId,
+    label: entry.label ?? 'Subida',
+    src: entry.src ?? '',
+    pendingDataUrl: entry.pendingDataUrl ?? null,
+    storagePath: entry.storagePath ?? null,
+    uploadStatus: entry.uploadStatus ?? 'done',
+    needsUpload: Boolean(entry.needsUpload),
+    errorMessage: entry.errorMessage ?? null,
+  };
+
+  const existingIndex = getUploadedImageIndexByAssetId(entry.assetId);
+  if (existingIndex >= 0) {
+    state.userUploadedImages.splice(existingIndex, 1, {
+      ...state.userUploadedImages[existingIndex],
+      ...normalizedEntry,
+    });
+    return state.userUploadedImages[existingIndex];
+  }
+
+  state.userUploadedImages.unshift(normalizedEntry);
+  return state.userUploadedImages[0];
+};
+
+const updateUploadedImage = (assetId, updater) => {
+  const existing = getUploadedImageByAssetId(assetId);
+  if (!existing) return null;
+
+  const nextValue = typeof updater === 'function' ? updater(existing) : updater;
+  if (!nextValue) return existing;
+
+  return upsertUploadedImage({
+    ...existing,
+    ...nextValue,
+    assetId,
+  });
+};
+
+const getUploadProgress = (assetId) => {
+  const progress = uploadProgressByAssetId[assetId];
+  if (typeof progress === 'number') {
+    return progress;
+  }
+
+  const image = getUploadedImageByAssetId(assetId);
+  return image?.uploadStatus === 'done' ? 100 : 0;
+};
+
+const humanizeUploadError = (error) => {
+  const status = error?.response?.status;
+  if (status === 413 || status === 422) {
+    return 'La imagen es demasiado grande o no tiene un formato válido.';
+  }
+
+  return 'No se pudo subir la imagen. Reintenta.';
+};
+
+const getImageIntrinsicSize = (src) => new Promise((resolve) => {
+  if (!src) {
+    resolve(null);
+    return;
+  }
+
+  const image = new Image();
+  image.onload = () => {
+    resolve({
+      width: image.naturalWidth || image.width,
+      height: image.naturalHeight || image.height,
+    });
+  };
+  image.onerror = () => resolve(null);
+  image.src = src;
+});
+
+const buildInitialImageLayout = async (src) => {
+  const bounds = getCanvasBounds();
+  const fallbackWidth = 220;
+  const fallbackHeight = 160;
+  const intrinsicSize = await getImageIntrinsicSize(src);
+
+  if (!intrinsicSize?.width || !intrinsicSize?.height) {
+    return buildDefaultLayout({
+      w: fallbackWidth,
+      h: fallbackHeight,
+      x: getInsertX(fallbackWidth),
+      y: 120,
+      backgroundColor: '#ffffff',
+      color: '#ffffff',
+    });
+  }
+
+  const maxWidth = Math.max(120, bounds.width - 48);
+  const maxHeight = Math.max(120, bounds.height - 72);
+  const scale = Math.min(1, maxWidth / intrinsicSize.width, maxHeight / intrinsicSize.height);
+  const width = Math.max(40, Math.round(intrinsicSize.width * scale));
+  const height = Math.max(40, Math.round(intrinsicSize.height * scale));
+
+  return buildDefaultLayout({
+    w: width,
+    h: height,
+    x: getInsertX(width),
     y: 120,
     backgroundColor: '#ffffff',
     color: '#ffffff',
   });
+};
+
+const addImageElementFromSrc = async (src, label = 'Imagen', options = {}) => {
+  if (!src) return;
+  const {
+    assetId = null,
+    pendingDataUrl = null,
+    storagePath = null,
+    needsUpload = false,
+    closePanel = true,
+  } = options;
+
+  const id = createElementId('image');
+  const layout = await buildInitialImageLayout(src);
 
   placeInsideCanvas(layout);
   state.customElements = {
     ...(state.customElements ?? {}),
     [id]: {
-    id,
-    type: 'image',
-    label,
-    src,
+      id,
+      type: 'image',
+      label,
+      src,
+      assetId,
+      pendingDataUrl,
+      storagePath,
+      needsUpload,
     },
   };
   state.elementLayout = {
@@ -972,52 +1118,335 @@ const addImageElementFromSrc = (src, label = 'Imagen') => {
     [id]: layout,
   };
   state.selectedElementId = id;
-  closeImagePanel();
+  if (closePanel) {
+    closeImagePanel();
+  }
+  return id;
+};
+
+const replaceUploadedImageSourceEverywhere = async ({ assetId, finalUrl, storagePath = null }) => {
+  const uploadedImage = getUploadedImageByAssetId(assetId);
+  const previousSrc = uploadedImage?.pendingDataUrl || uploadedImage?.src || null;
+
+  await mutateWithoutHistory(() => {
+    updateUploadedImage(assetId, {
+      src: finalUrl,
+      pendingDataUrl: null,
+      storagePath,
+      uploadStatus: 'done',
+      needsUpload: false,
+      errorMessage: null,
+    });
+
+    Object.entries(state.customElements ?? {}).forEach(([id, element]) => {
+      if (!element || element.type !== 'image') return;
+      if (element.assetId !== assetId) return;
+
+      state.customElements[id] = {
+        ...element,
+        src: finalUrl,
+        pendingDataUrl: null,
+        storagePath,
+        needsUpload: false,
+      };
+    });
+
+    replaceImageAssetSource({
+      assetId,
+      previousSrc,
+      nextSrc: finalUrl,
+      storagePath,
+    });
+  });
+
+  requestImmediateStateFlush();
+};
+
+const uploadImageAsset = async ({ assetId, file, label, dataUrl }) => {
+  if (!assetId || !file || activeUploadAssetIds.has(assetId)) {
+    return;
+  }
+
+  activeUploadAssetIds.add(assetId);
+  uploadProgressByAssetId[assetId] = Math.max(1, getUploadProgress(assetId));
+
+  updateUploadedImage(assetId, {
+    src: dataUrl,
+    pendingDataUrl: dataUrl,
+    uploadStatus: 'uploading',
+    needsUpload: true,
+    errorMessage: null,
+  });
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('assetId', assetId);
+    formData.append('label', label ?? file.name ?? 'Imagen');
+
+    const response = await axios.post(uploadEndpoint.value, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress: (event) => {
+        if (!event.total) return;
+        uploadProgressByAssetId[assetId] = Math.min(99, Math.round((event.loaded / event.total) * 100));
+      },
+    });
+
+    const finalUrl = response.data?.url;
+    const storagePath = response.data?.path ?? null;
+
+    if (!finalUrl) {
+      throw new Error('La respuesta del servidor no incluyó la URL de la imagen.');
+    }
+
+    uploadProgressByAssetId[assetId] = 100;
+    await replaceUploadedImageSourceEverywhere({ assetId, finalUrl, storagePath });
+  } catch (error) {
+    console.error('No se pudo subir la imagen del usuario', error);
+    uploadProgressByAssetId[assetId] = 0;
+    updateUploadedImage(assetId, {
+      src: dataUrl,
+      pendingDataUrl: dataUrl,
+      uploadStatus: 'error',
+      needsUpload: true,
+      errorMessage: humanizeUploadError(error),
+    });
+  } finally {
+    activeUploadAssetIds.delete(assetId);
+  }
+};
+
+const queueUploadForAsset = async (assetId, options = {}) => {
+  if (!assetId || activeUploadAssetIds.has(assetId)) {
+    return;
+  }
+
+  const uploadedImage = getUploadedImageByAssetId(assetId);
+  const label = options.label ?? uploadedImage?.label ?? 'Imagen';
+  const pendingDataUrl = options.dataUrl ?? uploadedImage?.pendingDataUrl ?? uploadedImage?.src ?? '';
+
+  if (!isDataImageUrl(pendingDataUrl)) {
+    return;
+  }
+
+  try {
+    const file = options.file ?? dataUrlToFile(pendingDataUrl, label);
+    await uploadImageAsset({
+      assetId,
+      file,
+      label,
+      dataUrl: pendingDataUrl,
+    });
+  } catch (error) {
+    console.error('No se pudo preparar la reanudación del upload de imagen', error);
+    updateUploadedImage(assetId, {
+      uploadStatus: 'error',
+      needsUpload: true,
+      errorMessage: humanizeUploadError(error),
+    });
+  }
+};
+
+const createPendingUploadedImageFromFile = async (file, options = {}) => {
+  if (!(file instanceof File) || !file.type.startsWith('image/')) {
+    return null;
+  }
+
+  const processedFile = await optimizeImageFile(file, imageUploadProcessingConfig.value);
+  const dataUrl = await fileToDataUrl(processedFile);
+  const assetId = createElementId('upload');
+  const label = processedFile.name || file.name || 'Imagen';
+
+  upsertUploadedImage({
+    assetId,
+    label,
+    src: dataUrl,
+    pendingDataUrl: dataUrl,
+    uploadStatus: 'pending',
+    needsUpload: true,
+    errorMessage: null,
+  });
+
+  if (options.insertIntoCanvas) {
+    await addImageElementFromSrc(dataUrl, label, {
+      assetId,
+      pendingDataUrl: dataUrl,
+      needsUpload: true,
+      closePanel: Boolean(options.closePanel),
+    });
+  }
+
+  if (options.openUploadsPanel) {
+    optionsPanelOpen.value = true;
+    imagePanelOpen.value = true;
+    textPanelOpen.value = false;
+    shapePanelOpen.value = false;
+    imagePanelTab.value = 'uploads';
+  }
+
+  queueUploadForAsset(assetId, { file: processedFile, dataUrl, label });
+  requestImmediateStateFlush();
+
+  return assetId;
 };
 
 const triggerImagePicker = () => {
   imageInputRef.value?.click();
 };
 
-const onImagePicked = (event) => {
+const onImagePicked = async (event) => {
   const input = event.target;
-  const file = input?.files?.[0];
-  if (!file) return;
+  const files = Array.from(input?.files ?? []).filter((file) => file.type.startsWith('image/'));
+  if (!files.length) return;
 
-  const reader = new FileReader();
-  reader.onload = () => {
-    const src = typeof reader.result === 'string' ? reader.result : '';
-    if (!src) return;
+  imagePanelTab.value = 'uploads';
+  for (const file of files) {
+    // Desde el picker actúa como subida a la galería del usuario; la inserción en el diseño queda a elección posterior.
+    // eslint-disable-next-line no-await-in-loop
+    await createPendingUploadedImageFromFile(file, { openUploadsPanel: true });
+  }
 
-    state.userUploadedImages.unshift({
-      id: createElementId('upload'),
-      src,
-      label: file.name || 'Subida',
-    });
-    addImageElementFromSrc(src, file.name || 'Imagen');
-  };
-  reader.readAsDataURL(file);
   input.value = '';
 };
 
-const addImageFromUrl = () => {
+const addImageFromUrl = async () => {
   const src = imageUrlInput.value.trim();
   if (!src) return;
 
-  state.userUploadedImages.unshift({
-    id: createElementId('upload-url'),
-    src,
-    label: 'URL',
-  });
-  addImageElementFromSrc(src, 'Imagen URL');
+  await addImageElementFromSrc(src, 'Imagen URL');
 };
 
 const addLibraryImage = (image) => {
-  addImageElementFromSrc(image?.src, image?.label || 'Imagen de libreria');
+  return addImageElementFromSrc(image?.src, image?.label || 'Imagen de libreria');
 };
 
-const addUploadedImage = (image) => {
-  addImageElementFromSrc(image?.src, image?.label || 'Imagen subida');
+const addUploadedImage = async (image) => {
+  const src = image?.src || image?.pendingDataUrl || '';
+  if (!src) return;
+
+  await addImageElementFromSrc(src, image?.label || 'Imagen subida', {
+    assetId: image?.assetId ?? image?.id ?? null,
+    pendingDataUrl: image?.pendingDataUrl ?? (isDataImageUrl(src) ? src : null),
+    storagePath: image?.storagePath ?? null,
+    needsUpload: Boolean(image?.needsUpload),
+  });
+
+  if (image?.needsUpload && (image?.pendingDataUrl || isDataImageUrl(src))) {
+    queueUploadForAsset(image.assetId ?? image.id, {
+      dataUrl: image.pendingDataUrl ?? src,
+      label: image.label,
+    });
+  }
+};
+
+const retryUploadedImage = (image) => {
+  const assetId = image?.assetId ?? image?.id ?? null;
+  const pendingDataUrl = image?.pendingDataUrl ?? image?.src ?? '';
+  if (!assetId || !isDataImageUrl(pendingDataUrl)) return;
+
+  queueUploadForAsset(assetId, {
+    dataUrl: pendingDataUrl,
+    label: image?.label ?? 'Imagen',
+  });
+};
+
+const syncPendingUploadsFromPersistedState = async () => {
+  await mutateWithoutHistory(() => {
+    Object.entries(state.customElements ?? {}).forEach(([id, element]) => {
+      if (!element || element.type !== 'image') return;
+
+      const pendingDataUrl = element.pendingDataUrl ?? (isDataImageUrl(element.src) ? element.src : null);
+      const assetId = element.assetId ?? (pendingDataUrl ? createElementId(`recovered-${id}`) : null);
+
+      if (!assetId || !pendingDataUrl) return;
+
+      if (!element.assetId || element.assetId !== assetId) {
+        state.customElements[id] = {
+          ...element,
+          assetId,
+          pendingDataUrl,
+          needsUpload: true,
+        };
+      }
+
+      if (!getUploadedImageByAssetId(assetId)) {
+        upsertUploadedImage({
+          assetId,
+          label: element.label ?? 'Imagen recuperada',
+          src: pendingDataUrl,
+          pendingDataUrl,
+          uploadStatus: 'pending',
+          needsUpload: true,
+        });
+      }
+    });
+  });
+
+  state.userUploadedImages.forEach((image) => {
+    const assetId = image.assetId ?? image.id;
+    const pendingDataUrl = image.pendingDataUrl ?? (isDataImageUrl(image.src) ? image.src : null);
+
+    if (assetId && pendingDataUrl && (image.needsUpload || image.uploadStatus !== 'done')) {
+      queueUploadForAsset(assetId, {
+        dataUrl: pendingDataUrl,
+        label: image.label,
+      });
+    }
+  });
+};
+
+const handleCanvasFileDragOver = (event) => {
+  if (!hasFilesInTransfer(event.dataTransfer)) return;
+
+  event.preventDefault();
+  fileDragActive.value = true;
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy';
+  }
+};
+
+const handleCanvasFileDragEnter = (event) => {
+  if (!hasFilesInTransfer(event.dataTransfer)) return;
+
+  event.preventDefault();
+  fileDragActive.value = true;
+};
+
+const handleCanvasFileDragLeave = (event) => {
+  if (event?.currentTarget?.contains?.(event.relatedTarget)) {
+    return;
+  }
+
+  fileDragActive.value = false;
+};
+
+const handleCanvasFileDrop = async (event) => {
+  const files = extractImageFilesFromDataTransfer(event.dataTransfer);
+  fileDragActive.value = false;
+  if (!files.length) return;
+
+  event.preventDefault();
+  for (const file of files) {
+    // eslint-disable-next-line no-await-in-loop
+    await createPendingUploadedImageFromFile(file, { insertIntoCanvas: true });
+  }
+};
+
+const handleDocumentPaste = async (event) => {
+  if (editingElementId.value || isEditableTarget(event.target)) {
+    return;
+  }
+
+  const files = extractImageFilesFromDataTransfer(event.clipboardData);
+  if (!files.length) return;
+
+  event.preventDefault();
+  for (const file of files) {
+    // eslint-disable-next-line no-await-in-loop
+    await createPendingUploadedImageFromFile(file, { insertIntoCanvas: true });
+  }
 };
 
 const addShapeElement = (shapeKind) => {
@@ -1106,6 +1535,10 @@ const updateElementMeasurement = (id, node) => {
         type: 'image',
         label: `${sourceElement.label} copia`,
         src: sourceElement.src,
+        assetId: sourceElement.assetId ?? null,
+        pendingDataUrl: sourceElement.pendingDataUrl ?? null,
+        storagePath: sourceElement.storagePath ?? null,
+        needsUpload: Boolean(sourceElement.needsUpload),
       };
     } else if (sourceElement.type === 'shape') {
       state.customElements[cloneId] = {
@@ -1181,6 +1614,10 @@ const updateElementMeasurement = (id, node) => {
           type: 'image',
           label: `${sourceElement.label} copia`,
           src: sourceElement.src,
+          assetId: sourceElement.assetId ?? null,
+          pendingDataUrl: sourceElement.pendingDataUrl ?? null,
+          storagePath: sourceElement.storagePath ?? null,
+          needsUpload: Boolean(sourceElement.needsUpload),
         };
       } else if (sourceElement.type === 'shape') {
         state.customElements[cloneId] = {
@@ -1523,6 +1960,10 @@ onMounted(() => {
   document.addEventListener('pointerup', endDrag);
   document.addEventListener('pointercancel', endDrag);
   document.addEventListener('keydown', handleGlobalKeydown);
+  document.addEventListener('paste', handleDocumentPaste);
+  document.addEventListener('dragover', handleCanvasFileDragOver);
+  document.addEventListener('drop', handleCanvasFileDragLeave);
+  syncPendingUploadsFromPersistedState();
   refreshElementObservers();
 });
 
@@ -1532,10 +1973,14 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerup', endDrag);
   document.removeEventListener('pointercancel', endDrag);
   document.removeEventListener('keydown', handleGlobalKeydown);
+  document.removeEventListener('paste', handleDocumentPaste);
+  document.removeEventListener('dragover', handleCanvasFileDragOver);
+  document.removeEventListener('drop', handleCanvasFileDragLeave);
   elementObservers.forEach((observer) => observer.disconnect());
   elementObservers.clear();
   clearLongPress();
   setDragDocumentState(false);
+  fileDragActive.value = false;
 });
 
 watch(editorElements, () => {
@@ -1756,6 +2201,8 @@ watch(selectedGroupId, (groupId) => {
             :add-image-from-url="addImageFromUrl"
             :add-library-image="addLibraryImage"
             :add-uploaded-image="addUploadedImage"
+            :get-upload-progress="getUploadProgress"
+            :retry-uploaded-image="retryUploadedImage"
             :add-shape-element="addShapeElement"
             :apply-gradient-preset="applyGradientPreset"
             :apply-shape-gradient-preset="applyShapeGradientPreset"
@@ -1780,6 +2227,7 @@ watch(selectedGroupId, (groupId) => {
             :canvas-element-style="canvasElementStyle"
             :editor-elements="editorElements"
             :drag="drag"
+            :file-drag-active="fileDragActive"
             :editing-element-id="editingElementId"
             :state="state"
             :element-box-style="elementBoxStyle"
@@ -1794,6 +2242,10 @@ watch(selectedGroupId, (groupId) => {
             :canvas-ref-setter="setCanvasRef"
             :rich-editor-ref-setter="setRichEditorRef"
             @canvas-pointer-down="handleCanvasPointerDown"
+            @canvas-file-drag-enter="handleCanvasFileDragEnter"
+            @canvas-file-drag-over="handleCanvasFileDragOver"
+            @canvas-file-drag-leave="handleCanvasFileDragLeave"
+            @canvas-file-drop="handleCanvasFileDrop"
             @element-click="handleElementClick($event.event, $event.id)"
             @begin-text-edit="beginTextEdit"
             @element-pointer-down="handleElementPointerDown($event.event, $event.id)"

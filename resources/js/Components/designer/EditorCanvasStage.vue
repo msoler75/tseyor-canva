@@ -13,6 +13,7 @@ const props = defineProps({
     default: () => [],
   },
   drag: Object,
+  fileDragActive: Boolean,
   editingElementId: String,
   state: Object,
   elementBoxStyle: Function,
@@ -39,6 +40,10 @@ const emit = defineEmits([
   'richEditorBlur',
   'cancelTextEdit',
   'commitTextEdit',
+  'canvasFileDragEnter',
+  'canvasFileDragOver',
+  'canvasFileDragLeave',
+  'canvasFileDrop',
 ]);
 
 const assignRichEditorRef = (id, element) => {
@@ -54,7 +59,21 @@ const assignRichEditorRef = (id, element) => {
         class="relative overflow-visible p-7 text-white select-none touch-none"
         :style="{ ...canvasBackgroundStyle, ...canvasElementStyle }"
         @pointerdown="emit('canvasPointerDown', $event)"
+        @dragenter="emit('canvasFileDragEnter', $event)"
+        @dragover="emit('canvasFileDragOver', $event)"
+        @dragleave="emit('canvasFileDragLeave', $event)"
+        @drop="emit('canvasFileDrop', $event)"
       >
+        <div
+          v-if="fileDragActive"
+          class="pointer-events-none absolute inset-3 z-30 rounded-[28px] border-2 border-dashed border-cyan-300 bg-cyan-400/10 shadow-[0_0_0_4px_rgba(34,211,238,0.15)]"
+        >
+          <div class="flex h-full w-full items-center justify-center">
+            <div class="rounded-full bg-slate-950/70 px-4 py-2 text-sm font-semibold text-cyan-100 shadow-lg">
+              Suelta aquí tus imágenes
+            </div>
+          </div>
+        </div>
         <div
           v-for="item in editorElements"
           :key="item.id"
