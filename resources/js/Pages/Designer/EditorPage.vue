@@ -12,6 +12,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { objectiveRecommendations } from '../../data/designer';
 import { useDesignerState } from '../../composables/useDesignerState';
 import { flushDesignerStatePersistence } from '../../composables/useDesignerState';
+import { resetDesignerState } from '../../composables/useDesignerState';
 import { useEditorHistory } from '../../composables/useEditorHistory';
 import { useEditorStyles } from '../../composables/useEditorStyles';
 import { useEditorSelection } from '../../composables/useEditorSelection';
@@ -29,6 +30,11 @@ if (!state.userUploadedImages) {
   state.userUploadedImages = [];
 }
 const uploadEndpoint = computed(() => page.props.designer?.endpoints?.upload ?? '/designer/uploads');
+const resetEndpoint = computed(() => page.props.designer?.endpoints?.reset ?? '/designer/state');
+const assetsIndexEndpoint = computed(() => page.props.designer?.endpoints?.assetsIndex ?? null);
+const authUser = computed(() => page.props.auth?.user ?? null);
+const currentDesignDuplicateEndpoint = computed(() => state.currentDesignUuid ? `/designer/designs/${state.currentDesignUuid}/duplicate` : null);
+const currentDesignRenameEndpoint = computed(() => state.currentDesignUuid ? `/designer/designs/${state.currentDesignUuid}/rename` : null);
 const imageUploadProcessingConfig = computed(() => page.props.designer?.imageUploads ?? {
   maxWidth: 2400,
   maxHeight: 2400,
@@ -1104,6 +1110,35 @@ const getUploadProgress = (assetId) => {
 
   const image = getUploadedImageByAssetId(assetId);
   return image?.uploadStatus === 'done' ? 100 : 0;
+};
+
+const syncUploadedAssetsLibrary = async () => {
+  if (!authUser.value || !assetsIndexEndpoint.value) {
+    return;
+  }
+
+  try {
+    const response = await axios.get(assetsIndexEndpoint.value);
+    const assets = Array.isArray(response.data?.assets) ? response.data.assets : [];
+
+    assets.forEach((asset) => {
+      upsertUploadedImage({
+        id: String(asset.id),
+        assetId: String(asset.id),
+        label: asset.label || 'Imagen',
+        src: asset.url,
+        pendingDataUrl: null,
+        storagePath: asset.path,
+        uploadStatus: 'done',
+        needsUpload: false,
+        errorMessage: null,
+        intrinsicWidth: asset.width ?? null,
+        intrinsicHeight: asset.height ?? null,
+      });
+    });
+  } catch (error) {
+    console.error('No se pudo cargar la librería de imágenes del usuario', error);
+  }
 };
 
 const humanizeUploadError = (error) => {
@@ -2403,6 +2438,7 @@ onMounted(() => {
   document.addEventListener('paste', handleDocumentPaste);
   document.addEventListener('dragover', handleCanvasFileDragOver);
   document.addEventListener('drop', handleCanvasFileDragLeave);
+  syncUploadedAssetsLibrary();
   syncPendingUploadsFromPersistedState();
   refreshElementObservers();
 });
@@ -2511,6 +2547,78 @@ const handleFormatAssistantNavigation = async () => {
   window.location.href = '/designer/format?return=%2Fdesigner%2Feditor';
 };
 
+const handleHomeNavigation = async () => {
+  try {
+    await flushDesignerStatePersistence();
+  } catch (error) {
+    console.error('Failed to flush designer state before leaving the editor', error);
+  }
+
+  window.location.href = '/';
+};
+
+const handleCreateNewDesign = async () => {
+  try {
+    await axios.delete(resetEndpoint.value);
+  } catch (error) {
+    console.error('Failed to reset current designer state', error);
+  }
+
+  resetDesignerState();
+  window.location.href = '/';
+};
+
+const handleDuplicateDesign = async () => {
+  if (authUser.value && currentDesignDuplicateEndpoint.value) {
+    try {
+      await flushDesignerStatePersistence();
+      const response = await axios.post(currentDesignDuplicateEndpoint.value);
+      const duplicateUuid = response.data?.design?.uuid;
+
+      if (duplicateUuid) {
+        state.currentDesignUuid = duplicateUuid;
+        window.location.href = `/designer/editor?design=${duplicateUuid}`;
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to duplicate persisted design', error);
+    }
+  }
+
+  const currentTitle = (state.designTitle || 'Diseño sin título').trim();
+  state.designTitle = currentTitle.toLowerCase().startsWith('copia de ')
+    ? currentTitle
+    : `Copia de ${currentTitle}`;
+  state.designTitleManual = true;
+
+  try {
+    await flushDesignerStatePersistence();
+  } catch (error) {
+    console.error('Failed to persist duplicated design title', error);
+  }
+};
+
+const handleRenameDesign = async () => {
+  const nextTitle = window.prompt('Nuevo título del diseño', state.designTitle || 'Diseño sin título');
+  if (nextTitle === null) return;
+
+  state.designTitle = nextTitle.trim() || 'Diseño sin título';
+  state.designTitleManual = true;
+
+  try {
+    if (authUser.value && currentDesignRenameEndpoint.value) {
+      await axios.patch(currentDesignRenameEndpoint.value, {
+        name: state.designTitle,
+      });
+      return;
+    }
+
+    await flushDesignerStatePersistence();
+  } catch (error) {
+    console.error('Failed to persist design title rename', error);
+  }
+};
+
 const handleCanvasClick = (event) => {
   if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
   state.selectedElementId = 'background';
@@ -2519,6 +2627,23 @@ const handleCanvasClick = (event) => {
   textPanelOpen.value = false;
   imagePanelOpen.value = false;
   shapePanelOpen.value = false;
+};
+
+const normalizeDesignTitleCandidate = (value) => String(value ?? '')
+  .trim()
+  .replace(/\s+/g, ' ')
+  .toLowerCase();
+
+const isPlaceholderDesignTitle = (value) => {
+  const normalized = normalizeDesignTitleCandidate(value);
+  return !normalized || [
+    'titulo',
+    'título',
+    'agrega un titulo',
+    'agrega un título',
+    'diseno sin titulo',
+    'diseño sin título',
+  ].includes(normalized);
 };
 
 watch(() => state.selectedElementId, () => {
@@ -2535,6 +2660,17 @@ watch(selectedGroupId, (groupId) => {
   state.selectedElementId = null;
   activePropertyPanel.value = null;
 });
+
+watch(
+  () => state.content.title,
+  (nextTitle) => {
+    if (state.designTitleManual) return;
+    if (isPlaceholderDesignTitle(nextTitle)) return;
+
+    state.designTitle = String(nextTitle).trim();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -2552,6 +2688,7 @@ watch(selectedGroupId, (groupId) => {
   >
     <div class="flex h-full min-h-0 flex-col overflow-hidden bg-base-100">
     <EditorTopBar
+      :design-title="state.designTitle"
       :size="state.size"
       :can-undo="canUndo"
       :can-redo="canRedo"
@@ -2559,6 +2696,11 @@ watch(selectedGroupId, (groupId) => {
       :redo-action-label="redoActionLabel"
       :zoom-level="zoomLevel"
       :dark-mode="state.darkMode"
+      @go-home="handleHomeNavigation"
+      @create-new-design="handleCreateNewDesign"
+      @download-design="handleExportNavigation"
+      @duplicate-design="handleDuplicateDesign"
+      @rename-design="handleRenameDesign"
       @open-format-assistant="handleFormatAssistantNavigation"
       @undo="performUndo"
       @redo="performRedo"

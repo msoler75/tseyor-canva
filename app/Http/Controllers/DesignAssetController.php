@@ -1,0 +1,74 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\DesignAsset;
+use App\Models\User;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+class DesignAssetController extends Controller
+{
+    public function index(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        return response()->json([
+            'assets' => $user->designAssets()
+                ->latest('created_at')
+                ->get()
+                ->map(fn (DesignAsset $asset): array => [
+                    'id' => $asset->id,
+                    'uuid' => $asset->uuid,
+                    'label' => $asset->label,
+                    'disk' => $asset->disk,
+                    'path' => $asset->path,
+                    'mime_type' => $asset->mime_type,
+                    'extension' => $asset->extension,
+                    'size_bytes' => $asset->size_bytes,
+                    'width' => $asset->width,
+                    'height' => $asset->height,
+                    'uploaded_at' => $asset->uploaded_at,
+                    'last_used_at' => $asset->last_used_at,
+                    'url' => route('designer.uploads.show', ['path' => $asset->path]),
+                ]),
+        ]);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'image', 'max:20480'],
+            'label' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $file = $validated['file'];
+        $extension = $file->guessExtension() ?: $file->extension() ?: 'bin';
+        $uuid = (string) Str::uuid();
+        $filename = "{$uuid}.{$extension}";
+        $path = $file->storeAs("designer/uploads/users/{$user->id}", $filename, 'public');
+
+        $asset = $user->designAssets()->create([
+            'uuid' => $uuid,
+            'label' => $validated['label'] ?? $file->getClientOriginalName(),
+            'disk' => 'public',
+            'path' => $path,
+            'mime_type' => File::mimeType(Storage::disk('public')->path($path)) ?: $file->getMimeType(),
+            'extension' => $extension,
+            'size_bytes' => $file->getSize() ?: 0,
+            'uploaded_at' => now(),
+        ]);
+
+        return response()->json([
+            'asset' => $asset,
+            'url' => route('designer.uploads.show', ['path' => $path]),
+        ], 201);
+    }
+}

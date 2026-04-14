@@ -91,6 +91,7 @@ function buildInitialState(sessionState) {
         ...base,
         ...sessionState,
         darkMode: typeof sessionState.darkMode === 'boolean' ? sessionState.darkMode : savedTheme === 'dark',
+        designTitleManual: Boolean(sessionState.designTitleManual),
         content: {
             ...base.content,
             ...normalizeContentStrings(sessionState.content ?? {}),
@@ -258,7 +259,11 @@ async function persistStateSnapshot(saveEndpoint, snapshot) {
         while (queuedSave) {
             const next = queuedSave;
             queuedSave = null;
-            await axios.put(next.saveEndpoint, { state: next.snapshot });
+            const response = await axios.put(next.saveEndpoint, { state: next.snapshot });
+
+            if (designerState && response?.data?.designUuid) {
+                designerState.currentDesignUuid = response.data.designUuid;
+            }
         }
     } finally {
         saveInFlight = false;

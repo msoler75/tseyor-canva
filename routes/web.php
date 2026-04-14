@@ -1,9 +1,17 @@
 <?php
 
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\DesignAssetController;
+use App\Http\Controllers\DesignController;
 use App\Http\Controllers\DesignerController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [DesignerController::class, 'welcome'])->name('designer.welcome');
+
+Route::prefix('auth')->group(function (): void {
+    Route::post('/login', [AuthController::class, 'login'])->name('auth.login');
+    Route::middleware('jwt.auth')->get('/me', [AuthController::class, 'me'])->name('auth.me');
+});
 
 Route::prefix('designer')->group(function (): void {
     Route::put('/state', [DesignerController::class, 'saveState'])->name('designer.state.save');
@@ -18,4 +26,18 @@ Route::prefix('designer')->group(function (): void {
     Route::get('/templates', [DesignerController::class, 'templates'])->name('designer.templates');
     Route::get('/editor', [DesignerController::class, 'editor'])->name('designer.editor');
     Route::get('/export', [DesignerController::class, 'export'])->name('designer.export');
+
+    Route::middleware('auth')->group(function (): void {
+        Route::get('/designs', [DesignController::class, 'index'])->name('designer.designs.index');
+        Route::post('/designs', [DesignController::class, 'store'])->name('designer.designs.store');
+        Route::get('/designs/{design:uuid}', [DesignController::class, 'show'])->name('designer.designs.show');
+        Route::get('/designs/{design:uuid}/edit', [DesignerController::class, 'editor'])->name('designer.designs.edit');
+        Route::put('/designs/{design:uuid}', [DesignController::class, 'update'])->name('designer.designs.update');
+        Route::patch('/designs/{design:uuid}/rename', [DesignController::class, 'rename'])->name('designer.designs.rename');
+        Route::post('/designs/{design:uuid}/duplicate', [DesignController::class, 'duplicate'])->name('designer.designs.duplicate');
+        Route::delete('/designs/{design:uuid}', [DesignController::class, 'destroy'])->name('designer.designs.destroy');
+
+        Route::get('/assets', [DesignAssetController::class, 'index'])->name('designer.assets.index');
+        Route::post('/assets', [DesignAssetController::class, 'store'])->name('designer.assets.store');
+    });
 });

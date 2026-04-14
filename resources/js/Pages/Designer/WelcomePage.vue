@@ -1,5 +1,6 @@
 ﻿<script setup>
-import { router } from '@inertiajs/vue3';
+import axios from 'axios';
+import { router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import ChoiceCard from '../../Components/designer/ChoiceCard.vue';
 import SelectionIndicator from '../../Components/designer/SelectionIndicator.vue';
@@ -13,13 +14,27 @@ import {
     templateCatalog,
     templateFilters,
 } from '../../data/designer';
-import { resetDesignerState, useDesignerState } from '../../composables/useDesignerState';
+import { flushDesignerStatePersistence, resetDesignerState, useDesignerState } from '../../composables/useDesignerState';
 
-defineProps({ currentStep: String, steps: Array, navigation: Object });
+const props = defineProps({
+    currentStep: String,
+    steps: Array,
+    navigation: Object,
+    designs: {
+        type: Array,
+        default: () => [],
+    },
+    devLoginToken: {
+        type: String,
+        default: null,
+    },
+});
 
+const page = usePage();
 const state = useDesignerState();
 const assistantOpen = ref(false);
 const assistantStep = ref('objective');
+const loggingInDev = ref(false);
 
 const assistantSteps = [
     { id: 'objective', label: 'Objetivo' },
@@ -28,11 +43,8 @@ const assistantSteps = [
     { id: 'templates', label: 'Plantillas' },
 ];
 
-const recentProjects = [
-    { id: 'project-1', name: 'Cartel Primavera 2026', updated: 'Hoy · 10:42', action: 'Abrir' },
-    { id: 'project-2', name: 'Flyer Taller Online', updated: 'Ayer · 18:25', action: 'Reanudar' },
-    { id: 'project-3', name: 'Promocion Tienda Centro', updated: 'Hace 3 dias', action: 'Editar' },
-];
+const authUser = computed(() => page.props.auth?.user ?? null);
+const recentProjects = computed(() => props.designs ?? []);
 
 const communityDesigns = [
     { id: 'community-1', title: 'Festival neon', author: 'Comunidad TSEYOR' },
@@ -101,6 +113,8 @@ const openAssistant = () => {
     resetDesignerState();
     state.mode = 'guided';
     state.templateCategory = 'all';
+    state.currentDesignUuid = null;
+    state.designSurface = null;
     assistantStep.value = 'objective';
     assistantOpen.value = true;
 };
@@ -130,6 +144,100 @@ const selectSizeOption = (option) => {
 const finishAndOpenEditor = () => {
     assistantOpen.value = false;
     router.visit('/designer/editor');
+};
+
+const openExistingDesign = async (design) => {
+    if (!design?.uuid) return;
+
+    try {
+        await flushDesignerStatePersistence();
+    } catch (error) {
+        console.error('Failed to flush state before opening design', error);
+    }
+
+    router.visit(`/designer/designs/${design.uuid}/edit`);
+};
+
+const loginAsDev = async () => {
+    if (!props.devLoginToken || loggingInDev.value) return;
+
+    loggingInDev.value = true;
+
+    try {
+        const response = await axios.post('/auth/login', {
+            token: props.devLoginToken,
+        });
+
+        const accessToken = response.data?.access_token;
+        if (accessToken) {
+            window.localStorage.setItem('tseyor_jwt', accessToken);
+            window.axios.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
+        }
+
+        router.reload();
+    } catch (error) {
+        console.error('No se pudo iniciar sesión en modo dev', error);
+    } finally {
+        loggingInDev.value = false;
+    }
+};
+
+const formatProjectUpdatedAt = (value) => {
+    if (!value) return 'Sin fecha';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Sin fecha';
+
+    return new Intl.DateTimeFormat('es-ES', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+    }).format(date);
+};
+
+const duplicateDesign = async (design) => {
+    if (!design?.uuid) return;
+
+    try {
+        const response = await axios.post(`/designer/designs/${design.uuid}/duplicate`);
+        const duplicateUuid = response.data?.design?.uuid;
+        router.reload();
+
+        if (duplicateUuid) {
+            router.visit(`/designer/designs/${duplicateUuid}/edit`);
+        }
+    } catch (error) {
+        console.error('No se pudo duplicar el diseño', error);
+    }
+};
+
+const renameDesign = async (design) => {
+    if (!design?.uuid) return;
+
+    const nextTitle = window.prompt('Nuevo título del diseño', design.name || 'Diseño sin título');
+    if (nextTitle === null) return;
+
+    try {
+        await axios.patch(`/designer/designs/${design.uuid}/rename`, {
+            name: nextTitle,
+        });
+        router.reload();
+    } catch (error) {
+        console.error('No se pudo renombrar el diseño', error);
+    }
+};
+
+const deleteDesign = async (design) => {
+    if (!design?.uuid) return;
+
+    const confirmed = window.confirm(`¿Eliminar "${design.name}"?`);
+    if (!confirmed) return;
+
+    try {
+        await axios.delete(`/designer/designs/${design.uuid}`);
+        router.reload();
+    } catch (error) {
+        console.error('No se pudo borrar el diseño', error);
+    }
 };
 </script>
 
@@ -162,6 +270,16 @@ const finishAndOpenEditor = () => {
                             <span class="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary-content/15 text-2xl leading-none">+</span>
                             CREAR
                         </button>
+                        <button
+                            v-if="!authUser && devLoginToken"
+                            type="button"
+                            class="btn btn-outline btn-lg rounded-full px-8 ml-3"
+                            :disabled="loggingInDev"
+                            @click="loginAsDev"
+                        >
+                            <IconifyIcon icon="ph:rocket-launch-bold" class="text-lg" />
+                            {{ loggingInDev ? 'Entrando...' : 'Login dev' }}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -170,23 +288,38 @@ const finishAndOpenEditor = () => {
                 <div class="card-body p-6">
                     <div class="mb-4 flex items-center justify-between gap-3">
                         <h3 class="text-lg font-semibold">Tus proyectos recientes</h3>
-                        <button type="button" class="btn btn-ghost btn-sm rounded-full" @click="router.visit('/designer/editor')">Ver todos</button>
+                        <span v-if="authUser" class="badge badge-outline">{{ authUser.name }}</span>
                     </div>
 
-                    <div class="space-y-3">
-                        <button
+                    <div v-if="recentProjects.length" class="space-y-3">
+                        <div
                             v-for="project in recentProjects"
-                            :key="project.id"
-                            type="button"
-                            class="flex w-full items-center justify-between rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-left hover:border-primary/50"
-                            @click="router.visit('/designer/editor')"
+                            :key="project.uuid"
+                            class="flex items-center justify-between rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-left hover:border-primary/50"
                         >
-                            <div>
-                                <p class="font-medium text-base-content">{{ project.name }}</p>
-                                <p class="text-xs text-base-content/65">{{ project.updated }}</p>
+                            <button
+                                type="button"
+                                class="min-w-0 flex-1 text-left"
+                                @click="openExistingDesign(project)"
+                            >
+                                <p class="font-medium text-base-content truncate">{{ project.name }}</p>
+                                <p class="text-xs text-base-content/65">{{ formatProjectUpdatedAt(project.updated_at) }}</p>
+                            </button>
+                            <div class="dropdown dropdown-end">
+                                <button type="button" tabindex="0" class="btn btn-ghost btn-sm btn-circle">
+                                    <IconifyIcon icon="ph:dots-three-outline-vertical-fill" class="text-lg" />
+                                </button>
+                                <ul tabindex="0" class="dropdown-content menu z-[70] mt-2 w-52 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
+                                    <li><button type="button" @click="openExistingDesign(project)">Abrir</button></li>
+                                    <li><button type="button" @click="duplicateDesign(project)">Hacer una copia</button></li>
+                                    <li><button type="button" @click="renameDesign(project)">Cambiar título</button></li>
+                                    <li><button type="button" class="text-error" @click="deleteDesign(project)">Eliminar</button></li>
+                                </ul>
                             </div>
-                            <span class="badge badge-outline">{{ project.action }}</span>
-                        </button>
+                        </div>
+                    </div>
+                    <div v-else class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-5 text-sm text-base-content/65">
+                        {{ authUser ? 'Aún no tienes diseños guardados.' : 'Inicia sesión para ver tus diseños guardados.' }}
                     </div>
                 </div>
             </div>

@@ -2,6 +2,10 @@
 import { Icon } from '@iconify/vue';
 
 defineProps({
+  designTitle: {
+    type: String,
+    default: 'Diseño sin título',
+  },
   size: {
     type: String,
     default: 'Tamaño no definido',
@@ -36,7 +40,19 @@ defineProps({
   },
 });
 
-const emit = defineEmits(['openFormatAssistant', 'undo', 'redo', 'updateZoomLevel', 'toggleDarkMode', 'exportNavigate']);
+const emit = defineEmits([
+  'goHome',
+  'createNewDesign',
+  'downloadDesign',
+  'duplicateDesign',
+  'renameDesign',
+  'openFormatAssistant',
+  'undo',
+  'redo',
+  'updateZoomLevel',
+  'toggleDarkMode',
+  'exportNavigate',
+]);
 
 const handleZoomInput = (event) => {
   emit('updateZoomLevel', event.target.value);
@@ -45,8 +61,58 @@ const handleZoomInput = (event) => {
 
 <template>
   <nav class="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-4 py-3 shadow-sm">
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        class="btn btn-sm btn-ghost btn-circle"
+        title="Volver al inicio"
+        aria-label="Inicio"
+        @click="emit('goHome')"
+      >
+        <Icon icon="ph:house-bold" class="text-xl" />
+      </button>
+
+      <div class="dropdown dropdown-start">
+        <button
+          tabindex="0"
+          type="button"
+          class="btn btn-sm btn-outline rounded-full"
+          title="Archivo"
+          aria-label="Archivo"
+        >
+          Archivo
+          <Icon icon="ph:caret-down-bold" class="text-sm" />
+        </button>
+        <ul tabindex="0" class="dropdown-content menu z-[60] mt-2 w-64 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
+          <li>
+            <button type="button" @click="emit('createNewDesign')">
+              <Icon icon="ph:file-plus-bold" class="text-lg" />
+              Crear un diseño nuevo
+            </button>
+          </li>
+          <li>
+            <button type="button" @click="emit('downloadDesign')">
+              <Icon icon="ph:download-simple-bold" class="text-lg" />
+              Descargar
+            </button>
+          </li>
+          <li>
+            <button type="button" @click="emit('duplicateDesign')">
+              <Icon icon="ph:copy-bold" class="text-lg" />
+              Hacer una copia
+            </button>
+          </li>
+          <li>
+            <button type="button" @click="emit('renameDesign')">
+              <Icon icon="ph:pencil-simple-bold" class="text-lg" />
+              Cambiar nombre del diseño
+            </button>
+          </li>
+        </ul>
+      </div>
+
       <span class="rounded-xl bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">Editor</span>
+      <span class="max-w-[22ch] truncate text-sm font-semibold text-base-content">{{ designTitle || 'Diseño sin título' }}</span>
       <span class="text-sm text-base-content/65">{{ size || 'Tamaño no definido' }}</span>
     </div>
 

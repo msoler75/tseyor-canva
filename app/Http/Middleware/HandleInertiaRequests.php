@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Http\Controllers\DesignerController;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -44,6 +45,9 @@ class HandleInertiaRequests extends Middleware
                     'save' => route('designer.state.save'),
                     'reset' => route('designer.state.reset'),
                     'upload' => route('designer.uploads.store'),
+                    'designsIndex' => Route::has('designer.designs.index') ? route('designer.designs.index') : null,
+                    'designsStore' => Route::has('designer.designs.store') ? route('designer.designs.store') : null,
+                    'assetsIndex' => Route::has('designer.assets.index') ? route('designer.assets.index') : null,
                 ],
                 'imageUploads' => [
                     'maxWidth' => config('designer.image_uploads.max_width'),
@@ -51,6 +55,16 @@ class HandleInertiaRequests extends Middleware
                     'jpegQuality' => config('designer.image_uploads.jpeg_quality'),
                     'webpQuality' => config('designer.image_uploads.webp_quality'),
                 ],
+            ],
+            'auth' => [
+                'user' => $request->user()
+                    ? [
+                        'id' => $request->user()->id,
+                        'name' => $request->user()->name,
+                        'email' => $request->user()->email,
+                    ]
+                    : null,
+                'isLocal' => app()->isLocal(),
             ],
         ];
     }
