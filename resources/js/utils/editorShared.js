@@ -49,6 +49,72 @@ export function buildCanvasBackgroundStyle(backgroundLayout = {}) {
   };
 }
 
+const normalizeIntrinsicSize = (width, height) => {
+  const normalizedWidth = Number(width ?? 0);
+  const normalizedHeight = Number(height ?? 0);
+
+  if (!Number.isFinite(normalizedWidth) || !Number.isFinite(normalizedHeight) || normalizedWidth <= 0 || normalizedHeight <= 0) {
+    return null;
+  }
+
+  return {
+    width: normalizedWidth,
+    height: normalizedHeight,
+  };
+};
+
+export function buildCoverImageStyle({
+  containerWidth,
+  containerHeight,
+  imageWidth,
+  imageHeight,
+  cropScale = 1,
+  cropOffsetX = 0,
+  cropOffsetY = 0,
+  flipX = false,
+  flipY = false,
+} = {}) {
+  const normalizedContainerWidth = Number(containerWidth ?? 0);
+  const normalizedContainerHeight = Number(containerHeight ?? 0);
+  const intrinsicSize = normalizeIntrinsicSize(imageWidth, imageHeight);
+
+  if (!Number.isFinite(normalizedContainerWidth) || !Number.isFinite(normalizedContainerHeight) || normalizedContainerWidth <= 0 || normalizedContainerHeight <= 0 || !intrinsicSize) {
+    return {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      transform: `scale(${flipX ? -1 : 1}, ${flipY ? -1 : 1})`,
+      transformOrigin: 'center center',
+    };
+  }
+
+  const safeCropScale = Math.max(1, Number(cropScale ?? 1));
+  const baseScale = Math.max(
+    normalizedContainerWidth / intrinsicSize.width,
+    normalizedContainerHeight / intrinsicSize.height,
+  );
+  const renderedWidth = intrinsicSize.width * baseScale * safeCropScale;
+  const renderedHeight = intrinsicSize.height * baseScale * safeCropScale;
+  const maxOffsetX = Math.max(0, (renderedWidth - normalizedContainerWidth) / 2);
+  const maxOffsetY = Math.max(0, (renderedHeight - normalizedContainerHeight) / 2);
+  const normalizedOffsetX = clamp(Number(cropOffsetX ?? 0), -1, 1);
+  const normalizedOffsetY = clamp(Number(cropOffsetY ?? 0), -1, 1);
+  const offsetX = normalizedOffsetX * maxOffsetX;
+  const offsetY = normalizedOffsetY * maxOffsetY;
+
+  return {
+    position: 'absolute',
+    left: `${(normalizedContainerWidth - renderedWidth) / 2 + offsetX}px`,
+    top: `${(normalizedContainerHeight - renderedHeight) / 2 + offsetY}px`,
+    width: `${renderedWidth}px`,
+    height: `${renderedHeight}px`,
+    maxWidth: 'none',
+    maxHeight: 'none',
+    transform: `scale(${flipX ? -1 : 1}, ${flipY ? -1 : 1})`,
+    transformOrigin: 'center center',
+  };
+}
+
 export function normalizePickerColor(value, fallback = '#ffffff') {
   if (typeof value !== 'string') return fallback;
 

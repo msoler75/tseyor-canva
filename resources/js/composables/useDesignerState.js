@@ -117,6 +117,8 @@ function normalizeCustomElements(customElements, elementLayout) {
                     storagePath: typeof (element ?? {}).storagePath === 'string' ? (element ?? {}).storagePath : null,
                     uploadStatus: typeof (element ?? {}).uploadStatus === 'string' ? (element ?? {}).uploadStatus : null,
                     needsUpload: Boolean((element ?? {}).needsUpload),
+                    intrinsicWidth: Number((element ?? {}).intrinsicWidth ?? 0) || null,
+                    intrinsicHeight: Number((element ?? {}).intrinsicHeight ?? 0) || null,
                 },
             ])
         );
@@ -137,6 +139,8 @@ function normalizeCustomElements(customElements, elementLayout) {
             storagePath: typeof element.storagePath === 'string' ? element.storagePath : null,
             uploadStatus: typeof element.uploadStatus === 'string' ? element.uploadStatus : null,
             needsUpload: Boolean(element.needsUpload),
+            intrinsicWidth: Number(element.intrinsicWidth ?? 0) || null,
+            intrinsicHeight: Number(element.intrinsicHeight ?? 0) || null,
         };
     });
 
@@ -160,6 +164,8 @@ function normalizeUserUploadedImages(userUploadedImages) {
             uploadStatus: typeof image.uploadStatus === 'string' ? image.uploadStatus : 'done',
             needsUpload: Boolean(image.needsUpload),
             errorMessage: image.errorMessage == null ? null : String(image.errorMessage),
+            intrinsicWidth: Number(image.intrinsicWidth ?? 0) || null,
+            intrinsicHeight: Number(image.intrinsicHeight ?? 0) || null,
         }));
 }
 
@@ -181,6 +187,23 @@ function mergeElementLayout(defaultLayout, sessionLayout) {
             ...(merged[key] ?? {}),
             ...value,
         };
+
+        if (key === 'background' && merged[key]) {
+            merged[key].backgroundImageSrc = normalizeUploadedAssetUrl(merged[key].backgroundImageSrc);
+            merged[key].backgroundImageCropScale = Number(merged[key].backgroundImageCropScale ?? 1);
+            merged[key].backgroundImageCropOffsetX = Number(merged[key].backgroundImageCropOffsetX ?? 0);
+            merged[key].backgroundImageCropOffsetY = Number(merged[key].backgroundImageCropOffsetY ?? 0);
+            merged[key].backgroundImageFlipX = Boolean(merged[key].backgroundImageFlipX);
+            merged[key].backgroundImageFlipY = Boolean(merged[key].backgroundImageFlipY);
+        }
+
+        if (merged[key]) {
+            merged[key].imageCropScale = Number(merged[key].imageCropScale ?? 1);
+            merged[key].imageCropOffsetX = Number(merged[key].imageCropOffsetX ?? 0);
+            merged[key].imageCropOffsetY = Number(merged[key].imageCropOffsetY ?? 0);
+            merged[key].flipX = Boolean(merged[key].flipX);
+            merged[key].flipY = Boolean(merged[key].flipY);
+        }
     });
 
     return merged;

@@ -16,6 +16,7 @@ import { useEditorHistory } from '../../composables/useEditorHistory';
 import { useEditorStyles } from '../../composables/useEditorStyles';
 import { useEditorSelection } from '../../composables/useEditorSelection';
 import { useEditorInteractions } from '../../composables/useEditorInteractions';
+import { buildCoverImageStyle } from '../../utils/editorShared';
 import { dataUrlToFile, extractImageFilesFromDataTransfer, fileToDataUrl, hasFilesInTransfer, isDataImageUrl, isEditableTarget, optimizeImageFile } from '../../utils/imageUploads';
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
@@ -53,6 +54,7 @@ const selectedParagraphIndex = ref(0);
 const paragraphSelection = reactive({ start: 0, end: 0, active: false });
 const activePropertyPanel = ref(null);
 const fileDragActive = ref(false);
+const backgroundDropPreview = ref(false);
 const toolbarPosition = reactive({ x: 0, y: 3 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
 const uploadProgressByAssetId = reactive({});
@@ -200,7 +202,17 @@ const textPropertyTabs = [
     { id: 'effects', label: 'Efectos', class: 'order-last' },
     { id: 'arrange', label: 'Posición' , class: 'order-last'},
 ];
-const visualPropertyTabs = [
+const imagePropertyTabs = [
+  { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
+  { id: 'border', icon: 'radix-icons:border-width', title: 'Borde', class: 'order-first' },
+  { id: 'crop', icon: 'ph:crop-bold', title: 'Recortar', class: 'order-last' },
+  { id: 'rotate', icon: '', label: 'Girar', class: 'order-last' },
+  { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
+  { id: 'effects', label: 'Efectos', class: 'order-last' },
+  { id: 'arrange', label: 'Posición', class: 'order-last' },
+  { id: 'set-as-background', icon: 'tabler:background', title: 'Fijar como fondo', class: 'order-last' },
+];
+const shapePropertyTabs = [
   { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
   { id: 'border', icon: 'radix-icons:border-width', title: 'Borde', class: 'order-first' },
   { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
@@ -535,11 +547,27 @@ const {
   ensureParagraphStyles: (...args) => ensureParagraphStyles(...args),
   isTextElement: (...args) => isTextElement(...args),
 });
+const backgroundHasImage = computed(() => Boolean(state.elementLayout.background?.backgroundImageSrc));
+const selectedBackgroundPropertyTabs = computed(() => {
+  const tabs = [...backgroundPropertyTabs];
+
+  if (backgroundHasImage.value) {
+    tabs.push(
+      { id: 'crop', icon: 'ph:crop-bold', title: 'Recortar', class: 'order-last' },
+      { id: 'rotate', icon: '', label: 'Girar', class: 'order-last' },
+      { id: 'detach', icon: 'tabler:background', title: 'Separar imagen del fondo', class: 'order-last' },
+      { id: 'clear-background', icon: 'ph:trash-bold', title: 'Borrar fondo', class: 'order-last' },
+    );
+  }
+
+  return tabs;
+});
 const selectedPropertyTabs = computed(() => {
   if (isGroupSelection.value || hasMultiSelection.value) return [];
   if (!hasSelection.value) return textPropertyTabs;
-  if (state.selectedElementId === 'background') return backgroundPropertyTabs;
-  return selectedElementType.value === 'text' ? textPropertyTabs : visualPropertyTabs;
+  if (state.selectedElementId === 'background') return selectedBackgroundPropertyTabs.value;
+  if (selectedElementType.value === 'text') return textPropertyTabs;
+  return selectedElementType.value === 'image' ? imagePropertyTabs : shapePropertyTabs;
 });
 const hasSidebarPanelContent = computed(() => (
   !!activePropertyPanel.value
@@ -577,6 +605,7 @@ const {
   shapeStyle,
   shapeRenderModel,
   imageFrameStyle,
+  imageRenderStyle,
   imageTintOverlayStyle,
   elementContentStyle,
   richEditorContainerStyle,
@@ -601,6 +630,17 @@ const orderedLayerIds = computed(() => Object.keys(state.elementLayout).sort((a,
     }
 
     return zA - zB;
+}));
+const canvasBackgroundImageStyle = computed(() => buildCoverImageStyle({
+  containerWidth: editorCanvasDimensions.value.width,
+  containerHeight: editorCanvasDimensions.value.height,
+  imageWidth: state.elementLayout.background?.backgroundImageWidth,
+  imageHeight: state.elementLayout.background?.backgroundImageHeight,
+  cropScale: state.elementLayout.background?.backgroundImageCropScale,
+  cropOffsetX: state.elementLayout.background?.backgroundImageCropOffsetX,
+  cropOffsetY: state.elementLayout.background?.backgroundImageCropOffsetY,
+  flipX: state.elementLayout.background?.backgroundImageFlipX,
+  flipY: state.elementLayout.background?.backgroundImageFlipY,
 }));
 
 watch([selectedElementType, hasSelection], () => {
@@ -900,6 +940,11 @@ const buildDefaultLayout = (overrides = {}) => ({
   gradientAngle: 135,
   imageTintColor: '#0f172a',
   imageTintStrength: 0,
+  imageCropScale: 1,
+  imageCropOffsetX: 0,
+  imageCropOffsetY: 0,
+  flipX: false,
+  flipY: false,
   ...overrides,
 });
 const placeInsideCanvas = (layout) => {
@@ -988,6 +1033,8 @@ const upsertUploadedImage = (entry) => {
     uploadStatus: entry.uploadStatus ?? 'done',
     needsUpload: Boolean(entry.needsUpload),
     errorMessage: entry.errorMessage ?? null,
+    intrinsicWidth: Number(entry.intrinsicWidth ?? 0) || null,
+    intrinsicHeight: Number(entry.intrinsicHeight ?? 0) || null,
   };
 
   const existingIndex = getUploadedImageIndexByAssetId(entry.assetId);
@@ -1060,14 +1107,17 @@ const buildInitialImageLayout = async (src) => {
   const intrinsicSize = await getImageIntrinsicSize(src);
 
   if (!intrinsicSize?.width || !intrinsicSize?.height) {
-    return buildDefaultLayout({
-      w: fallbackWidth,
-      h: fallbackHeight,
-      x: getInsertX(fallbackWidth),
-      y: 120,
-      backgroundColor: '#ffffff',
-      color: '#ffffff',
-    });
+    return {
+      intrinsicSize: null,
+      layout: buildDefaultLayout({
+        w: fallbackWidth,
+        h: fallbackHeight,
+        x: getInsertX(fallbackWidth),
+        y: 120,
+        backgroundColor: '#ffffff',
+        color: '#ffffff',
+      }),
+    };
   }
 
   const maxWidth = Math.max(120, bounds.width - 48);
@@ -1076,14 +1126,22 @@ const buildInitialImageLayout = async (src) => {
   const width = Math.max(40, Math.round(intrinsicSize.width * scale));
   const height = Math.max(40, Math.round(intrinsicSize.height * scale));
 
-  return buildDefaultLayout({
-    w: width,
-    h: height,
-    x: getInsertX(width),
-    y: 120,
-    backgroundColor: '#ffffff',
-    color: '#ffffff',
-  });
+  return {
+    intrinsicSize,
+    layout: buildDefaultLayout({
+      w: width,
+      h: height,
+      x: getInsertX(width),
+      y: 120,
+      backgroundColor: '#ffffff',
+      color: '#ffffff',
+      imageCropScale: 1,
+      imageCropOffsetX: 0,
+      imageCropOffsetY: 0,
+      flipX: false,
+      flipY: false,
+    }),
+  };
 };
 
 const addImageElementFromSrc = async (src, label = 'Imagen', options = {}) => {
@@ -1094,10 +1152,17 @@ const addImageElementFromSrc = async (src, label = 'Imagen', options = {}) => {
     storagePath = null,
     needsUpload = false,
     closePanel = true,
+    layoutOverrides = {},
+    intrinsicWidth = null,
+    intrinsicHeight = null,
   } = options;
 
   const id = createElementId('image');
-  const layout = await buildInitialImageLayout(src);
+  const { layout: baseLayout, intrinsicSize } = await buildInitialImageLayout(src);
+  const layout = {
+    ...baseLayout,
+    ...layoutOverrides,
+  };
 
   placeInsideCanvas(layout);
   state.customElements = {
@@ -1111,6 +1176,8 @@ const addImageElementFromSrc = async (src, label = 'Imagen', options = {}) => {
       pendingDataUrl,
       storagePath,
       needsUpload,
+      intrinsicWidth: intrinsicWidth ?? intrinsicSize?.width ?? null,
+      intrinsicHeight: intrinsicHeight ?? intrinsicSize?.height ?? null,
     },
   };
   state.elementLayout = {
@@ -1122,6 +1189,87 @@ const addImageElementFromSrc = async (src, label = 'Imagen', options = {}) => {
     closeImagePanel();
   }
   return id;
+};
+
+const clearBackgroundImage = () => {
+  state.elementLayout.background = {
+    ...state.elementLayout.background,
+    backgroundImageSrc: null,
+    backgroundImageAssetId: null,
+    backgroundImagePendingDataUrl: null,
+    backgroundImageStoragePath: null,
+    backgroundImageWidth: null,
+    backgroundImageHeight: null,
+    backgroundImageCropScale: 1,
+    backgroundImageCropOffsetX: 0,
+    backgroundImageCropOffsetY: 0,
+    backgroundImageFlipX: false,
+    backgroundImageFlipY: false,
+  };
+};
+
+const clearBackgroundFill = () => {
+  state.elementLayout.background = {
+    ...state.elementLayout.background,
+    fillMode: 'solid',
+    backgroundColor: '#ffffff',
+    gradientStart: '#0ea5e9',
+    gradientEnd: '#8b5cf6',
+    gradientAngle: 135,
+  };
+};
+
+const setBackgroundImage = async ({
+  src,
+  assetId = null,
+  label = 'Fondo',
+  pendingDataUrl = null,
+  storagePath = null,
+  needsUpload = false,
+  intrinsicWidth = null,
+  intrinsicHeight = null,
+}) => {
+  if (!src) return;
+
+  const intrinsicSize = intrinsicWidth && intrinsicHeight
+    ? { width: intrinsicWidth, height: intrinsicHeight }
+    : await getImageIntrinsicSize(src);
+
+  state.elementLayout.background = {
+    ...state.elementLayout.background,
+    backgroundImageSrc: src,
+    backgroundImageAssetId: assetId,
+    backgroundImagePendingDataUrl: pendingDataUrl,
+    backgroundImageStoragePath: storagePath,
+    backgroundImageWidth: intrinsicSize?.width ?? null,
+    backgroundImageHeight: intrinsicSize?.height ?? null,
+    backgroundImageCropScale: 1,
+    backgroundImageCropOffsetX: 0,
+    backgroundImageCropOffsetY: 0,
+    backgroundImageFlipX: false,
+    backgroundImageFlipY: false,
+  };
+
+  state.selectedElementId = 'background';
+  activePropertyPanel.value = 'color';
+  optionsPanelOpen.value = true;
+  imagePanelOpen.value = false;
+  textPanelOpen.value = false;
+  shapePanelOpen.value = false;
+
+  if (assetId) {
+    upsertUploadedImage({
+      assetId,
+      label,
+      src,
+      pendingDataUrl,
+      storagePath,
+      needsUpload,
+      uploadStatus: needsUpload ? 'pending' : 'done',
+      intrinsicWidth: intrinsicSize?.width ?? null,
+      intrinsicHeight: intrinsicSize?.height ?? null,
+    });
+  }
 };
 
 const replaceUploadedImageSourceEverywhere = async ({ assetId, finalUrl, storagePath = null }) => {
@@ -1150,6 +1298,15 @@ const replaceUploadedImageSourceEverywhere = async ({ assetId, finalUrl, storage
         needsUpload: false,
       };
     });
+
+    if (state.elementLayout.background?.backgroundImageAssetId === assetId) {
+      state.elementLayout.background = {
+        ...state.elementLayout.background,
+        backgroundImageSrc: finalUrl,
+        backgroundImagePendingDataUrl: null,
+        backgroundImageStoragePath: storagePath,
+      };
+    }
 
     replaceImageAssetSource({
       assetId,
@@ -1256,6 +1413,7 @@ const createPendingUploadedImageFromFile = async (file, options = {}) => {
 
   const processedFile = await optimizeImageFile(file, imageUploadProcessingConfig.value);
   const dataUrl = await fileToDataUrl(processedFile);
+  const intrinsicSize = await getImageIntrinsicSize(dataUrl);
   const assetId = createElementId('upload');
   const label = processedFile.name || file.name || 'Imagen';
 
@@ -1267,14 +1425,28 @@ const createPendingUploadedImageFromFile = async (file, options = {}) => {
     uploadStatus: 'pending',
     needsUpload: true,
     errorMessage: null,
+    intrinsicWidth: intrinsicSize?.width ?? null,
+    intrinsicHeight: intrinsicSize?.height ?? null,
   });
 
-  if (options.insertIntoCanvas) {
+  if (options.useAsBackground) {
+    await setBackgroundImage({
+      src: dataUrl,
+      assetId,
+      label,
+      pendingDataUrl: dataUrl,
+      needsUpload: true,
+      intrinsicWidth: intrinsicSize?.width ?? null,
+      intrinsicHeight: intrinsicSize?.height ?? null,
+    });
+  } else if (options.insertIntoCanvas) {
     await addImageElementFromSrc(dataUrl, label, {
       assetId,
       pendingDataUrl: dataUrl,
       needsUpload: true,
       closePanel: Boolean(options.closePanel),
+      intrinsicWidth: intrinsicSize?.width ?? null,
+      intrinsicHeight: intrinsicSize?.height ?? null,
     });
   }
 
@@ -1315,10 +1487,23 @@ const addImageFromUrl = async () => {
   const src = imageUrlInput.value.trim();
   if (!src) return;
 
+  if (state.selectedElementId === 'background') {
+    await setBackgroundImage({ src, label: 'Fondo' });
+    return;
+  }
+
   await addImageElementFromSrc(src, 'Imagen URL');
 };
 
-const addLibraryImage = (image) => {
+const addLibraryImage = async (image) => {
+  if (state.selectedElementId === 'background') {
+    await setBackgroundImage({
+      src: image?.src,
+      label: image?.label || 'Fondo',
+    });
+    return;
+  }
+
   return addImageElementFromSrc(image?.src, image?.label || 'Imagen de libreria');
 };
 
@@ -1326,11 +1511,34 @@ const addUploadedImage = async (image) => {
   const src = image?.src || image?.pendingDataUrl || '';
   if (!src) return;
 
+  if (state.selectedElementId === 'background') {
+    await setBackgroundImage({
+      src,
+      assetId: image?.assetId ?? image?.id ?? null,
+      label: image?.label || 'Fondo',
+      pendingDataUrl: image?.pendingDataUrl ?? (isDataImageUrl(src) ? src : null),
+      storagePath: image?.storagePath ?? null,
+      needsUpload: Boolean(image?.needsUpload),
+      intrinsicWidth: image?.intrinsicWidth ?? null,
+      intrinsicHeight: image?.intrinsicHeight ?? null,
+    });
+
+    if (image?.needsUpload && (image?.pendingDataUrl || isDataImageUrl(src))) {
+      queueUploadForAsset(image.assetId ?? image.id, {
+        dataUrl: image.pendingDataUrl ?? src,
+        label: image.label,
+      });
+    }
+    return;
+  }
+
   await addImageElementFromSrc(src, image?.label || 'Imagen subida', {
     assetId: image?.assetId ?? image?.id ?? null,
     pendingDataUrl: image?.pendingDataUrl ?? (isDataImageUrl(src) ? src : null),
     storagePath: image?.storagePath ?? null,
     needsUpload: Boolean(image?.needsUpload),
+    intrinsicWidth: image?.intrinsicWidth ?? null,
+    intrinsicHeight: image?.intrinsicHeight ?? null,
   });
 
   if (image?.needsUpload && (image?.pendingDataUrl || isDataImageUrl(src))) {
@@ -1352,8 +1560,182 @@ const retryUploadedImage = (image) => {
   });
 };
 
+const toggleSelectedImageFlip = (axis) => {
+  if (state.selectedElementId === 'background') {
+    if (!backgroundHasImage.value) return;
+    const key = axis === 'x' ? 'backgroundImageFlipX' : 'backgroundImageFlipY';
+    const offsetKey = axis === 'x' ? 'backgroundImageCropOffsetX' : 'backgroundImageCropOffsetY';
+    state.elementLayout.background[key] = !state.elementLayout.background[key];
+    state.elementLayout.background[offsetKey] = Number(state.elementLayout.background[offsetKey] ?? 0) * -1;
+    return;
+  }
+
+  if (selectedElementType.value !== 'image' || !selectedElement.value) return;
+  const key = axis === 'x' ? 'flipX' : 'flipY';
+  const offsetKey = axis === 'x' ? 'imageCropOffsetX' : 'imageCropOffsetY';
+  selectedElement.value[key] = !selectedElement.value[key];
+  selectedElement.value[offsetKey] = Number(selectedElement.value[offsetKey] ?? 0) * -1;
+};
+
+const resetSelectedImageCrop = () => {
+  if (state.selectedElementId === 'background') {
+    if (!backgroundHasImage.value) return;
+    state.elementLayout.background.backgroundImageCropScale = 1;
+    state.elementLayout.background.backgroundImageCropOffsetX = 0;
+    state.elementLayout.background.backgroundImageCropOffsetY = 0;
+    return;
+  }
+
+  if (selectedElementType.value !== 'image' || !selectedElement.value) return;
+  selectedElement.value.imageCropScale = 1;
+  selectedElement.value.imageCropOffsetX = 0;
+  selectedElement.value.imageCropOffsetY = 0;
+};
+
+const detachBackgroundImage = async () => {
+  if (!backgroundHasImage.value) return;
+
+  const backgroundLayout = state.elementLayout.background ?? {};
+  const width = Math.round(editorCanvasDimensions.value.width * 0.75);
+  const height = Math.round(editorCanvasDimensions.value.height * 0.75);
+  const src = backgroundLayout.backgroundImageSrc;
+
+  clearBackgroundImage();
+
+  await addImageElementFromSrc(src, 'Imagen separada del fondo', {
+    assetId: backgroundLayout.backgroundImageAssetId ?? null,
+    pendingDataUrl: backgroundLayout.backgroundImagePendingDataUrl ?? null,
+    storagePath: backgroundLayout.backgroundImageStoragePath ?? null,
+    needsUpload: Boolean(backgroundLayout.backgroundImagePendingDataUrl),
+    intrinsicWidth: backgroundLayout.backgroundImageWidth ?? null,
+    intrinsicHeight: backgroundLayout.backgroundImageHeight ?? null,
+    layoutOverrides: {
+      w: width,
+      h: height,
+      x: Math.max(0, Math.round((editorCanvasDimensions.value.width - width) / 2)),
+      y: Math.max(18, Math.round((editorCanvasDimensions.value.height - height) / 2)),
+      imageCropScale: backgroundLayout.backgroundImageCropScale ?? 1,
+      imageCropOffsetX: backgroundLayout.backgroundImageCropOffsetX ?? 0,
+      imageCropOffsetY: backgroundLayout.backgroundImageCropOffsetY ?? 0,
+      flipX: Boolean(backgroundLayout.backgroundImageFlipX),
+      flipY: Boolean(backgroundLayout.backgroundImageFlipY),
+    },
+  });
+};
+
+const clearBackgroundCompletely = () => {
+  clearBackgroundImage();
+  clearBackgroundFill();
+  state.selectedElementId = 'background';
+  activePropertyPanel.value = 'color';
+  optionsPanelOpen.value = true;
+};
+
+const promoteSelectedImageToBackground = async () => {
+  if (selectedElementType.value !== 'image' || !state.selectedElementId || !selectedElement.value) {
+    return;
+  }
+
+  if (backgroundHasImage.value) {
+    const confirmed = window.confirm('Ya hay una imagen de fondo. Si continúas, será reemplazada por la imagen seleccionada.');
+    if (!confirmed) {
+      return;
+    }
+  }
+
+  const elementId = state.selectedElementId;
+  const imageElement = state.customElements?.[elementId];
+  const imageLayout = state.elementLayout?.[elementId];
+
+  if (!imageElement || !imageLayout) {
+    return;
+  }
+
+  await setBackgroundImage({
+    src: imageElement.src,
+    assetId: imageElement.assetId ?? null,
+    label: imageElement.label ?? 'Fondo',
+    pendingDataUrl: imageElement.pendingDataUrl ?? null,
+    storagePath: imageElement.storagePath ?? null,
+    needsUpload: Boolean(imageElement.needsUpload),
+    intrinsicWidth: imageElement.intrinsicWidth ?? null,
+    intrinsicHeight: imageElement.intrinsicHeight ?? null,
+  });
+
+  state.elementLayout.background = {
+    ...state.elementLayout.background,
+    backgroundImageCropScale: Math.max(1, Number(imageLayout.imageCropScale ?? 1)),
+    backgroundImageCropOffsetX: Number(imageLayout.imageCropOffsetX ?? 0),
+    backgroundImageCropOffsetY: Number(imageLayout.imageCropOffsetY ?? 0),
+    backgroundImageFlipX: Boolean(imageLayout.flipX),
+    backgroundImageFlipY: Boolean(imageLayout.flipY),
+  };
+
+  if (state.customElements?.[elementId]) {
+    delete state.customElements[elementId];
+  }
+  if (state.elementLayout?.[elementId]) {
+    delete state.elementLayout[elementId];
+  }
+  if (elementMeasurements[elementId]) {
+    delete elementMeasurements[elementId];
+  }
+  if (richEditorRefs.value[elementId]) {
+    delete richEditorRefs.value[elementId];
+  }
+};
+
+const handlePropertyTabClick = async (tab) => {
+  if (!tab) return;
+
+  if (tab.id === 'detach') {
+    await detachBackgroundImage();
+    return;
+  }
+
+  if (tab.id === 'set-as-background') {
+    await promoteSelectedImageToBackground();
+    return;
+  }
+
+  if (tab.id === 'clear-background') {
+    clearBackgroundCompletely();
+    return;
+  }
+
+  activePropertyPanel.value = tab.id;
+  optionsPanelOpen.value = true;
+};
+
 const syncPendingUploadsFromPersistedState = async () => {
   await mutateWithoutHistory(() => {
+    const backgroundImageSrc = state.elementLayout.background?.backgroundImageSrc ?? '';
+    const backgroundPendingDataUrl = state.elementLayout.background?.backgroundImagePendingDataUrl
+      ?? (isDataImageUrl(backgroundImageSrc) ? backgroundImageSrc : null);
+    const backgroundAssetId = state.elementLayout.background?.backgroundImageAssetId
+      ?? (backgroundPendingDataUrl ? createElementId('background-upload') : null);
+
+    if (backgroundPendingDataUrl && backgroundAssetId) {
+      state.elementLayout.background = {
+        ...state.elementLayout.background,
+        backgroundImageAssetId: backgroundAssetId,
+        backgroundImagePendingDataUrl: backgroundPendingDataUrl,
+      };
+
+      if (!getUploadedImageByAssetId(backgroundAssetId)) {
+        upsertUploadedImage({
+          assetId: backgroundAssetId,
+          label: 'Fondo',
+          src: backgroundPendingDataUrl,
+          pendingDataUrl: backgroundPendingDataUrl,
+          uploadStatus: 'pending',
+          needsUpload: true,
+          intrinsicWidth: state.elementLayout.background?.backgroundImageWidth ?? null,
+          intrinsicHeight: state.elementLayout.background?.backgroundImageHeight ?? null,
+        });
+      }
+    }
+
     Object.entries(state.customElements ?? {}).forEach(([id, element]) => {
       if (!element || element.type !== 'image') return;
 
@@ -1402,6 +1784,16 @@ const handleCanvasFileDragOver = (event) => {
 
   event.preventDefault();
   fileDragActive.value = true;
+  const rect = event.currentTarget?.getBoundingClientRect?.();
+  if (rect) {
+    const edgeThreshold = Math.min(72, Math.max(40, Math.round(Math.min(rect.width, rect.height) * 0.12)));
+    backgroundDropPreview.value = (
+      event.clientX - rect.left <= edgeThreshold
+      || rect.right - event.clientX <= edgeThreshold
+      || event.clientY - rect.top <= edgeThreshold
+      || rect.bottom - event.clientY <= edgeThreshold
+    );
+  }
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = 'copy';
   }
@@ -1420,17 +1812,22 @@ const handleCanvasFileDragLeave = (event) => {
   }
 
   fileDragActive.value = false;
+  backgroundDropPreview.value = false;
 };
 
 const handleCanvasFileDrop = async (event) => {
   const files = extractImageFilesFromDataTransfer(event.dataTransfer);
+  const shouldUseAsBackground = backgroundDropPreview.value && files.length === 1;
   fileDragActive.value = false;
+  backgroundDropPreview.value = false;
   if (!files.length) return;
 
   event.preventDefault();
   for (const file of files) {
     // eslint-disable-next-line no-await-in-loop
-    await createPendingUploadedImageFromFile(file, { insertIntoCanvas: true });
+    await createPendingUploadedImageFromFile(file, shouldUseAsBackground
+      ? { useAsBackground: true }
+      : { insertIntoCanvas: true });
   }
 };
 
@@ -1556,7 +1953,11 @@ const updateElementMeasurement = (id, node) => {
 
   const deleteSelectedElement = () => {
     const id = state.selectedElementId;
-    if (!id || id === 'background') return;
+    if (!id) return;
+    if (id === 'background') {
+      clearBackgroundCompletely();
+      return;
+    }
 
     if (editingElementId.value === id) {
       commitTextEdit();
@@ -2061,6 +2462,16 @@ const handleExportNavigation = async (event) => {
   window.location.href = '/designer/export';
 };
 
+const handleCanvasClick = (event) => {
+  if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
+  state.selectedElementId = 'background';
+  activePropertyPanel.value = 'color';
+  optionsPanelOpen.value = true;
+  textPanelOpen.value = false;
+  imagePanelOpen.value = false;
+  shapePanelOpen.value = false;
+};
+
 watch(() => state.selectedElementId, () => {
     toolbarPosition.x = 0;
     toolbarPosition.y = 3;
@@ -2109,7 +2520,7 @@ watch(selectedGroupId, (groupId) => {
     <section class="relative min-h-0 flex-1 overflow-hidden">
       <div class="h-full overflow-hidden border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div
-          v-if="hasSelection && !hasMultiSelection && !isGroupSelection && state.selectedElementId !== 'background'"
+          v-if="hasSelection && !hasMultiSelection && !isGroupSelection"
           data-editor-keep-selection="true"
           class="pointer-events-none absolute z-50 flex justify-center"
           :style="{ left: '70px', right: '0', top: `${toolbarPosition.y}px` }"
@@ -2120,7 +2531,8 @@ watch(selectedGroupId, (groupId) => {
                 <div class="flex flex-wrap items-center gap-3">
                     <button type="button" class="order-first btn btn-ghost text-lg cursor-grab active:cursor-grabbing" @pointerdown="startToolbarDrag">⋮⋮</button>
                   <button v-for="tab in selectedPropertyTabs" :key="tab.id" type="button" class="btn border-0 py-1 px-2" :class="[activePropertyPanel === tab.id ? 'btn-primary' : 'btn-outline', tab.class]"
-                        @click="activePropertyPanel = tab.id; optionsPanelOpen = true">
+                        :title="tab.title || tab.label"
+                        @click="handlePropertyTabClick(tab)">
                         <span v-if="tab.label" class="text-sm text-base-100-accent" :class="tab.labelClass">{{ tab.label }}</span>
                         <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl"/>
                     </button>
@@ -2177,6 +2589,7 @@ watch(selectedGroupId, (groupId) => {
             :shape-style-from-kind="shapeStyleFromKind"
             :selected-element="selectedElement"
             :selected-element-type="selectedElementType"
+            :background-has-image="backgroundHasImage"
             :selected-text-style="selectedTextStyle"
             :active-paragraph-label="activeParagraphLabel"
             :font-options="fontOptions"
@@ -2212,6 +2625,8 @@ watch(selectedGroupId, (groupId) => {
             :set-visual-effect="setVisualEffect"
             :set-selected-color="setSelectedColor"
             :change-layer="changeLayer"
+            :toggle-selected-image-flip="toggleSelectedImageFlip"
+            :reset-selected-image-crop="resetSelectedImageCrop"
             @close-panel="closeOptionsPanel"
             @update-image-panel-tab="imagePanelTab = $event"
             @update-image-url-input="imageUrlInput = $event"
@@ -2224,10 +2639,13 @@ watch(selectedGroupId, (groupId) => {
             :canvas-zoom-style="canvasZoomStyle"
             :is-background-selected="state.selectedElementId === 'background'"
             :canvas-background-style="canvasBackgroundStyle"
+            :canvas-background-image-src="state.elementLayout.background?.backgroundImageSrc"
+            :canvas-background-image-style="canvasBackgroundImageStyle"
             :canvas-element-style="canvasElementStyle"
             :editor-elements="editorElements"
             :drag="drag"
             :file-drag-active="fileDragActive"
+            :background-drop-preview="backgroundDropPreview"
             :editing-element-id="editingElementId"
             :state="state"
             :element-box-style="elementBoxStyle"
@@ -2236,12 +2654,14 @@ watch(selectedGroupId, (groupId) => {
             :rich-editor-container-style="richEditorContainerStyle"
             :neon-color-override="neonColorOverride"
             :image-frame-style="imageFrameStyle"
+            :image-render-style="imageRenderStyle"
             :image-tint-overlay-style="imageTintOverlayStyle"
             :shape-style="shapeStyle"
             :shape-render-model="shapeRenderModel"
             :canvas-ref-setter="setCanvasRef"
             :rich-editor-ref-setter="setRichEditorRef"
             @canvas-pointer-down="handleCanvasPointerDown"
+            @canvas-click="handleCanvasClick"
             @canvas-file-drag-enter="handleCanvasFileDragEnter"
             @canvas-file-drag-over="handleCanvasFileDragOver"
             @canvas-file-drag-leave="handleCanvasFileDragLeave"

@@ -819,7 +819,6 @@ export const useEditorInteractions = ({
     if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
 
     if (state.selectedElementId === 'background') {
-      clearSelection();
       return;
     }
 
@@ -842,7 +841,7 @@ export const useEditorInteractions = ({
     if (!(target instanceof Element)) return;
 
     const preserveSelectionTarget = target.closest(
-      '[data-editor-element="true"],[data-editor-control="true"],[data-editor-keep-selection="true"],nav,header,[role="navigation"]',
+      '[data-editor-element="true"],[data-editor-control="true"],[data-editor-keep-selection="true"],[data-editor-canvas="true"],nav,header,[role="navigation"]',
     );
 
     if (preserveSelectionTarget) return;

@@ -9,6 +9,7 @@ import { useDesignerState } from '../../composables/useDesignerState';
 import {
     BASE_TEXT_ELEMENT_IDS,
     buildCanvasBackgroundStyle,
+    buildCoverImageStyle,
     buildEditorElements,
     buildElementBoxStyle,
     buildElementContentStyle,
@@ -228,9 +229,38 @@ function imageFrameStyle(id) {
     return buildImageFrameStyle(state.elementLayout[id] ?? {});
 }
 
+function imageRenderStyle(id) {
+    const layout = state.elementLayout[id] ?? {};
+    const element = state.customElements?.[id] ?? {};
+
+    return buildCoverImageStyle({
+        containerWidth: layout.w ?? 160,
+        containerHeight: layout.h ?? 140,
+        imageWidth: element.intrinsicWidth,
+        imageHeight: element.intrinsicHeight,
+        cropScale: layout.imageCropScale,
+        cropOffsetX: layout.imageCropOffsetX,
+        cropOffsetY: layout.imageCropOffsetY,
+        flipX: layout.flipX,
+        flipY: layout.flipY,
+    });
+}
+
 function imageTintOverlayStyle(id) {
     return buildImageTintOverlayStyle(state.elementLayout[id] ?? {});
 }
+
+const canvasBackgroundImageStyle = computed(() => buildCoverImageStyle({
+    containerWidth: baseCanvasDimensions.value.width,
+    containerHeight: baseCanvasDimensions.value.height,
+    imageWidth: state.elementLayout.background?.backgroundImageWidth,
+    imageHeight: state.elementLayout.background?.backgroundImageHeight,
+    cropScale: state.elementLayout.background?.backgroundImageCropScale,
+    cropOffsetX: state.elementLayout.background?.backgroundImageCropOffsetX,
+    cropOffsetY: state.elementLayout.background?.backgroundImageCropOffsetY,
+    flipX: state.elementLayout.background?.backgroundImageFlipX,
+    flipY: state.elementLayout.background?.backgroundImageFlipY,
+}));
 
 function collectAccessibleFontFaceRules() {
     const styleSheets = Array.from(document.styleSheets || []);
@@ -593,14 +623,23 @@ watch(() => state.elementLayout, () => {
                 </div>
 
                 <div class="pointer-events-none fixed top-0 opacity-0" style="left: -99999px;">
+                <div
+                    ref="exportPreviewRef"
+                    class="relative overflow-hidden p-7 text-white"
+                    :style="{ ...canvasBackgroundStyle, width: `${baseCanvasDimensions.width}px`, height: `${baseCanvasDimensions.height}px` }"
+                >
+                    <div v-if="state.elementLayout.background?.backgroundImageSrc" class="pointer-events-none absolute inset-0 overflow-hidden">
+                        <img
+                            :src="state.elementLayout.background?.backgroundImageSrc"
+                            alt="Fondo del diseño"
+                            :style="canvasBackgroundImageStyle"
+                            class="pointer-events-none"
+                            crossorigin="anonymous"
+                        />
+                    </div>
                     <div
-                        ref="exportPreviewRef"
-                        class="relative overflow-hidden p-7 text-white"
-                        :style="{ ...canvasBackgroundStyle, width: `${baseCanvasDimensions.width}px`, height: `${baseCanvasDimensions.height}px` }"
-                    >
-                        <div
-                            v-for="item in editorElements"
-                            :key="item.id"
+                        v-for="item in editorElements"
+                        :key="item.id"
                             :style="elementBoxStyle(item.id)"
                         >
                             <template v-if="item.type === 'text'">
@@ -623,6 +662,7 @@ watch(() => state.elementLayout, () => {
                                         :src="item.src"
                                         :alt="item.label"
                                         class="h-full w-full object-cover"
+                                        :style="imageRenderStyle(item.id)"
                                         crossorigin="anonymous"
                                     />
                                     <div

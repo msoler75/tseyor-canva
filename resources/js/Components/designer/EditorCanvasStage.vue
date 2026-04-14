@@ -14,6 +14,7 @@ const props = defineProps({
   },
   drag: Object,
   fileDragActive: Boolean,
+  backgroundDropPreview: Boolean,
   editingElementId: String,
   state: Object,
   elementBoxStyle: Function,
@@ -22,15 +23,19 @@ const props = defineProps({
   richEditorContainerStyle: Function,
   neonColorOverride: Function,
   imageFrameStyle: Function,
+  imageRenderStyle: Function,
   imageTintOverlayStyle: Function,
   shapeStyle: Function,
   shapeRenderModel: Function,
+  canvasBackgroundImageSrc: String,
+  canvasBackgroundImageStyle: [Object, Array],
   canvasRefSetter: Function,
   richEditorRefSetter: Function,
 });
 
 const emit = defineEmits([
   'canvasPointerDown',
+  'canvasClick',
   'elementClick',
   'beginTextEdit',
   'elementPointerDown',
@@ -56,9 +61,11 @@ const assignRichEditorRef = (id, element) => {
     <div class="mx-auto bg-white p-4 shadow-2xl dark:bg-slate-900" :style="[canvasFrameStyle, canvasZoomStyle]" :class="isBackgroundSelected ? 'ring-2 ring-primary' : ''">
       <div
         :ref="canvasRefSetter"
+        data-editor-canvas="true"
         class="relative overflow-visible p-7 text-white select-none touch-none"
         :style="{ ...canvasBackgroundStyle, ...canvasElementStyle }"
         @pointerdown="emit('canvasPointerDown', $event)"
+        @click="emit('canvasClick', $event)"
         @dragenter="emit('canvasFileDragEnter', $event)"
         @dragover="emit('canvasFileDragOver', $event)"
         @dragleave="emit('canvasFileDragLeave', $event)"
@@ -66,13 +73,23 @@ const assignRichEditorRef = (id, element) => {
       >
         <div
           v-if="fileDragActive"
-          class="pointer-events-none absolute inset-3 z-30 rounded-[28px] border-2 border-dashed border-cyan-300 bg-cyan-400/10 shadow-[0_0_0_4px_rgba(34,211,238,0.15)]"
+          class="pointer-events-none absolute inset-3 z-30 rounded-[28px] border-2 border-dashed shadow-[0_0_0_4px_rgba(34,211,238,0.15)]"
+          :class="backgroundDropPreview ? 'border-fuchsia-300 bg-fuchsia-400/10' : 'border-cyan-300 bg-cyan-400/10'"
         >
           <div class="flex h-full w-full items-center justify-center">
-            <div class="rounded-full bg-slate-950/70 px-4 py-2 text-sm font-semibold text-cyan-100 shadow-lg">
-              Suelta aquí tus imágenes
+            <div class="rounded-full bg-slate-950/70 px-4 py-2 text-sm font-semibold shadow-lg" :class="backgroundDropPreview ? 'text-fuchsia-100' : 'text-cyan-100'">
+              {{ backgroundDropPreview ? 'Suelta para usarla como fondo' : 'Suelta aquí tus imágenes' }}
             </div>
           </div>
+        </div>
+        <div v-if="canvasBackgroundImageSrc" class="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+          <img
+            :src="canvasBackgroundImageSrc"
+            alt="Fondo del diseño"
+            class="pointer-events-none"
+            :style="canvasBackgroundImageStyle"
+            draggable="false"
+          />
         </div>
         <div
           v-for="item in editorElements"
@@ -122,6 +139,7 @@ const assignRichEditorRef = (id, element) => {
                   :src="item.src"
                   :alt="item.label"
                   class="h-full w-full object-cover"
+                  :style="imageRenderStyle ? imageRenderStyle(item.id) : null"
                   draggable="false"
                 />
                 <div

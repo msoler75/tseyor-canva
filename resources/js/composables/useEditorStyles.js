@@ -1,6 +1,7 @@
 import { computed } from 'vue';
 import {
   buildCanvasBackgroundStyle,
+  buildCoverImageStyle,
   buildElementBoxStyle,
   buildElementContentStyle as buildSharedElementContentStyle,
   buildImageFrameStyle,
@@ -444,6 +445,24 @@ export const useEditorStyles = ({
     return buildImageFrameStyle(layout);
   };
 
+  const imageRenderStyle = (id) => {
+    const layout = state.elementLayout[id];
+    const element = state.customElements?.[id];
+    if (!layout || !element) return {};
+
+    return buildCoverImageStyle({
+      containerWidth: layout.w ?? 160,
+      containerHeight: layout.h ?? 140,
+      imageWidth: element.intrinsicWidth,
+      imageHeight: element.intrinsicHeight,
+      cropScale: layout.imageCropScale,
+      cropOffsetX: layout.imageCropOffsetX,
+      cropOffsetY: layout.imageCropOffsetY,
+      flipX: layout.flipX,
+      flipY: layout.flipY,
+    });
+  };
+
   const imageTintOverlayStyle = (id) => {
     const layout = state.elementLayout[id];
     if (!layout) return {};
@@ -485,6 +504,7 @@ export const useEditorStyles = ({
     shapeStyle,
     shapeRenderModel,
     imageFrameStyle,
+    imageRenderStyle,
     imageTintOverlayStyle,
     elementContentStyle,
     richEditorContainerStyle,

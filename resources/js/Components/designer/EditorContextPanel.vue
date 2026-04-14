@@ -24,6 +24,7 @@ const props = defineProps({
   shapeStyleFromKind: Function,
   selectedElement: Object,
   selectedElementType: String,
+  backgroundHasImage: Boolean,
   selectedTextStyle: Object,
   activeParagraphLabel: String,
   fontOptions: Array,
@@ -59,6 +60,8 @@ const props = defineProps({
   setVisualEffect: Function,
   setSelectedColor: Function,
   changeLayer: Function,
+  toggleSelectedImageFlip: Function,
+  resetSelectedImageCrop: Function,
 });
 
 const emit = defineEmits(['closePanel', 'updateImagePanelTab', 'updateImageUrlInput', 'updateShapeCategoryFilter']);
@@ -79,6 +82,7 @@ const {
   shapeStyleFromKind,
   selectedElement,
   selectedElementType,
+  backgroundHasImage,
   selectedTextStyle,
   activeParagraphLabel,
   fontOptions,
@@ -114,6 +118,8 @@ const {
   setVisualEffect,
   setSelectedColor,
   changeLayer,
+  toggleSelectedImageFlip,
+  resetSelectedImageCrop,
 } = toRefs(props);
 
 const imagePanelTab = computed({
@@ -1004,6 +1010,130 @@ const closePanel = () => emit('closePanel');
                       </div>
                     </div>
                   </template>
+                </div>
+              </div>
+
+              <div v-else-if="activePropertyPanel === 'rotate' && (selectedElementType === 'image' || (state.selectedElementId === 'background' && backgroundHasImage))" class="card border border-base-300 bg-base-100/80">
+                <div class="card-body p-4 space-y-4">
+                  <div>
+                    <p class="text-sm font-semibold text-base-content">Girar imagen</p>
+                    <p class="text-xs text-base-content/60">Invierte la imagen horizontal o verticalmente.</p>
+                  </div>
+                  <div class="flex flex-col gap-3">
+                    <button type="button" class="btn btn-outline rounded-2xl" @click="toggleSelectedImageFlip('x')">
+                      <Icon icon="mdi:arrow-u-left-top" class="text-lg" />
+                      <span class="w-48 pl-4 text-left">Girar horizontalmente</span>
+                    </button>
+                    <button type="button" class="btn btn-outline rounded-2xl" @click="toggleSelectedImageFlip('y')">
+                      <Icon icon="mdi:arrow-u-down-right" class="text-lg" />
+                      <span class="w-48 pl-4 text-left">Girar verticalmente</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="activePropertyPanel === 'crop' && (selectedElementType === 'image' || (state.selectedElementId === 'background' && backgroundHasImage))" class="card border border-base-300 bg-base-100/80">
+                <div class="card-body p-4 space-y-5">
+                  <div>
+                    <p class="text-sm font-semibold text-base-content">Recortar imagen</p>
+                    <p class="text-xs text-base-content/60">Desplaza o amplía la imagen manteniendo siempre el encuadre cubierto.</p>
+                  </div>
+
+                  <div class="space-y-2">
+                    <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Zoom</label>
+                    <div class="flex items-center gap-3">
+                      <input
+                        v-if="state.selectedElementId === 'background'"
+                        v-model.number="state.elementLayout.background.backgroundImageCropScale"
+                        type="range"
+                        min="1"
+                        max="4"
+                        step="0.01"
+                        class="range range-primary flex-1"
+                      />
+                      <input
+                        v-else
+                        v-model.number="selectedElement.imageCropScale"
+                        type="range"
+                        min="1"
+                        max="4"
+                        step="0.01"
+                        class="range range-primary flex-1"
+                      />
+                      <input
+                        v-if="state.selectedElementId === 'background'"
+                        v-model.number="state.elementLayout.background.backgroundImageCropScale"
+                        type="number"
+                        min="1"
+                        max="4"
+                        step="0.01"
+                        class="input input-bordered input-sm w-24"
+                      />
+                      <input
+                        v-else
+                        v-model.number="selectedElement.imageCropScale"
+                        type="number"
+                        min="1"
+                        max="4"
+                        step="0.01"
+                        class="input input-bordered input-sm w-24"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="space-y-2">
+                    <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Desplazamiento horizontal</label>
+                    <div class="flex items-center gap-3">
+                      <input
+                        v-if="state.selectedElementId === 'background'"
+                        v-model.number="state.elementLayout.background.backgroundImageCropOffsetX"
+                        type="range"
+                        min="-1"
+                        max="1"
+                        step="0.01"
+                        class="range range-primary flex-1"
+                      />
+                      <input
+                        v-else
+                        v-model.number="selectedElement.imageCropOffsetX"
+                        type="range"
+                        min="-1"
+                        max="1"
+                        step="0.01"
+                        class="range range-primary flex-1"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="space-y-2">
+                    <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Desplazamiento vertical</label>
+                    <div class="flex items-center gap-3">
+                      <input
+                        v-if="state.selectedElementId === 'background'"
+                        v-model.number="state.elementLayout.background.backgroundImageCropOffsetY"
+                        type="range"
+                        min="-1"
+                        max="1"
+                        step="0.01"
+                        class="range range-primary flex-1"
+                      />
+                      <input
+                        v-else
+                        v-model.number="selectedElement.imageCropOffsetY"
+                        type="range"
+                        min="-1"
+                        max="1"
+                        step="0.01"
+                        class="range range-primary flex-1"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="flex justify-end">
+                    <button type="button" class="btn btn-outline btn-sm rounded-full" @click="resetSelectedImageCrop">
+                      Resetear recorte
+                    </button>
+                  </div>
                 </div>
               </div>
 
