@@ -588,3 +588,27 @@ export function parseSizeDetail(detail) {
     height: 1080,
   };
 }
+
+export function applyFormatToDimensions(dimensions, format) {
+  const width = Number(dimensions?.width ?? 0);
+  const height = Number(dimensions?.height ?? 0);
+
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return dimensions;
+  }
+
+  if (format === 'horizontal' && height > width) {
+    return { ...dimensions, width: height, height: width };
+  }
+
+  if (format === 'vertical' && width > height) {
+    return { ...dimensions, width: height, height: width };
+  }
+
+  if (format === 'square') {
+    const side = Math.max(width, height);
+    return { ...dimensions, width: side, height: side };
+  }
+
+  return dimensions;
+}

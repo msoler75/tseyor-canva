@@ -8,6 +8,7 @@ import { objectiveOptions, objectiveRecommendations } from '../../data/designer'
 import { useDesignerState } from '../../composables/useDesignerState';
 import {
     BASE_TEXT_ELEMENT_IDS,
+    applyFormatToDimensions,
     buildCanvasBackgroundStyle,
     buildCoverImageStyle,
     buildEditorElements,
@@ -100,7 +101,7 @@ const resolvedSizeOption = computed(() => {
 
 const selectedSizeDetail = computed(() => resolvedSizeOption.value?.detail ?? '1080 × 1080 px');
 const baseCanvasDimensions = computed(() => {
-    const parsed = parseSizeDetail(selectedSizeDetail.value);
+    const parsed = applyFormatToDimensions(parseSizeDetail(selectedSizeDetail.value), state.format);
 
     if (parsed?.width > 0 && parsed?.height > 0) {
         const ratio = parsed.width / parsed.height;
@@ -163,7 +164,7 @@ function clamp(value, min, max) {
 }
 
 function resolveTargetDimensions(detail, dpi) {
-    const parsed = parseSizeDetail(detail);
+    const parsed = applyFormatToDimensions(parseSizeDetail(detail), state.format);
 
     if (parsed.unit === 'cm') {
         return {

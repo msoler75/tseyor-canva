@@ -16,7 +16,7 @@ import { useEditorHistory } from '../../composables/useEditorHistory';
 import { useEditorStyles } from '../../composables/useEditorStyles';
 import { useEditorSelection } from '../../composables/useEditorSelection';
 import { useEditorInteractions } from '../../composables/useEditorInteractions';
-import { buildCoverImageStyle } from '../../utils/editorShared';
+import { applyFormatToDimensions, buildCoverImageStyle, parseSizeDetail } from '../../utils/editorShared';
 import { dataUrlToFile, extractImageFilesFromDataTransfer, fileToDataUrl, hasFilesInTransfer, isDataImageUrl, isEditableTarget, optimizeImageFile } from '../../utils/imageUploads';
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
@@ -804,24 +804,8 @@ const resolvedSizeOption = computed(() => {
   return options.find((option) => option.label === state.size) ?? null;
 });
 const selectedSizeDetail = computed(() => resolvedSizeOption.value?.detail ?? '1080 × 1080 px');
-const parseSizeDetail = (detail) => {
-  if (!detail) return null;
-
-  const normalized = String(detail).replace(',', '.').trim();
-  const pxMatch = normalized.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*px/i);
-  if (pxMatch) {
-    return { width: Number(pxMatch[1]), height: Number(pxMatch[2]) };
-  }
-
-  const cmMatch = normalized.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*cm/i);
-  if (cmMatch) {
-    return { width: Number(cmMatch[1]), height: Number(cmMatch[2]) };
-  }
-
-  return null;
-};
 const editorCanvasDimensions = computed(() => {
-  const parsed = parseSizeDetail(selectedSizeDetail.value);
+  const parsed = applyFormatToDimensions(parseSizeDetail(selectedSizeDetail.value), state.format);
   if (parsed?.width > 0 && parsed?.height > 0) {
     const ratio = parsed.width / parsed.height;
     if (ratio >= 0.95 && ratio <= 1.05) {
@@ -882,6 +866,10 @@ const setZoomLevel = (value) => {
   if (!Number.isFinite(parsed)) return;
   zoomLevel.value = Math.round(clamp(parsed, 25, 200));
 };
+const currentCanvasDimensions = () => ({
+  width: editorCanvasDimensions.value.width,
+  height: editorCanvasDimensions.value.height,
+});
 const getCanvasBounds = () => ({
   width: canvasRef.value?.clientWidth ?? editorCanvasDimensions.value.width,
   height: canvasRef.value?.clientHeight ?? editorCanvasDimensions.value.height,
@@ -954,6 +942,50 @@ const placeInsideCanvas = (layout) => {
 
   layout.x = Math.round(clamp(layout.x ?? 0, 0, Math.max(0, bounds.width - width - 8)));
   layout.y = Math.round(clamp(layout.y ?? 0, 18, Math.max(18, bounds.height - height - 8)));
+};
+
+const scaleNumericField = (layout, field, factor, minimum = 0) => {
+  if (!Number.isFinite(Number(layout?.[field]))) return;
+  layout[field] = Math.max(minimum, Number(layout[field]) * factor);
+};
+
+const rescaleDesignSurface = (previousSurface, nextSurface) => {
+  if (!previousSurface?.width || !previousSurface?.height || !nextSurface?.width || !nextSurface?.height) {
+    state.designSurface = nextSurface;
+    return;
+  }
+
+  const widthScale = nextSurface.width / previousSurface.width;
+  const heightScale = nextSurface.height / previousSurface.height;
+  const averageScale = (widthScale + heightScale) / 2;
+
+  Object.entries(state.elementLayout ?? {}).forEach(([id, layout]) => {
+    if (!layout || id === 'background') return;
+
+    scaleNumericField(layout, 'x', widthScale);
+    scaleNumericField(layout, 'y', heightScale, 18);
+    scaleNumericField(layout, 'w', widthScale, 40);
+    scaleNumericField(layout, 'h', heightScale, 40);
+    scaleNumericField(layout, 'fontSize', averageScale, 8);
+    scaleNumericField(layout, 'shadowOffset', averageScale);
+    scaleNumericField(layout, 'shadowBlur', averageScale);
+    scaleNumericField(layout, 'contourWidth', averageScale);
+    scaleNumericField(layout, 'misalignedThickness', averageScale);
+    scaleNumericField(layout, 'backgroundPadding', averageScale);
+    scaleNumericField(layout, 'letterSpacing', averageScale);
+
+    if (Array.isArray(layout.paragraphStyles)) {
+      layout.paragraphStyles = layout.paragraphStyles.map((style) => ({
+        ...style,
+        fontSize: Number.isFinite(Number(style?.fontSize)) ? Math.max(8, Number(style.fontSize) * averageScale) : style?.fontSize,
+        letterSpacing: Number.isFinite(Number(style?.letterSpacing)) ? Number(style.letterSpacing) * averageScale : style?.letterSpacing,
+      }));
+    }
+
+    placeInsideCanvas(layout);
+  });
+
+  state.designSurface = nextSurface;
 };
 
 const addTextElement = (presetId) => {
@@ -2355,6 +2387,13 @@ const cancelTextEdit = () => {
 };
 
 onMounted(() => {
+  const nextSurface = currentCanvasDimensions();
+  if (state.designSurface?.width && state.designSurface?.height) {
+    rescaleDesignSurface(state.designSurface, nextSurface);
+  } else {
+    state.designSurface = nextSurface;
+  }
+
   pushHistorySnapshot({ force: true });
   document.addEventListener('pointerdown', handleGlobalPointerDown, true);
   document.addEventListener('pointermove', moveDrag, { passive: false });
@@ -2462,6 +2501,16 @@ const handleExportNavigation = async (event) => {
   window.location.href = '/designer/export';
 };
 
+const handleFormatAssistantNavigation = async () => {
+  try {
+    await flushDesignerStatePersistence();
+  } catch (error) {
+    console.error('Failed to flush designer state before format assistant', error);
+  }
+
+  window.location.href = '/designer/format?return=%2Fdesigner%2Feditor';
+};
+
 const handleCanvasClick = (event) => {
   if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
   state.selectedElementId = 'background';
@@ -2510,6 +2559,7 @@ watch(selectedGroupId, (groupId) => {
       :redo-action-label="redoActionLabel"
       :zoom-level="zoomLevel"
       :dark-mode="state.darkMode"
+      @open-format-assistant="handleFormatAssistantNavigation"
       @undo="performUndo"
       @redo="performRedo"
       @update-zoom-level="setZoomLevel"

@@ -3,10 +3,12 @@ import SelectionIndicator from '../../Components/designer/SelectionIndicator.vue
 import StepFooter from '../../Components/designer/StepFooter.vue';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
 import { computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import { formatCards, inferFormatFromSizeOption, objectiveRecommendations, objectiveOptions } from '../../data/designer';
 import { useDesignerState } from '../../composables/useDesignerState';
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
+const page = usePage();
 const state = useDesignerState();
 
 const sizes = computed(() => {
@@ -32,6 +34,16 @@ const selectSizeOption = (option) => {
         state.format = option.formatHint;
     }
 };
+
+const formatReturnUrl = computed(() => {
+    const rawUrl = page.url ?? '';
+    const query = rawUrl.includes('?') ? rawUrl.split('?')[1] : '';
+    const params = new URLSearchParams(query);
+    return params.get('return');
+});
+const nextTargetUrl = computed(() => formatReturnUrl.value || navigation.next);
+const nextButtonLabel = computed(() => formatReturnUrl.value ? 'Volver al editor' : 'Siguiente');
+const footerHint = computed(() => formatReturnUrl.value ? 'Al volver al editor el diseño se adaptará proporcionalmente al nuevo tamaño.' : '');
 </script>
 
 <template>
@@ -180,8 +192,13 @@ const selectSizeOption = (option) => {
                         </div>
                     </div>
                 </div>
-
-                <StepFooter :previous-url="navigation.previous" :next-url="navigation.next" :next-disabled="!state.outputType || !state.format || !state.size" />
+                <StepFooter
+                    :previous-url="navigation.previous"
+                    :next-url="nextTargetUrl"
+                    :next-label="nextButtonLabel"
+                    :hint="footerHint"
+                    :next-disabled="!state.outputType || !state.format || !state.size"
+                />
             </div>
         </section>
     </DesignerLayout>

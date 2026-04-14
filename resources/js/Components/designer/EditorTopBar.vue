@@ -36,7 +36,7 @@ defineProps({
   },
 });
 
-const emit = defineEmits(['undo', 'redo', 'updateZoomLevel', 'toggleDarkMode', 'exportNavigate']);
+const emit = defineEmits(['openFormatAssistant', 'undo', 'redo', 'updateZoomLevel', 'toggleDarkMode', 'exportNavigate']);
 
 const handleZoomInput = (event) => {
   emit('updateZoomLevel', event.target.value);
@@ -52,6 +52,15 @@ const handleZoomInput = (event) => {
 
     <div class="flex flex-wrap items-center gap-3">
       <div class="flex items-center gap-3 rounded-2xl p-1 shadow-sm">
+        <button
+          type="button"
+          class="btn btn-sm btn-ghost rounded-full"
+          title="Cambiar formato o tamaño del diseño"
+          aria-label="Cambiar formato"
+          @click="emit('openFormatAssistant')"
+        >
+          <Icon icon="ph:frame-corners-bold" class="text-2xl" />
+        </button>
         <button
           type="button"
           class="btn btn-sm btn-ghost btn-circle"

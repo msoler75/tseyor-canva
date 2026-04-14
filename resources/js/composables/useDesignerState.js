@@ -98,7 +98,23 @@ function buildInitialState(sessionState) {
         elementLayout: mergedElementLayout,
         customElements: normalizeCustomElements(sessionState.customElements, mergedElementLayout),
         userUploadedImages: normalizeUserUploadedImages(sessionState.userUploadedImages),
+        designSurface: normalizeDesignSurface(sessionState.designSurface),
     };
+}
+
+function normalizeDesignSurface(designSurface) {
+    if (!designSurface || typeof designSurface !== 'object') {
+        return null;
+    }
+
+    const width = Number(designSurface.width ?? 0);
+    const height = Number(designSurface.height ?? 0);
+
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        return null;
+    }
+
+    return { width, height };
 }
 
 function normalizeCustomElements(customElements, elementLayout) {

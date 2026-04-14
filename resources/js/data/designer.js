@@ -278,6 +278,7 @@ export const initialDesignerState = {
     selectedTemplateId: null,
     autosaveMessage: 'Guardado automático',
     selectedElementId: 'title',
+    designSurface: null,
     content: {
         title: '',
         subtitle: '',
