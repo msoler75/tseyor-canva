@@ -73,10 +73,7 @@ class DesignerController extends Controller
                         'updated_at' => $design->updated_at,
                         'created_at' => $design->created_at,
                     ])
-                : [],
-            'devLoginToken' => app()->isLocal()
-                ? $this->jwtService->issueBootstrapLoginToken('dev', 'dev@example.com')
-                : null,
+                : []
         ]);
     }
 

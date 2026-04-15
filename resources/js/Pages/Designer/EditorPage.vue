@@ -2601,14 +2601,11 @@ const handleHomeNavigation = async () => {
 const handleLogout = async () => {
   try {
     await axios.post('/auth/logout');
+    router.visit('/');
   } catch (error) {
-    console.error('Failed to logout from designer app', error);
-  } finally {
-    window.localStorage.removeItem('tseyor_jwt');
-    delete window.axios.defaults.headers.common.Authorization;
-    window.location.href = '/login';
-  }
-};
+    console.error('Failed to logout from editor app', error);
+  };
+}
 
 const handleCreateNewDesign = async () => {
   try {

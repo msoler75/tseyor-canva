@@ -5,13 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Support\JwtService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-use Throwable;
+use Inertia\Inertia;
+use Inertia\Response;
+use RuntimeException;
 
 class AuthController extends Controller
 {
@@ -23,13 +24,15 @@ class AuthController extends Controller
     public function login() {
         // si hay sesión iniciado, redirigir a /designer/editor
         if (Auth::check()) {
-            return redirect()->route('designer.editor');
+            return redirect()->route('designer.welcome');
         }
 
         // sino, redirigimos al portal principal de login
         $portalLoginUrl = $this->portalLoginUrl();
+        // dd($portalLoginUrl);
         if ($portalLoginUrl) {
-            return redirect()->away($portalLoginUrl);
+            // return redirect()->away($portalLoginUrl);
+            return Inertia::location($portalLoginUrl);
         }
 
         // si no hay URL de portal, mostramos una vista de error
@@ -119,8 +122,6 @@ class AuthController extends Controller
         ]);
     }
 
-
-
     public function logout(Request $request): JsonResponse
     {
         Auth::logout();
@@ -133,6 +134,78 @@ class AuthController extends Controller
         ]);
     }
 
+    private function authenticateFromToken(Request $request, string $token): RedirectResponse
+    {
+        try {
+            $user = $this->resolveUserFromToken($token);
+        } catch (RuntimeException $exception) {
+            return redirect()->route('designer.welcome')->with('error', $exception->getMessage());
+        }
+
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        return redirect()->route('designer.welcome');
+    }
+
+    private function loginWithCredentials(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string'],
+        ]);
+
+        /** @var User|null $user */
+        $user = User::query()->where('email', $validated['email'])->first();
+
+        if (!$user || !Hash::check($validated['password'], $user->password)) {
+            return response()->json([
+                'message' => 'Credenciales inválidas.',
+            ], 422);
+        }
+
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        return response()->json([
+            'token_type' => 'Bearer',
+            'access_token' => $this->jwtService->issueTokenForUser($user),
+            'expires_in' => (int) config('jwt.ttl', 60) * 60,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+            ],
+            'redirect_to' => route('designer.welcome'),
+        ]);
+    }
+
+    private function resolveUserFromToken(string $token): User
+    {
+        $payload = $this->jwtService->decodeToken($token);
+        $email = (string) data_get($payload, 'user.email', data_get($payload, 'email', data_get($payload, 'sub', '')));
+        $name = (string) data_get($payload, 'user.name', data_get($payload, 'name', 'Usuario'));
+
+        if ($email === '') {
+            throw new RuntimeException('El token no contiene un email válido.');
+        }
+
+        /** @var User $user */
+        $user = User::query()->firstOrCreate(
+            ['email' => $email],
+            [
+                'name' => $name,
+                'password' => Str::password(32),
+            ]
+        );
+
+        if ($user->name !== $name) {
+            $user->forceFill(['name' => $name])->save();
+        }
+
+        return $user;
+    }
+
     private function portalLoginUrl(): ?string
     {
         $baseUrl = config('portal.login_url');
@@ -142,7 +215,7 @@ class AuthController extends Controller
 
         $separator = str_contains($baseUrl, '?') ? '&' : '?';
         $parameter = config('portal.callback_parameter', 'return_to');
-        $callbackUrl = route('auth.login.callback');
+        $callbackUrl = route('login');
 
         return "{$baseUrl}{$separator}{$parameter}=".urlencode($callbackUrl);
     }

@@ -17,7 +17,9 @@ class DesignerSessionStateTest extends TestCase
 
     public function test_designer_pages_include_shared_session_state_props(): void
     {
-        $response = $this->get('/designer/content');
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->get('/designer/content');
 
         $response->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('Designer/ContentPage')
@@ -206,8 +208,9 @@ class DesignerSessionStateTest extends TestCase
     public function test_designer_upload_endpoint_stores_images_in_session_scoped_public_storage(): void
     {
         Storage::fake('public');
+        $user = User::factory()->create();
 
-        $response = $this->postJson('/designer/uploads', [
+        $response = $this->actingAs($user)->postJson('/designer/uploads', [
             'assetId' => 'upload-abc',
             'label' => 'cartel.png',
             'file' => UploadedFile::fake()->image('cartel.png', 640, 480),
@@ -217,14 +220,15 @@ class DesignerSessionStateTest extends TestCase
             ->assertOk()
             ->assertJson([
                 'uploaded' => true,
-                'assetId' => 'upload-abc',
                 'label' => 'cartel.png',
             ]);
 
         $path = $response->json('path');
+        $assetId = $response->json('assetId');
 
         $this->assertNotNull($path);
-        $this->assertStringStartsWith('designer/uploads/', $path);
+        $this->assertNotNull($assetId);
+        $this->assertStringStartsWith("designer/uploads/users/{$user->id}/", $path);
         Storage::disk('public')->assertExists($path);
         $this->assertStringStartsWith(url('/designer/storage/'), $response->json('url'));
 

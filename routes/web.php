@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [DesignerController::class, 'welcome'])->name('designer.welcome');
 
 Route::prefix('auth')->group(function (): void {
+    // si estamos en desarrollo, permitimos login dev
+    Route::get('/login-dev', [AuthController::class, 'loginDev'])->name('auth.login.dev');
     Route::get('/login', [AuthController::class, 'login'])->name('auth.login');
     Route::post('/login', [AuthController::class, 'portalCallback'])->name('auth.login.callback');
     Route::middleware('auth')->get('/me', [AuthController::class, 'me'])->name('auth.me');

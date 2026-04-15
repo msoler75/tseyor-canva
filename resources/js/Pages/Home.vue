@@ -23,18 +23,13 @@ const props = defineProps({
     designs: {
         type: Array,
         default: () => [],
-    },
-    devLoginToken: {
-        type: String,
-        default: null,
-    },
+    }
 });
 
 const page = usePage();
 const state = useDesignerState();
 const assistantOpen = ref(false);
 const assistantStep = ref('objective');
-const loggingInDev = ref(false);
 
 const assistantSteps = [
     { id: 'objective', label: 'Objetivo' },
@@ -176,27 +171,7 @@ const openExistingDesign = async (design) => {
 };
 
 const loginAsDev = async () => {
-    if (!props.devLoginToken || loggingInDev.value) return;
-
-    loggingInDev.value = true;
-
-    try {
-        const response = await axios.post('/auth/login', {
-            token: props.devLoginToken,
-        });
-
-        const accessToken = response.data?.access_token;
-        if (accessToken) {
-            window.localStorage.setItem('tseyor_jwt', accessToken);
-            window.axios.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
-        }
-
-        router.reload();
-    } catch (error) {
-        console.error('No se pudo iniciar sesión en modo dev', error);
-    } finally {
-        loggingInDev.value = false;
-    }
+    router.visit('/auth/login-dev');
 };
 
 const formatProjectUpdatedAt = (value) => {
@@ -212,16 +187,14 @@ const formatProjectUpdatedAt = (value) => {
 };
 
 const logoutFromApp = async () => {
-    try {
-        await axios.post('/auth/logout');
-    } catch (error) {
-        console.error('No se pudo cerrar la sesión', error);
-    } finally {
-        window.localStorage.removeItem('tseyor_jwt');
-        delete window.axios.defaults.headers.common.Authorization;
-        router.visit('/login');
-    }
+try {
+    await axios.post('/auth/logout');
+    router.visit('/');
+  } catch (error) {
+    console.error('Failed to logout from editor app', error);
 };
+}
+
 
 const duplicateDesign = async (design) => {
     if (!design?.uuid) return;
@@ -300,14 +273,12 @@ const deleteDesign = async (design) => {
                             CREAR
                         </button>
                         <button
-                            v-if="!authUser && devLoginToken"
+                            v-if="!authUser"
                             type="button"
                             class="btn btn-outline btn-lg rounded-full px-8 ml-3"
-                            :disabled="loggingInDev"
                             @click="loginAsDev"
                         >
                             <IconifyIcon icon="ph:rocket-launch-bold" class="text-lg" />
-                            {{ loggingInDev ? 'Entrando...' : 'Login dev' }}
                         </button>
                     </div>
                 </div>
