@@ -40,7 +40,6 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
             'designer' => [
-                'state' => $request->session()->get(DesignerController::sessionKey()),
                 'endpoints' => [
                     'save' => route('designer.state.save'),
                     'reset' => route('designer.state.reset'),

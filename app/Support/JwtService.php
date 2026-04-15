@@ -10,7 +10,8 @@ use RuntimeException;
 
 final class JwtService
 {
-    public function issueTokenForUser(User $user): string
+
+  public function issueTokenForUser(User $user): string
     {
         $issuedAt = CarbonImmutable::now();
         $expiresAt = $issuedAt->addMinutes((int) config('jwt.ttl', 60));
@@ -32,7 +33,7 @@ final class JwtService
         return $this->encode($payload);
     }
 
-    public function issueBootstrapLoginToken(string $name, string $email): string
+     public function issueBootstrapLoginToken(string $name, string $email): string
     {
         $issuedAt = CarbonImmutable::now();
         $expiresAt = $issuedAt->addMinutes(15);
@@ -51,6 +52,7 @@ final class JwtService
             ],
         ]);
     }
+
 
     /**
      * @return array<string, mixed>
@@ -150,5 +152,28 @@ final class JwtService
         }
 
         return $decoded;
+    }
+
+    /**
+     * Decodifica un JWT usando firebase/php-jwt
+     * @param string $token
+     * @return object|null
+     */
+    public function decodeWithFirebase(string $token): ?object
+    {
+        try {
+            // Usa la misma clave que para la generación
+            $key = config('jwt.secret') ?? '';
+            if (!$key) {
+                throw new \RuntimeException('JWT secret no configurado.');
+            }
+            return \Firebase\JWT\JWT::decode($token, new \Firebase\JWT\Key($key, 'HS256'));
+        } catch (\Firebase\JWT\SignatureInvalidException $e) {
+            \Log::warning('Firma JWT inválida', ['exception' => $e->getMessage()]);
+            return null;
+        } catch (\Exception $e) {
+            \Log::warning('Error al decodificar JWT', ['exception' => $e->getMessage()]);
+            return null;
+        }
     }
 }

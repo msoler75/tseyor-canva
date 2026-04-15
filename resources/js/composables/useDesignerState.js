@@ -11,6 +11,8 @@ let saveTimer;
 let saveInFlight = false;
 let queuedSave = null;
 let currentSaveEndpoint = '/designer/state';
+let currentHydratedDesignUuid = null;
+let persistenceMeta = {};
 
 function normalizeUploadedAssetUrl(value) {
     if (typeof value !== 'string' || !value) {
@@ -41,10 +43,19 @@ export function useDesignerState() {
     const page = usePage();
     const sessionState = page.props.designer?.state ?? null;
     const saveEndpoint = page.props.designer?.endpoints?.save ?? '/designer/state';
+    const incomingDesignUuid = sessionState?.currentDesignUuid ?? page.props.designer?.currentDesign?.uuid ?? null;
     currentSaveEndpoint = saveEndpoint;
 
     if (!designerState) {
         designerState = reactive(buildInitialState(sessionState));
+        currentHydratedDesignUuid = designerState.currentDesignUuid ?? incomingDesignUuid;
+    } else if (incomingDesignUuid && incomingDesignUuid !== currentHydratedDesignUuid) {
+        const fresh = buildInitialState(sessionState);
+        Object.keys(designerState).forEach((key) => {
+            delete designerState[key];
+        });
+        Object.assign(designerState, fresh);
+        currentHydratedDesignUuid = designerState.currentDesignUuid ?? incomingDesignUuid;
     }
 
     if (!persistenceBootstrapped) {
@@ -57,6 +68,7 @@ export function useDesignerState() {
 
 export function resetDesignerState() {
     const fresh = buildInitialState(null);
+    currentHydratedDesignUuid = null;
 
     if (!designerState) {
         designerState = reactive(fresh);
@@ -247,7 +259,7 @@ function bootstrapPersistence(saveEndpoint) {
 }
 
 async function persistStateSnapshot(saveEndpoint, snapshot) {
-    queuedSave = { saveEndpoint, snapshot };
+    queuedSave = { saveEndpoint, snapshot, meta: { ...persistenceMeta } };
 
     if (saveInFlight) {
         return;
@@ -259,10 +271,14 @@ async function persistStateSnapshot(saveEndpoint, snapshot) {
         while (queuedSave) {
             const next = queuedSave;
             queuedSave = null;
-            const response = await axios.put(next.saveEndpoint, { state: next.snapshot });
+            const response = await axios.put(next.saveEndpoint, { state: next.snapshot, ...next.meta });
 
             if (designerState && response?.data?.designUuid) {
                 designerState.currentDesignUuid = response.data.designUuid;
+            }
+
+            if (next.meta?.thumbnailDataUrl && persistenceMeta.thumbnailDataUrl === next.meta.thumbnailDataUrl) {
+                persistenceMeta.thumbnailDataUrl = null;
             }
         }
     } finally {
@@ -280,4 +296,8 @@ export async function flushDesignerStatePersistence() {
 
     const snapshot = JSON.parse(JSON.stringify(designerState));
     await persistStateSnapshot(currentSaveEndpoint, snapshot);
+}
+
+export function setDesignerThumbnailDataUrl(dataUrl) {
+    persistenceMeta.thumbnailDataUrl = dataUrl;
 }

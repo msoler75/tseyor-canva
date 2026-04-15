@@ -45,6 +45,7 @@ const emit = defineEmits([
   'createNewDesign',
   'downloadDesign',
   'duplicateDesign',
+  'logout',
   'renameDesign',
   'openFormatAssistant',
   'undo',
@@ -106,6 +107,12 @@ const handleZoomInput = (event) => {
             <button type="button" @click="emit('renameDesign')">
               <Icon icon="ph:pencil-simple-bold" class="text-lg" />
               Cambiar nombre del diseño
+            </button>
+          </li>
+          <li>
+            <button type="button" @click="emit('logout')">
+              <Icon icon="ph:sign-out-bold" class="text-lg" />
+              Cerrar sesión
             </button>
           </li>
         </ul>

@@ -1,10 +1,12 @@
 <?php
 
 use App\Http\Middleware\HandleInertiaRequests;
-use App\Http\Middleware\AuthenticateWithJwt;
+use Illuminate\Http\Request;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Inertia\Inertia;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -13,14 +15,55 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->alias([
-            'jwt.auth' => AuthenticateWithJwt::class,
+        $middleware->validateCsrfTokens(except: [
+            'auth/login',
+            'auth/login*',
+            '/auth/login',
+            '/auth/login*',
+            'auth/*',
+            '/auth/*',
         ]);
-
         $middleware->web(append: [
             HandleInertiaRequests::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (Throwable $exception, Request $request) {
+            $status = $exception instanceof HttpExceptionInterface
+                ? $exception->getStatusCode()
+                : 500;
+
+            $message = match ($status) {
+                403 => 'No tienes permisos para acceder a este recurso.',
+                404 => 'La página que buscas no existe o ya no está disponible.',
+                419 => function() use ($exception, $request) {
+                    // Log detallado para error 419
+                    \Log::warning('Error 419 (CSRF/Sesión expirada)', [
+                        'url' => $request->fullUrl(),
+                        'method' => $request->method(),
+                        'ip' => $request->ip(),
+                        'user_id' => optional($request->user())->id,
+                        'input' => $request->except(['password', 'password_confirmation', '_token']),
+                        'cookies' => $request->cookies->all(),
+                        'headers' => $request->headers->all(),
+                        'exception' => $exception->getMessage(),
+                        'session' => session()->all(),
+                        'path' => $request->path(),
+                    ]);
+                    return 'Tu sesión ha expirado. Vuelve a iniciar sesión para continuar.';
+                },
+                422 => 'La solicitud no pudo procesarse. Revisa los datos e inténtalo de nuevo.',
+                500 => 'Algo salió mal en la aplicación. Inténtalo de nuevo en unos minutos.',
+                503 => 'La aplicación está temporalmente fuera de servicio por mantenimiento o sobrecarga.',
+                default => $exception->getMessage() ?: 'Se ha producido un problema inesperado.',
+            };
+
+            // Ejecutar el closure si corresponde (caso 419)
+            $message = is_callable($message) ? $message() : $message;
+
+            return Inertia::render('Error', [
+                'status' => $status,
+                'message' => $message,
+            ])->toResponse($request)->setStatusCode($status);
+        });
     })->create();

@@ -42,7 +42,7 @@ class DesignerController extends Controller
         /** @var User|null $user */
         $user = $request->user();
 
-        return Inertia::render('Designer/WelcomePage', [
+        return Inertia::render('Home', [
             'currentStep' => null,
             'steps' => [],
             'navigation' => [
@@ -58,8 +58,20 @@ class DesignerController extends Controller
                         'objective',
                         'format',
                         'size_label',
+                        'thumbnail_path',
                         'updated_at',
                         'created_at',
+                    ])->map(fn (Design $design): array => [
+                        'uuid' => $design->uuid,
+                        'name' => $design->name,
+                        'objective' => $design->objective,
+                        'format' => $design->format,
+                        'size_label' => $design->size_label,
+                        'thumbnail_url' => $design->thumbnail_path
+                            ? route('designer.uploads.show', ['path' => $design->thumbnail_path])
+                            : null,
+                        'updated_at' => $design->updated_at,
+                        'created_at' => $design->created_at,
                     ])
                 : [],
             'devLoginToken' => app()->isLocal()
@@ -103,58 +115,66 @@ class DesignerController extends Controller
         $validated = $request->validate([
             ...DesignerStateRules::rules(),
             'state.currentDesignUuid' => ['nullable', 'string', 'max:36'],
+            'thumbnailDataUrl' => ['nullable', 'string'],
         ]);
 
         $state = $validated['state'];
 
-        if (Auth::check()) {
-            /** @var User $user */
-            $user = $request->user();
+        abort_unless(Auth::check(), 401, 'Debes iniciar sesión para guardar diseños.');
 
-            $design = null;
+        /** @var User $user */
+        $user = $request->user();
 
-            if (!empty($state['currentDesignUuid'])) {
-                $design = $user->designs()->where('uuid', $state['currentDesignUuid'])->first();
-            }
+        $design = null;
 
-            if (!$design) {
-                $design = $user->designs()->create([
-                    'uuid' => (string) Str::uuid(),
-                    'name' => trim((string) ($state['designTitle'] ?? '')) ?: 'Diseño sin título',
-                    'name_manual' => (bool) ($state['designTitleManual'] ?? false),
-                    'objective' => $state['objective'] ?? null,
-                    'output_type' => $state['outputType'] ?? null,
-                    'format' => $state['format'] ?? null,
-                    'size_label' => $state['size'] ?? null,
-                    'surface_width' => $state['designSurface']['width'] ?? null,
-                    'surface_height' => $state['designSurface']['height'] ?? null,
-                    'template_category' => $state['templateCategory'] ?? null,
-                    'selected_template_id' => $state['selectedTemplateId'] ?? null,
-                    'state' => $state,
-                    'status' => 'draft',
-                    'last_opened_at' => now(),
-                ]);
-            } else {
-                $design->fill([
-                    'name' => trim((string) ($state['designTitle'] ?? '')) ?: 'Diseño sin título',
-                    'name_manual' => (bool) ($state['designTitleManual'] ?? false),
-                    'objective' => $state['objective'] ?? null,
-                    'output_type' => $state['outputType'] ?? null,
-                    'format' => $state['format'] ?? null,
-                    'size_label' => $state['size'] ?? null,
-                    'surface_width' => $state['designSurface']['width'] ?? null,
-                    'surface_height' => $state['designSurface']['height'] ?? null,
-                    'template_category' => $state['templateCategory'] ?? null,
-                    'selected_template_id' => $state['selectedTemplateId'] ?? null,
-                    'state' => $state,
-                    'last_opened_at' => now(),
-                ])->save();
-            }
-
-            $state['currentDesignUuid'] = $design->uuid;
+        if (!empty($state['currentDesignUuid'])) {
+            $design = $user->designs()->where('uuid', $state['currentDesignUuid'])->first();
         }
 
-        $request->session()->put(self::SESSION_KEY, $state);
+        if (!$design) {
+            $design = $user->designs()->create([
+                'uuid' => (string) Str::uuid(),
+                'name' => trim((string) ($state['designTitle'] ?? '')) ?: 'Diseño sin título',
+                'name_manual' => (bool) ($state['designTitleManual'] ?? false),
+                'objective' => $state['objective'] ?? null,
+                'output_type' => $state['outputType'] ?? null,
+                'format' => $state['format'] ?? null,
+                'size_label' => $state['size'] ?? null,
+                'surface_width' => $state['designSurface']['width'] ?? null,
+                'surface_height' => $state['designSurface']['height'] ?? null,
+                'template_category' => $state['templateCategory'] ?? null,
+                'selected_template_id' => $state['selectedTemplateId'] ?? null,
+                'state' => $state,
+                'status' => 'draft',
+                'last_opened_at' => now(),
+            ]);
+        } else {
+            $design->fill([
+                'name' => trim((string) ($state['designTitle'] ?? '')) ?: 'Diseño sin título',
+                'name_manual' => (bool) ($state['designTitleManual'] ?? false),
+                'objective' => $state['objective'] ?? null,
+                'output_type' => $state['outputType'] ?? null,
+                'format' => $state['format'] ?? null,
+                'size_label' => $state['size'] ?? null,
+                'surface_width' => $state['designSurface']['width'] ?? null,
+                'surface_height' => $state['designSurface']['height'] ?? null,
+                'template_category' => $state['templateCategory'] ?? null,
+                'selected_template_id' => $state['selectedTemplateId'] ?? null,
+                'state' => $state,
+                'last_opened_at' => now(),
+            ])->save();
+        }
+
+        if (!empty($validated['thumbnailDataUrl'])) {
+            $thumbnailPath = $this->storeThumbnailDataUrl($user, $design, $validated['thumbnailDataUrl']);
+            if ($thumbnailPath) {
+                $design->forceFill([
+                    'thumbnail_path' => $thumbnailPath,
+                ])->save();
+            }
+        }
+
+        $state['currentDesignUuid'] = $design->uuid;
 
         return response()->json([
             'saved' => true,
@@ -164,8 +184,6 @@ class DesignerController extends Controller
 
     public function resetState(Request $request): JsonResponse
     {
-        $request->session()->forget(self::SESSION_KEY);
-
         return response()->json([
             'reset' => true,
         ]);
@@ -230,7 +248,8 @@ class DesignerController extends Controller
 
     private function page(string $currentStep): Response
     {
-        $this->loadRequestedDesignIntoSession(request());
+        $request = request();
+        $activeDesign = $this->resolveRequestedDesign($request);
 
         $stepKeys = array_keys($this->steps);
         $currentIndex = array_search($currentStep, $stepKeys, true);
@@ -251,6 +270,30 @@ class DesignerController extends Controller
                 'previous' => $previous,
                 'next' => $next,
             ],
+            'designer' => [
+                'state' => $activeDesign?->state,
+                'currentDesign' => $activeDesign
+                    ? [
+                        'uuid' => $activeDesign->uuid,
+                        'name' => $activeDesign->name,
+                        'updated_at' => $activeDesign->updated_at,
+                    ]
+                    : null,
+                'endpoints' => [
+                    'save' => route('designer.state.save'),
+                    'reset' => route('designer.state.reset'),
+                    'upload' => route('designer.uploads.store'),
+                    'designsIndex' => Auth::check() ? route('designer.designs.index') : null,
+                    'designsStore' => Auth::check() ? route('designer.designs.store') : null,
+                    'assetsIndex' => Auth::check() ? route('designer.assets.index') : null,
+                ],
+                'imageUploads' => [
+                    'maxWidth' => config('designer.image_uploads.max_width'),
+                    'maxHeight' => config('designer.image_uploads.max_height'),
+                    'jpegQuality' => config('designer.image_uploads.jpeg_quality'),
+                    'webpQuality' => config('designer.image_uploads.webp_quality'),
+                ],
+            ],
         ]);
     }
 
@@ -259,15 +302,15 @@ class DesignerController extends Controller
         return self::SESSION_KEY;
     }
 
-    private function loadRequestedDesignIntoSession(Request $request): void
+    private function resolveRequestedDesign(Request $request): ?Design
     {
         $routeDesign = $request->route('design');
         $designUuid = $routeDesign instanceof Design
             ? $routeDesign->uuid
-            : ($request->query('design') ?: null);
+            : (is_string($routeDesign) ? $routeDesign : ($request->query('design') ?: null));
 
         if (!$designUuid || !$request->user()) {
-            return;
+            return null;
         }
 
         /** @var User $user */
@@ -277,14 +320,37 @@ class DesignerController extends Controller
         $design = $user->designs()->where('uuid', $designUuid)->first();
 
         if (!$design) {
-            return;
+            return null;
         }
 
         $state = $design->state ?? [];
         $state['currentDesignUuid'] = $design->uuid;
         $state['designTitle'] = $design->name;
         $state['designTitleManual'] = (bool) $design->name_manual;
+        $design->state = $state;
 
-        $request->session()->put(self::SESSION_KEY, $state);
+        return $design;
+    }
+
+    private function storeThumbnailDataUrl(User $user, Design $design, string $dataUrl): ?string
+    {
+        if (!preg_match('/^data:image\/(?<type>[a-zA-Z0-9.+-]+);base64,(?<data>.+)$/', $dataUrl, $matches)) {
+            return null;
+        }
+
+        $binary = base64_decode($matches['data'], true);
+        if ($binary === false) {
+            return null;
+        }
+
+        $extension = strtolower($matches['type']);
+        if ($extension === 'jpeg') {
+            $extension = 'jpg';
+        }
+
+        $path = sprintf('designer/thumbnails/users/%s/%s.%s', $user->id, $design->uuid, $extension);
+        Storage::disk('public')->put($path, $binary);
+
+        return $path;
     }
 }

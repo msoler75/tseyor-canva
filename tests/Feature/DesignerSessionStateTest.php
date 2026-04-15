@@ -2,13 +2,19 @@
 
 namespace Tests\Feature;
 
-use Inertia\Testing\AssertableInertia as Assert;
+use App\Models\Design;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class DesignerSessionStateTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_designer_pages_include_shared_session_state_props(): void
     {
         $response = $this->get('/designer/content');
@@ -25,78 +31,85 @@ class DesignerSessionStateTest extends TestCase
         );
     }
 
-    public function test_designer_state_is_persisted_in_session_and_rehydrated(): void
+    public function test_designer_state_is_loaded_from_persisted_design(): void
     {
+        $user = User::factory()->create();
         $pendingDataUrl = 'data:image/png;base64,'.str_repeat('a', 5000);
 
-        $payload = [
-            'state' => [
-                'darkMode' => true,
-                'mode' => 'guided',
-                'objective' => 'event',
-                'outputType' => 'print',
-                'format' => 'vertical',
-                'size' => 'A3 · cartel grande',
-                'templateCategory' => 'modern',
-                'selectedTemplateId' => 'template-1',
-                'autosaveMessage' => 'Guardado automático',
-                'selectedElementId' => 'title',
-                'content' => [
-                    'title' => 'Festival persistido',
-                    'subtitle' => 'Subtítulo persistido',
-                    'date' => '25 abril · 18:00',
-                    'location' => 'Plaza Mayor',
-                    'teacher' => 'María López',
-                    'price' => 'Entrada gratuita',
-                    'contact' => 'Info: 600 123 123',
-                    'extra' => 'Texto persistido',
+        $state = [
+            'darkMode' => true,
+            'mode' => 'guided',
+            'objective' => 'event',
+            'outputType' => 'print',
+            'format' => 'vertical',
+            'size' => 'A3 Â· cartel grande',
+            'templateCategory' => 'modern',
+            'selectedTemplateId' => 'template-1',
+            'autosaveMessage' => 'Guardado automÃ¡tico',
+            'selectedElementId' => 'title',
+            'designTitle' => 'Festival persistido',
+            'designTitleManual' => false,
+            'currentDesignUuid' => null,
+            'content' => [
+                'title' => 'Festival persistido',
+                'subtitle' => 'SubtÃ­tulo persistido',
+                'date' => '25 abril Â· 18:00',
+                'location' => 'Plaza Mayor',
+                'teacher' => 'MarÃ­a LÃ³pez',
+                'price' => 'Entrada gratuita',
+                'contact' => 'Info: 600 123 123',
+                'extra' => 'Texto persistido',
+            ],
+            'elementLayout' => [
+                'background' => ['backgroundColor' => '#ffffff'],
+                'title' => ['x' => 20, 'y' => 60, 'w' => 280, 'fontSize' => 42, 'color' => '#ffffff', 'shadow' => true, 'border' => false],
+                'subtitle' => ['x' => 30, 'y' => 180, 'w' => 260, 'fontSize' => 18, 'color' => '#f8fafc', 'shadow' => false, 'border' => false],
+                'meta' => ['x' => 36, 'y' => 336, 'w' => 250, 'fontSize' => 16, 'color' => '#ffffff', 'shadow' => false, 'border' => false],
+                'contact' => ['x' => 36, 'y' => 368, 'w' => 230, 'fontSize' => 15, 'color' => '#e9d5ff', 'shadow' => false, 'border' => false],
+                'extra' => ['x' => 36, 'y' => 410, 'w' => 270, 'fontSize' => 15, 'color' => '#ede9fe', 'shadow' => false, 'border' => false],
+                'image-1' => ['x' => 40, 'y' => 96, 'w' => 220, 'h' => 160, 'zIndex' => 60, 'backgroundColor' => '#ffffff'],
+            ],
+            'customElements' => [
+                'image-1' => [
+                    'id' => 'image-1',
+                    'type' => 'image',
+                    'label' => 'Foto principal',
+                    'src' => $pendingDataUrl,
+                    'assetId' => 'upload-1',
+                    'pendingDataUrl' => $pendingDataUrl,
+                    'uploadStatus' => 'pending',
+                    'needsUpload' => true,
                 ],
-                'elementLayout' => [
-                    'title' => ['x' => 20, 'y' => 60, 'w' => 280, 'fontSize' => 42, 'color' => '#ffffff', 'shadow' => true, 'border' => false],
-                    'subtitle' => ['x' => 30, 'y' => 180, 'w' => 260, 'fontSize' => 18, 'color' => '#f8fafc', 'shadow' => false, 'border' => false],
-                    'meta' => ['x' => 36, 'y' => 336, 'w' => 250, 'fontSize' => 16, 'color' => '#ffffff', 'shadow' => false, 'border' => false],
-                    'contact' => ['x' => 36, 'y' => 368, 'w' => 230, 'fontSize' => 15, 'color' => '#e9d5ff', 'shadow' => false, 'border' => false],
-                    'extra' => ['x' => 36, 'y' => 410, 'w' => 270, 'fontSize' => 15, 'color' => '#ede9fe', 'shadow' => false, 'border' => false],
-                    'image-1' => ['x' => 40, 'y' => 96, 'w' => 220, 'h' => 160, 'zIndex' => 60, 'backgroundColor' => '#ffffff'],
-                ],
-                'customElements' => [
-                    'image-1' => [
-                        'id' => 'image-1',
-                        'type' => 'image',
-                        'label' => 'Foto principal',
-                        'src' => $pendingDataUrl,
-                        'assetId' => 'upload-1',
-                        'pendingDataUrl' => $pendingDataUrl,
-                        'uploadStatus' => 'pending',
-                        'needsUpload' => true,
-                    ],
-                ],
-                'userUploadedImages' => [
-                    [
-                        'id' => 'upload-1',
-                        'assetId' => 'upload-1',
-                        'label' => 'foto.png',
-                        'src' => $pendingDataUrl,
-                        'pendingDataUrl' => $pendingDataUrl,
-                        'uploadStatus' => 'pending',
-                        'needsUpload' => true,
-                    ],
+            ],
+            'userUploadedImages' => [
+                [
+                    'id' => 'upload-1',
+                    'assetId' => 'upload-1',
+                    'label' => 'foto.png',
+                    'src' => $pendingDataUrl,
+                    'pendingDataUrl' => $pendingDataUrl,
+                    'uploadStatus' => 'pending',
+                    'needsUpload' => true,
                 ],
             ],
         ];
 
-        $this->putJson('/designer/state', $payload)
-            ->assertOk()
-            ->assertJson(['saved' => true]);
+        $design = Design::query()->create([
+            'user_id' => $user->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Festival persistido',
+            'name_manual' => false,
+            'objective' => 'event',
+            'output_type' => 'print',
+            'format' => 'vertical',
+            'size_label' => 'A3 Â· cartel grande',
+            'state' => $state,
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
 
-        $this->assertEquals(
-            'Festival persistido',
-            session('designer.state.content.title')
-        );
-        $this->assertSame($pendingDataUrl, session('designer.state.customElements.image-1.src'));
-        $this->assertSame('upload-1', session('designer.state.userUploadedImages.0.assetId'));
-
-        $this->get('/designer/editor')
+        $this->actingAs($user)
+            ->get("/designer/designs/{$design->uuid}/edit")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Designer/EditorPage')
@@ -110,28 +123,34 @@ class DesignerSessionStateTest extends TestCase
 
     public function test_designer_state_allows_replacing_text_with_empty_string(): void
     {
+        $user = User::factory()->create();
+
         $state = [
             'darkMode' => true,
             'mode' => 'guided',
             'objective' => 'event',
             'outputType' => 'print',
             'format' => 'vertical',
-            'size' => 'A3 · cartel grande',
+            'size' => 'A3 Â· cartel grande',
             'templateCategory' => 'modern',
             'selectedTemplateId' => 'template-1',
-            'autosaveMessage' => 'Guardado automático',
+            'autosaveMessage' => 'Guardado automÃ¡tico',
             'selectedElementId' => 'title',
+            'designTitle' => 'Texto inicial',
+            'designTitleManual' => false,
+            'currentDesignUuid' => null,
             'content' => [
                 'title' => 'Texto inicial',
                 'subtitle' => 'Subtitulo',
                 'date' => '25 abril',
                 'location' => 'Plaza Mayor',
-                'teacher' => 'María López',
+                'teacher' => 'MarÃ­a LÃ³pez',
                 'price' => 'Gratis',
                 'contact' => 'Info',
                 'extra' => 'Extra',
             ],
             'elementLayout' => [
+                'background' => ['backgroundColor' => '#ffffff'],
                 'title' => [
                     'x' => 20,
                     'y' => 60,
@@ -149,17 +168,34 @@ class DesignerSessionStateTest extends TestCase
                 'contact' => ['x' => 36, 'y' => 368, 'w' => 230, 'fontSize' => 15, 'color' => '#e9d5ff', 'shadow' => false, 'border' => false],
                 'extra' => ['x' => 36, 'y' => 410, 'w' => 270, 'fontSize' => 15, 'color' => '#ede9fe', 'shadow' => false, 'border' => false],
             ],
+            'customElements' => [],
+            'userUploadedImages' => [],
         ];
 
-        $this->putJson('/designer/state', ['state' => $state])->assertOk();
+        $design = Design::query()->create([
+            'user_id' => $user->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Texto inicial',
+            'name_manual' => false,
+            'objective' => 'event',
+            'output_type' => 'print',
+            'format' => 'vertical',
+            'size_label' => 'A3 Â· cartel grande',
+            'state' => $state,
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
 
         $state['content']['title'] = '';
+        $state['currentDesignUuid'] = $design->uuid;
 
-        $this->putJson('/designer/state', ['state' => $state])
+        $this->actingAs($user)
+            ->putJson('/designer/state', ['state' => $state])
             ->assertOk()
             ->assertJson(['saved' => true]);
 
-        $this->get('/designer/editor')
+        $this->actingAs($user)
+            ->get("/designer/designs/{$design->uuid}/edit")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Designer/EditorPage')

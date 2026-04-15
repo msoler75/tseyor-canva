@@ -1,5 +1,6 @@
 ﻿<script setup>
 import axios from 'axios';
+import { toJpeg } from 'html-to-image';
 import { Icon } from '@iconify/vue';
 import { usePage } from '@inertiajs/vue3';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
@@ -13,6 +14,7 @@ import { objectiveRecommendations } from '../../data/designer';
 import { useDesignerState } from '../../composables/useDesignerState';
 import { flushDesignerStatePersistence } from '../../composables/useDesignerState';
 import { resetDesignerState } from '../../composables/useDesignerState';
+import { setDesignerThumbnailDataUrl } from '../../composables/useDesignerState';
 import { useEditorHistory } from '../../composables/useEditorHistory';
 import { useEditorStyles } from '../../composables/useEditorStyles';
 import { useEditorSelection } from '../../composables/useEditorSelection';
@@ -61,6 +63,7 @@ const paragraphSelection = reactive({ start: 0, end: 0, active: false });
 const activePropertyPanel = ref(null);
 const fileDragActive = ref(false);
 const backgroundDropPreview = ref(false);
+let thumbnailTimer = null;
 const toolbarPosition = reactive({ x: 0, y: 3 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
 const uploadProgressByAssetId = reactive({});
@@ -1047,6 +1050,31 @@ const requestImmediateStateFlush = () => {
   flushDesignerStatePersistence().catch((error) => {
     console.error('No se pudo persistir inmediatamente el estado del editor', error);
   });
+};
+
+const scheduleThumbnailCapture = () => {
+  if (!authUser.value) return;
+
+  if (thumbnailTimer) {
+    clearTimeout(thumbnailTimer);
+  }
+
+  thumbnailTimer = setTimeout(async () => {
+    if (!canvasRef.value) return;
+
+    try {
+      const dataUrl = await toJpeg(canvasRef.value, {
+        quality: 0.6,
+        pixelRatio: 0.35,
+        backgroundColor: '#ffffff',
+        filter: (node) => !(node instanceof Element && node.closest?.('[data-editor-control="true"]')),
+      });
+
+      setDesignerThumbnailDataUrl(dataUrl);
+    } catch (error) {
+      console.error('No se pudo generar la miniatura del diseño', error);
+    }
+  }, 1200);
 };
 
 const getUploadedImageIndexByAssetId = (assetId) => state.userUploadedImages.findIndex(
@@ -2452,6 +2480,10 @@ onBeforeUnmount(() => {
   document.removeEventListener('paste', handleDocumentPaste);
   document.removeEventListener('dragover', handleCanvasFileDragOver);
   document.removeEventListener('drop', handleCanvasFileDragLeave);
+  if (thumbnailTimer) {
+    clearTimeout(thumbnailTimer);
+    thumbnailTimer = null;
+  }
   elementObservers.forEach((observer) => observer.disconnect());
   elementObservers.clear();
   clearLongPress();
@@ -2477,6 +2509,7 @@ watch(
   () => [state.content, state.elementLayout, state.customElements],
   () => {
     scheduleHistorySnapshot();
+    scheduleThumbnailCapture();
   },
   { deep: true }
 );
@@ -2534,7 +2567,10 @@ const handleExportNavigation = async (event) => {
   } catch (error) {
     console.error('Failed to flush designer state before export', error);
   }
-  window.location.href = '/designer/export';
+  const destination = state.currentDesignUuid
+    ? `/designer/export?design=${encodeURIComponent(state.currentDesignUuid)}`
+    : '/designer/export';
+  window.location.href = destination;
 };
 
 const handleFormatAssistantNavigation = async () => {
@@ -2544,7 +2580,12 @@ const handleFormatAssistantNavigation = async () => {
     console.error('Failed to flush designer state before format assistant', error);
   }
 
-  window.location.href = '/designer/format?return=%2Fdesigner%2Feditor';
+  const returnUrl = state.currentDesignUuid
+    ? `/designer/designs/${state.currentDesignUuid}/edit`
+    : '/designer/editor';
+
+  const designQuery = state.currentDesignUuid ? `&design=${encodeURIComponent(state.currentDesignUuid)}` : '';
+  window.location.href = `/designer/format?return=${encodeURIComponent(returnUrl)}${designQuery}`;
 };
 
 const handleHomeNavigation = async () => {
@@ -2555,6 +2596,18 @@ const handleHomeNavigation = async () => {
   }
 
   window.location.href = '/';
+};
+
+const handleLogout = async () => {
+  try {
+    await axios.post('/auth/logout');
+  } catch (error) {
+    console.error('Failed to logout from designer app', error);
+  } finally {
+    window.localStorage.removeItem('tseyor_jwt');
+    delete window.axios.defaults.headers.common.Authorization;
+    window.location.href = '/login';
+  }
 };
 
 const handleCreateNewDesign = async () => {
@@ -2700,6 +2753,7 @@ watch(
       @create-new-design="handleCreateNewDesign"
       @download-design="handleExportNavigation"
       @duplicate-design="handleDuplicateDesign"
+      @logout="handleLogout"
       @rename-design="handleRenameDesign"
       @open-format-assistant="handleFormatAssistantNavigation"
       @undo="performUndo"

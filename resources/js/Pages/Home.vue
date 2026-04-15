@@ -2,10 +2,10 @@
 import axios from 'axios';
 import { router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
-import ChoiceCard from '../../Components/designer/ChoiceCard.vue';
-import SelectionIndicator from '../../Components/designer/SelectionIndicator.vue';
-import TemplateCard from '../../Components/designer/TemplateCard.vue';
-import DesignerLayout from '../../Layouts/DesignerLayout.vue';
+import ChoiceCard from './../Components/designer/ChoiceCard.vue';
+import SelectionIndicator from './../Components/designer/SelectionIndicator.vue';
+import TemplateCard from './../Components/designer/TemplateCard.vue';
+import DesignerLayout from './../Layouts/DesignerLayout.vue';
 import {
     filterLabels,
     formatCards,
@@ -13,8 +13,8 @@ import {
     objectiveRecommendations,
     templateCatalog,
     templateFilters,
-} from '../../data/designer';
-import { flushDesignerStatePersistence, resetDesignerState, useDesignerState } from '../../composables/useDesignerState';
+} from '../data/designer';
+import { flushDesignerStatePersistence, resetDesignerState, useDesignerState } from '../composables/useDesignerState';
 
 const props = defineProps({
     currentStep: String,
@@ -142,8 +142,25 @@ const selectSizeOption = (option) => {
 };
 
 const finishAndOpenEditor = () => {
+    if (!authUser.value) {
+        window.alert('Debes iniciar sesión para crear y guardar diseños.');
+        return;
+    }
+
     assistantOpen.value = false;
-    router.visit('/designer/editor');
+
+    axios.post('/designer/designs', {
+        name: state.designTitle,
+        state: JSON.parse(JSON.stringify(state)),
+    }).then((response) => {
+        const designUuid = response.data?.design?.uuid;
+        if (designUuid) {
+            state.currentDesignUuid = designUuid;
+            router.visit(`/designer/designs/${designUuid}/edit`);
+        }
+    }).catch((error) => {
+        console.error('No se pudo crear el diseño inicial', error);
+    });
 };
 
 const openExistingDesign = async (design) => {
@@ -192,6 +209,18 @@ const formatProjectUpdatedAt = (value) => {
         dateStyle: 'medium',
         timeStyle: 'short',
     }).format(date);
+};
+
+const logoutFromApp = async () => {
+    try {
+        await axios.post('/auth/logout');
+    } catch (error) {
+        console.error('No se pudo cerrar la sesión', error);
+    } finally {
+        window.localStorage.removeItem('tseyor_jwt');
+        delete window.axios.defaults.headers.common.Authorization;
+        router.visit('/login');
+    }
 };
 
 const duplicateDesign = async (design) => {
@@ -288,7 +317,10 @@ const deleteDesign = async (design) => {
                 <div class="card-body p-6">
                     <div class="mb-4 flex items-center justify-between gap-3">
                         <h3 class="text-lg font-semibold">Tus proyectos recientes</h3>
-                        <span v-if="authUser" class="badge badge-outline">{{ authUser.name }}</span>
+                        <div v-if="authUser" class="flex items-center gap-2">
+                            <span class="badge badge-outline">{{ authUser.name }}</span>
+                            <button type="button" class="btn btn-ghost btn-sm rounded-full" @click="logoutFromApp">Logout</button>
+                        </div>
                     </div>
 
                     <div v-if="recentProjects.length" class="space-y-3">
@@ -299,11 +331,17 @@ const deleteDesign = async (design) => {
                         >
                             <button
                                 type="button"
-                                class="min-w-0 flex-1 text-left"
+                                class="min-w-0 flex flex-1 items-center gap-3 text-left"
                                 @click="openExistingDesign(project)"
                             >
-                                <p class="font-medium text-base-content truncate">{{ project.name }}</p>
-                                <p class="text-xs text-base-content/65">{{ formatProjectUpdatedAt(project.updated_at) }}</p>
+                                <div class="h-14 w-14 overflow-hidden rounded-xl border border-base-300 bg-base-200 shrink-0">
+                                    <img v-if="project.thumbnail_url" :src="project.thumbnail_url" :alt="project.name" class="h-full w-full object-cover" />
+                                    <div v-else class="flex h-full w-full items-center justify-center text-[10px] text-base-content/45">Sin miniatura</div>
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="font-medium text-base-content truncate">{{ project.name }}</p>
+                                    <p class="text-xs text-base-content/65">{{ formatProjectUpdatedAt(project.updated_at) }}</p>
+                                </div>
                             </button>
                             <div class="dropdown dropdown-end">
                                 <button type="button" tabindex="0" class="btn btn-ghost btn-sm btn-circle">
