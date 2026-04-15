@@ -215,7 +215,7 @@ class AuthController extends Controller
 
         $separator = str_contains($baseUrl, '?') ? '&' : '?';
         $parameter = config('portal.callback_parameter', 'return_to');
-        $callbackUrl = route('login');
+        $callbackUrl = route('auth.login');
 
         return "{$baseUrl}{$separator}{$parameter}=".urlencode($callbackUrl);
     }

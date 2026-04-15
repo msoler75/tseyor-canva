@@ -7,6 +7,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Illuminate\Auth\AuthenticationException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -26,12 +27,29 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (\Throwable $exception, Request $request) {
-
             $status = $exception instanceof HttpExceptionInterface
                 ? $exception->getStatusCode()
                 : 500;
 
+            // Loguear detalles de excepción si es error 500
+            if ($status === 500) {
+                \Log::error('[Error 500]', [
+                    'exception' => $exception,
+                    'url' => $request->fullUrl(),
+                    'input' => $request->all(),
+                ]);
+            }
+
+
+            if($exception instanceof AuthenticationException) {
+                 return Inertia::render('Error', [
+                    'status' => 401,
+                    'message' => "Necesitas iniciar sesión para acceder a esta página.",
+                ])->toResponse($request)->setStatusCode($status);
+            }
+
             $message = match ($status) {
+                401 => 'No estás autenticado. Por favor, inicia sesión.',
                 403 => 'No tienes permisos para acceder a este recurso.',
                 404 => 'La página que buscas no existe o ya no está disponible.',
                 419 => 'Tu sesión ha expirado. Vuelve a iniciar sesión para continuar.',

@@ -246,12 +246,23 @@ class DesignerController extends Controller
     private function page(string $currentStep): Response
     {
         $request = request();
+
+        /*if(!Auth::check()) {
+            return Inertia::render('Error', ['status' => 401, 'message' => 'Debes iniciar sesión.']);
+        }*/
+
         $activeDesign = $this->resolveRequestedDesign($request);
+
+        /*if(!$activeDesign && !Auth::check()) {
+            return Inertia::render('Error', ['status' => 401, 'message' => 'Debes iniciar sesión para acceder a esta página.']);
+        }*/
 
         $stepKeys = array_keys($this->steps);
         $currentIndex = array_search($currentStep, $stepKeys, true);
         $previous = $currentIndex > 0 ? $this->steps[$stepKeys[$currentIndex - 1]]['url'] : null;
         $next = $currentIndex < count($stepKeys) - 1 ? $this->steps[$stepKeys[$currentIndex + 1]]['url'] : null;
+
+
 
         return Inertia::render($this->steps[$currentStep]['component'], [
             'currentStep' => $currentStep,

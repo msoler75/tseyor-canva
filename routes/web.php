@@ -17,13 +17,16 @@ Route::prefix('auth')->group(function (): void {
     Route::middleware('auth')->post('/logout', [AuthController::class, 'logout'])->name('auth.logout');
 });
 
-Route::prefix('designer')->middleware('auth')->group(function (): void {
+
+
+Route::prefix('designer')/*->middleware('auth')*/->group(function (): void {
     Route::put('/state', [DesignerController::class, 'saveState'])->name('designer.state.save');
     Route::delete('/state', [DesignerController::class, 'resetState'])->name('designer.state.reset');
     Route::post('/uploads', [DesignerController::class, 'storeUpload'])->name('designer.uploads.store');
     Route::get('/storage/{path}', [DesignerController::class, 'showUpload'])
-        ->where('path', '.*')
-        ->name('designer.uploads.show');
+    ->where('path', '.*')
+    ->name('designer.uploads.show');
+    Route::get('/designs/{design:uuid}', [DesignController::class, 'show'])->name('designer.designs.show');
     Route::get('/objective', [DesignerController::class, 'objective'])->name('designer.objective');
     Route::get('/format', [DesignerController::class, 'format'])->name('designer.format');
     Route::get('/content', [DesignerController::class, 'content'])->name('designer.content');
@@ -32,7 +35,6 @@ Route::prefix('designer')->middleware('auth')->group(function (): void {
     Route::get('/export', [DesignerController::class, 'export'])->name('designer.export');
     Route::get('/designs', [DesignController::class, 'index'])->name('designer.designs.index');
     Route::post('/designs', [DesignController::class, 'store'])->name('designer.designs.store');
-    Route::get('/designs/{design:uuid}', [DesignController::class, 'show'])->name('designer.designs.show');
     Route::get('/designs/{design:uuid}/edit', [DesignerController::class, 'editor'])->name('designer.designs.edit');
     Route::put('/designs/{design:uuid}', [DesignController::class, 'update'])->name('designer.designs.update');
     Route::patch('/designs/{design:uuid}/rename', [DesignController::class, 'rename'])->name('designer.designs.rename');

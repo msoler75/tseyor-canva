@@ -1,0 +1,4 @@
+-Permitir que sin iniciar sesión se pueda acceder a la página de diseño, pero al pretender exportar se muestre un mensaje indicando que se debe iniciar sesión para exportar el diseño. 
+-Si editas un diseño sin haber iniciado sesión, la edición actual se guarda como diseño temporal, y al iniciar sesión se recupera y se sigue editando ese diseño y ya se guarda como diseño del usuario.
+-Cuidar ese ciclo de vida, de forma que si alguien unautenticado edita y quiere exportar, pueda iniciar sesión, y después de ello, le aparezca la pantalla de exportación de ese diseño (además que se le ha guardado como diseño del usuario).
+-Si alguien edita un diseño de otro usuario (con un link compartido), nunca va a sobreescribir o modificar el diseño original, sino que se va a crear una copia de ese diseño para el usuario autenticado, y esa copia es la que se va a exportar.
