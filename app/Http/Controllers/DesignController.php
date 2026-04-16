@@ -53,6 +53,7 @@ class DesignController extends Controller
             'name' => ['nullable', 'string', 'max:255'],
             'thumbnail_path' => ['nullable', 'string', 'max:1024'],
             'status' => ['nullable', 'string', 'max:32'],
+            'public' => ['nullable', 'boolean'],
         ]);
 
         $state = $validated['state'];
@@ -65,6 +66,7 @@ class DesignController extends Controller
             'state' => $state,
             'status' => $validated['status'] ?? 'draft',
             'last_opened_at' => now(),
+            'public' => $validated['public'] ?? ($state['public'] ?? false),
         ]);
 
         return response()->json([
@@ -94,6 +96,7 @@ class DesignController extends Controller
             'name' => ['nullable', 'string', 'max:255'],
             'thumbnail_path' => ['nullable', 'string', 'max:1024'],
             'status' => ['nullable', 'string', 'max:32'],
+            'public' => ['nullable', 'boolean'],
         ]);
 
         $state = $validated['state'];
@@ -105,6 +108,7 @@ class DesignController extends Controller
             'state' => $state,
             'status' => $validated['status'] ?? $design->status,
             'last_opened_at' => now(),
+            'public' => $validated['public'] ?? ($state['public'] ?? $design->public),
         ])->save();
 
         return response()->json([

@@ -30,6 +30,7 @@ class Design extends Model
         'state',
         'status',
         'last_opened_at',
+        'public',
     ];
 
     /**
@@ -43,6 +44,7 @@ class Design extends Model
             'surface_height' => 'integer',
             'state' => 'array',
             'last_opened_at' => 'datetime',
+            'public' => 'boolean',
         ];
     }
 

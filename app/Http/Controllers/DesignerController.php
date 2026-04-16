@@ -111,6 +111,33 @@ class DesignerController extends Controller
         /** @var User|null $user */
         $user = $request->user();
 
+        // Diseños públicos de la comunidad
+        $communityDesigns = Design::query()
+            ->where('public', true)
+            ->latest('updated_at')
+            ->limit(12)
+            ->get([
+                'uuid',
+                'name',
+                'objective',
+                'format',
+                'size_label',
+                'thumbnail_path',
+                'updated_at',
+                'created_at',
+            ])->map(fn (Design $design): array => [
+                'uuid' => $design->uuid,
+                'name' => $design->name,
+                'objective' => $design->objective,
+                'format' => $design->format,
+                'size_label' => $design->size_label,
+                'thumbnail_url' => $design->thumbnail_path
+                    ? route('designer.uploads.show', ['path' => $design->thumbnail_path])
+                    : null,
+                'updated_at' => $design->updated_at,
+                'created_at' => $design->created_at,
+            ]);
+
         return Inertia::render('Home', [
             'currentStep' => null,
             'steps' => [],
@@ -142,7 +169,8 @@ class DesignerController extends Controller
                         'updated_at' => $design->updated_at,
                         'created_at' => $design->created_at,
                     ])
-                : []
+                : [],
+            'communityDesigns' => $communityDesigns,
         ]);
     }
 

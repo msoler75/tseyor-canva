@@ -23,6 +23,10 @@ const props = defineProps({
     designs: {
         type: Array,
         default: () => [],
+    },
+    communityDesigns: {
+        type: Array,
+        default: () => [],
     }
 });
 
@@ -41,12 +45,7 @@ const assistantSteps = [
 const authUser = computed(() => page.props.auth?.user ?? null);
 const recentProjects = computed(() => props.designs ?? []);
 
-const communityDesigns = [
-    { id: 'community-1', title: 'Festival neon', author: 'Comunidad TSEYOR' },
-    { id: 'community-2', title: 'Curso minimal', author: 'Studio Vega' },
-    { id: 'community-3', title: 'Promo urbana', author: 'Plantillas Pro' },
-    { id: 'community-4', title: 'Evento corporativo', author: 'Blue Team' },
-];
+const communityDesigns = computed(() => props.communityDesigns ?? []);
 
 const assistantIndex = computed(() => assistantSteps.findIndex((step) => step.id === assistantStep.value));
 const isFirstStep = computed(() => assistantIndex.value <= 0);
@@ -341,17 +340,20 @@ const deleteDesign = async (design) => {
                     <span class="badge badge-primary badge-outline">Inspiración</span>
                 </div>
 
-                <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
                     <button
                         v-for="item in communityDesigns"
-                        :key="item.id"
+                        :key="item.uuid"
                         type="button"
                         class="rounded-2xl border border-base-300 bg-gradient-to-br from-base-100 to-base-200 p-4 text-left hover:border-primary/60"
-                        @click="openAssistant"
+                        @click="openExistingDesign(item)"
                     >
-                        <div class="h-28 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-500 to-emerald-400 opacity-90"></div>
-                        <p class="mt-3 font-semibold">{{ item.title }}</p>
-                        <p class="text-xs text-base-content/65">{{ item.author }}</p>
+                        <div class="h-28 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-500 to-emerald-400 opacity-90 flex items-center justify-center">
+                            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.name" class="h-full w-full object-contain rounded-xl bg-white" />
+                            <span v-else class="text-xs text-white/70">Sin miniatura</span>
+                        </div>
+                        <p class="mt-3 font-semibold">{{ item.name }}</p>
+                        <p class="text-xs text-base-content/65">{{ item.objective || 'Comunidad' }}</p>
                         <p class="mt-2 text-xs font-medium text-primary">Clonar y editar</p>
                     </button>
                 </div>

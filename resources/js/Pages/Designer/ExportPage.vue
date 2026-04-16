@@ -488,6 +488,21 @@ async function downloadImage() {
     }
 }
 
+// Opción para marcar el diseño como público o privado
+const isPublic = ref(true); // Por defecto público
+
+// Sincroniza el valor con el state para que se envíe al backend
+watch(isPublic, (val) => {
+  state.public = val;
+});
+
+// Al exportar, marcar el estado como 'exported'
+watch(isExporting, (val) => {
+  if (val) {
+    state.status = 'exported';
+  }
+});
+
 onMounted(() => {
     schedulePreviewRender();
 });
@@ -610,6 +625,13 @@ watch(() => state.elementLayout, () => {
                                     Salida final: <strong>{{ targetDimensions.width }} × {{ targetDimensions.height }} px</strong>
                                 </p>
                                 <p class="mt-1 opacity-80">Objetivo: {{ objectiveTitle }}</p>
+                            </div>
+
+                            <div class="flex items-center gap-3 mb-4">
+                                <input id="public-design" type="checkbox" v-model="isPublic" class="checkbox checkbox-primary" />
+                                <label for="public-design" class="cursor-pointer select-none">
+                                    Hacer este diseño <span class="font-semibold">público</span> (otros usuarios y visitantes podrán ver y clonar este diseño)
+                                </label>
                             </div>
 
                             <button
