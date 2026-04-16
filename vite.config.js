@@ -12,9 +12,16 @@ export default defineConfig({
         tailwindcss(),
         vue(),
     ],
+    publicDir: 'public', // Sirve archivos estáticos desde /public en dev
     server: {
         watch: {
             ignored: ['**/storage/framework/views/**'],
+        },
+        proxy: {
+            '/fonts/': {
+                target: 'http://localhost:5173',
+                rewrite: path => path.replace(/^\/fonts\//, '/fontsx/'),
+            },
         },
     },
 });

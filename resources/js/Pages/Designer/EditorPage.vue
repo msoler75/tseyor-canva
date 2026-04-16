@@ -1,6 +1,6 @@
 ﻿<script setup>
 import axios from 'axios';
-import { toJpeg } from 'html-to-image';
+import { toJpegExport } from '../../utils/useHtml2Image';
 import { Icon } from '@iconify/vue';
 import { usePage } from '@inertiajs/vue3';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
@@ -1063,7 +1063,7 @@ const scheduleThumbnailCapture = () => {
     if (!canvasRef.value) return;
 
     try {
-      const dataUrl = await toJpeg(canvasRef.value, {
+      const dataUrl = await toJpegExport(canvasRef.value, {
         quality: 0.6,
         pixelRatio: 0.35,
         backgroundColor: '#ffffff',

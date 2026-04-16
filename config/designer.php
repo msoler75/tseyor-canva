@@ -1,6 +1,8 @@
 <?php
 
 return [
+     // Habilita o deshabilita la ruta de fuentes locales
+    'serve_fonts_route' => env('DESIGNER_SERVE_FONTS_ROUTE', true),
     'image_uploads' => [
         'max_width' => (int) env('DESIGNER_IMAGE_MAX_WIDTH', 2400),
         'max_height' => (int) env('DESIGNER_IMAGE_MAX_HEIGHT', 2400),

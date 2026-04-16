@@ -1,5 +1,6 @@
 <script setup>
-import { toCanvas, toJpeg, toPng } from 'html-to-image';
+import { toCanvasExport, toJpegExport, toPngExport } from '../../utils/useHtml2Image';
+import { getExportFontEmbedCss, resetFontEmbedCssCache } from '../../utils/fontEmbed';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
 import StepFooter from '../../Components/designer/StepFooter.vue';
 import RichTextEditor from '../../Components/designer/RichTextEditor.vue';
@@ -91,7 +92,7 @@ const exportPreviewRef = ref(null);
 const generatedCanvasHostRef = ref(null);
 const isPreviewRendering = ref(false);
 const previewRenderError = ref('');
-let cachedFontEmbedCssPromise = null;
+
 let previewTimer = null;
 let previewRenderSeq = 0;
 
@@ -265,137 +266,12 @@ const canvasBackgroundImageStyle = computed(() => buildCoverImageStyle({
     flipY: state.elementLayout.background?.backgroundImageFlipY,
 }));
 
-function collectAccessibleFontFaceRules() {
-    const styleSheets = Array.from(document.styleSheets || []);
-    const rules = [];
 
-    styleSheets.forEach((sheet) => {
-        let sheetRules;
-        try {
-            sheetRules = sheet.cssRules;
-        } catch {
-            return;
-        }
-
-        if (!sheetRules) return;
-
-        const baseUrl = sheet.href || window.location.href;
-
-        Array.from(sheetRules).forEach((rule) => {
-            if (rule.type === CSSRule.FONT_FACE_RULE) {
-                rules.push({ cssText: rule.cssText, baseUrl });
-            }
-        });
-    });
-
-    return rules;
-}
-
-function guessMimeType(url, responseContentType) {
-    if (responseContentType) {
-        return responseContentType.split(';')[0].trim();
-    }
-
-    const lower = url.toLowerCase();
-    if (lower.endsWith('.woff2')) return 'font/woff2';
-    if (lower.endsWith('.woff')) return 'font/woff';
-    if (lower.endsWith('.ttf')) return 'font/ttf';
-    if (lower.endsWith('.otf')) return 'font/otf';
-    if (lower.endsWith('.eot')) return 'application/vnd.ms-fontobject';
-    if (lower.endsWith('.svg')) return 'image/svg+xml';
-    return 'application/octet-stream';
-}
-
-function blobToDataUrl(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-    });
-}
-
-async function inlineFontFaceCss(cssText, baseUrl) {
-    const urlRegex = /url\((['"]?)([^'")]+)\1\)/g;
-    const replacements = new Map();
-    let match;
-
-    while ((match = urlRegex.exec(cssText)) !== null) {
-        const originalUrl = match[2].trim();
-        if (!originalUrl || originalUrl.startsWith('data:') || originalUrl.startsWith('#')) {
-            continue;
-        }
-        if (originalUrl.startsWith('local(')) {
-            continue;
-        }
-
-        let absoluteUrl;
-        try {
-            absoluteUrl = new URL(originalUrl, baseUrl).toString();
-        } catch {
-            continue;
-        }
-
-        if (replacements.has(originalUrl)) {
-            continue;
-        }
-
-        try {
-            const response = await fetch(absoluteUrl, { credentials: 'same-origin' });
-            if (!response.ok) {
-                continue;
-            }
-            const blob = await response.blob();
-            const mimeType = guessMimeType(absoluteUrl, response.headers.get('content-type') || blob.type);
-            const normalizedBlob = blob.type ? blob : new Blob([blob], { type: mimeType });
-            const dataUrl = await blobToDataUrl(normalizedBlob);
-            replacements.set(originalUrl, dataUrl);
-        } catch {
-            continue;
-        }
-    }
-
-    let inlinedCss = cssText;
-    replacements.forEach((dataUrl, originalUrl) => {
-        const escaped = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        inlinedCss = inlinedCss.replace(new RegExp(`url\\((['"]?)${escaped}\\1\\)`, 'g'), `url("${dataUrl}")`);
-    });
-
-    return inlinedCss;
-}
-
-async function buildExportFontEmbedCss() {
-    const fontRules = collectAccessibleFontFaceRules();
-    if (!fontRules.length) {
-        return '';
-    }
-
-    const inlinedRules = await Promise.all(fontRules.map((entry) => inlineFontFaceCss(entry.cssText, entry.baseUrl)));
-    return inlinedRules.join('\n');
-}
-
-async function getExportFontEmbedCss() {
-    if (!cachedFontEmbedCssPromise) {
-        cachedFontEmbedCssPromise = buildExportFontEmbedCss();
-    }
-    return cachedFontEmbedCssPromise;
-}
 
 async function buildRendererOptions(width, height) {
-    const fontEmbedCSS = await getExportFontEmbedCss();
-    const baseWidth = baseCanvasDimensions.value.width;
-    const baseHeight = baseCanvasDimensions.value.height;
-    const scale = Math.max(width / baseWidth, height / baseHeight);
-    return {
-        cacheBust: true,
-        pixelRatio: scale,
-        width: baseWidth,
-        height: baseHeight,
-        backgroundColor: null,
-        preferredFontFormat: 'woff2',
-        // Embebe archivos de fuente como data URI para mantener fidelidad tipografica.
-        fontEmbedCSS,
-    };
+    // Esta función ya no es necesaria, se usa el composable DRY
+    // Se deja para compatibilidad si algún código la llama
+    return {};
 }
 
 function mountPreviewCanvas(canvas) {
@@ -421,8 +297,10 @@ async function renderGeneratedCanvasPreview() {
             await document.fonts.ready;
         }
 
-        const rendererOptions = await buildRendererOptions(baseCanvasDimensions.value.width, baseCanvasDimensions.value.height);
-        const canvas = await toCanvas(exportPreviewRef.value, rendererOptions);
+        const canvas = await toCanvasExport(exportPreviewRef.value, {
+            width: baseCanvasDimensions.value.width,
+            height: baseCanvasDimensions.value.height,
+        });
         if (runId !== previewRenderSeq) return;
         mountPreviewCanvas(canvas);
     } catch (error) {
@@ -464,14 +342,16 @@ async function downloadImage() {
 
         const { width, height } = targetDimensions.value;
 
-        const rendererOptions = await buildRendererOptions(width, height);
-
         const dataUrl = selectedExportFormat.value === 'jpg'
-            ? await toJpeg(exportPreviewRef.value, {
-                ...rendererOptions,
+            ? await toJpegExport(exportPreviewRef.value, {
+                width,
+                height,
                 quality: clamp(Number(jpgQuality.value), 0.6, 1),
             })
-            : await toPng(exportPreviewRef.value, rendererOptions);
+            : await toPngExport(exportPreviewRef.value, {
+                width,
+                height,
+            });
 
         const link = document.createElement('a');
         link.download = fileName.value;

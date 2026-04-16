@@ -5,6 +5,7 @@ use App\Http\Controllers\DesignAssetController;
 use App\Http\Controllers\DesignController;
 use App\Http\Controllers\DesignerController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\FontController;
 
 Route::get('/', [DesignerController::class, 'welcome'])->name('designer.welcome');
 
@@ -49,3 +50,8 @@ Route::prefix('designer')->group(function (): void {
     Route::get('/assets', [DesignAssetController::class, 'index'])->name('designer.assets.index');
     Route::post('/assets', [DesignAssetController::class, 'store'])->name('designer.assets.store');
 });
+
+// Ruta para servir fuentes locales solo si está habilitado en config/designer.php
+if (config('designer.serve_fonts_route')) {
+    Route::get('/fonts/{filename}', [FontController::class, 'serve'])->where('filename', '.*');
+}
