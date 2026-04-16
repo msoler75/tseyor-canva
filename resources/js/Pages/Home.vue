@@ -247,7 +247,7 @@ const deleteDesign = async (design) => {
     <DesignerLayout
         title="TSEYOR Canva"
         eyebrow="Modo casa"
-        description="Crea un diseno nuevo, abre tus proyectos guardados o reaprovecha ideas de la comunidad."
+        description="Crea un diseño nuevo, abre tus proyectos guardados o reaprovecha ideas de la comunidad."
         :current-step="currentStep"
         :steps="steps"
         :show-steps="false"
@@ -257,7 +257,7 @@ const deleteDesign = async (design) => {
         <section class="grid gap-6 lg:grid-cols-[1.1fr,0.9fr]">
             <div class="card border border-base-300/70 bg-base-100/90 shadow-sm">
                 <div class="card-body p-7">
-                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Nuevo diseno</p>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Nuevo diseño</p>
                     <h2 class="mt-2 text-3xl font-semibold">Empieza desde cero en segundos</h2>
                     <p class="mt-3 max-w-2xl text-sm leading-6 text-base-content/75">
                         Pulsa el boton de crear para abrir el asistente flotante. Te guiara por objetivo, formato, datos y plantilla.
@@ -266,7 +266,7 @@ const deleteDesign = async (design) => {
                     <div class="mt-7">
                         <button
                             type="button"
-                            class="btn btn-primary btn-lg rounded-full px-8"
+                            class="btn btn-primary btn-lg rounded-full pl-2 pr-8"
                             @click="openAssistant"
                         >
                             <span class="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary-content/15 text-2xl leading-none">+</span>
@@ -337,8 +337,8 @@ const deleteDesign = async (design) => {
         <section class="mt-6 card border border-base-300/70 bg-base-100/90 shadow-sm">
             <div class="card-body p-6">
                 <div class="mb-4 flex items-center justify-between gap-3">
-                    <h3 class="text-lg font-semibold">Ultimos disenos de la comunidad</h3>
-                    <span class="badge badge-primary badge-outline">Inspiracion</span>
+                    <h3 class="text-lg font-semibold">Últimos diseños de la comunidad</h3>
+                    <span class="badge badge-primary badge-outline">Inspiración</span>
                 </div>
 
                 <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -366,8 +366,8 @@ const deleteDesign = async (design) => {
                     <header class="border-b border-base-300 px-6 py-5">
                         <div class="flex items-start justify-between gap-4">
                             <div>
-                                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Asistente de creacion</p>
-                                <h3 class="mt-1 text-2xl font-semibold">Configura tu diseno</h3>
+                                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Asistente de creación</p>
+                                <h3 class="mt-1 text-2xl font-semibold">Configura tu diseño</h3>
                                 <p class="mt-1 text-sm text-base-content/70">Objetivo, formato, datos y plantilla antes de entrar al editor.</p>
                             </div>
                             <button type="button" class="btn btn-ghost btn-sm rounded-full" @click="closeAssistant">Cerrar</button>

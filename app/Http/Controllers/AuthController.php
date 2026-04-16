@@ -105,6 +105,16 @@ class AuthController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
+        // Si hay diseño temporal en sesión, recuperarlo y redirigir a su edición
+        $sessionState = $request->session()->get(\App\Http\Controllers\DesignerController::sessionKey());
+        if ($sessionState) {
+            $response = \App\Http\Controllers\DesignerController::recoverSessionDesign($request);
+            $data = $response->getData(true);
+            if (!empty($data['recovered']) && !empty($data['designUuid'])) {
+                return redirect()->route('designer.designs.edit', ['design' => $data['designUuid']]);
+            }
+        }
+
         return redirect()->route('designer.welcome');
     }
 

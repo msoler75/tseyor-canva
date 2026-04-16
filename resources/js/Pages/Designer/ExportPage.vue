@@ -23,7 +23,9 @@ import {
     parseSizeDetail,
 } from '../../utils/editorShared';
 
-defineProps({ currentStep: String, steps: Array, navigation: Object });
+const props = defineProps({ currentStep: String, steps: Array, navigation: Object, requiresLogin: Boolean });
+const showLoginModal = ref(props.requiresLogin);
+
 const state = useDesignerState();
 
 const BASE_CANVAS_SHORT_SIDE = 368;
@@ -524,6 +526,19 @@ watch(() => state.elementLayout, () => {
         :dark-mode="state.darkMode"
         @toggle-dark="state.darkMode = !state.darkMode"
     >
+
+
+    <!-- Modal de login DaisyUI -->
+    <dialog id="login_modal" class="modal modal-open backdrop-blur" v-if="showLoginModal" @close.prevent @cancel.prevent>
+        <div class="modal-box" @click.stop>
+            <h3 class="font-bold text-lg">Inicia sesión para exportar</h3>
+            <p class="py-4">Debes iniciar sesión para poder exportar tu diseño.</p>
+            <div class="modal-action">
+                <a href="/auth/login" class="btn btn-primary w-full">Iniciar sesión</a>
+            </div>
+        </div>
+    </dialog>
+
         <section class="grid gap-6 xl:grid-cols-[1fr_340px]">
             <div class="glass soft-shadow rounded-4xl border border-white/70 p-6 sm:p-8 dark:border-slate-700/70">
                 <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">

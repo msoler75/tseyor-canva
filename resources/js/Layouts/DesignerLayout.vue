@@ -83,7 +83,7 @@ watch(() => props.darkMode, syncTheme);
                                 @click="emit('toggle-dark')"
                                 class="btn btn-sm btn-outline rounded-full"
                             >
-                                {{ darkMode ? '☀️ Modo claro' : '🌙 Modo oscuro' }}
+                                {{ !darkMode ? '☀️ Modo claro' : '🌙 Modo oscuro' }}
                             </button>
 
                             <div v-if="authUser" class="dropdown dropdown-end">
@@ -110,14 +110,12 @@ watch(() => props.darkMode, syncTheme);
                             <button
                                 v-else
                                 type="button"
-                                class="btn btn-sm btn-ghost rounded-full border border-base-300/70 px-2 text-base-content/60"
+                                class="btn btn-sm btn-primary rounded-full"
                                 title="Iniciar sesión"
                                 @click="handleAuthAction"
                             >
-                                <span class="flex h-9 w-9 items-center justify-center rounded-full bg-base-200 text-base-content/45">
                                     <IconifyIcon icon="ph:sign-in-bold" class="text-lg" />
-                                </span>
-                                <IconifyIcon icon="ph:caret-down-bold" class="text-sm" />
+                                <span>Iniciar Sesión</span>
                             </button>
                         </div>
                     </div>

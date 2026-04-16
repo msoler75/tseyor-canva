@@ -19,7 +19,7 @@ Route::prefix('auth')->group(function (): void {
 
 
 
-Route::prefix('designer')/*->middleware('auth')*/->group(function (): void {
+Route::prefix('designer')->group(function (): void {
     Route::put('/state', [DesignerController::class, 'saveState'])->name('designer.state.save');
     Route::delete('/state', [DesignerController::class, 'resetState'])->name('designer.state.reset');
     Route::post('/uploads', [DesignerController::class, 'storeUpload'])->name('designer.uploads.store');
@@ -31,7 +31,12 @@ Route::prefix('designer')/*->middleware('auth')*/->group(function (): void {
     Route::get('/format', [DesignerController::class, 'format'])->name('designer.format');
     Route::get('/content', [DesignerController::class, 'content'])->name('designer.content');
     Route::get('/templates', [DesignerController::class, 'templates'])->name('designer.templates');
+    // Las rutas de edición y editor quedan accesibles sin autenticación
     Route::get('/editor', [DesignerController::class, 'editor'])->name('designer.editor');
+    // Ruta para recuperar diseño temporal tras login
+
+
+    // Todas las rutas quedan accesibles, el controlador decide si requiere autenticación
     Route::get('/export', [DesignerController::class, 'export'])->name('designer.export');
     Route::get('/designs', [DesignController::class, 'index'])->name('designer.designs.index');
     Route::post('/designs', [DesignController::class, 'store'])->name('designer.designs.store');

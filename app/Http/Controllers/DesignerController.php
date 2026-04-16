@@ -18,6 +18,75 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DesignerController extends Controller
 {
+    // Hook para recuperar diseño temporal tras login
+    // Se puede llamar desde el frontend tras login, o integrarse en el flujo de bienvenida
+    public static function recoverSessionDesign(Request $request): JsonResponse
+    {
+        if (!Auth::check()) {
+            return response()->json(['recovered' => false, 'reason' => 'No autenticado'], 401);
+        }
+
+        $sessionState = $request->session()->get(self::SESSION_KEY);
+        if (!$sessionState) {
+            return response()->json(['recovered' => false, 'reason' => 'No hay diseño temporal en sesión']);
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+
+        // Si el diseño temporal tiene uuid y pertenece al usuario, actualizarlo
+        $designUuid = $sessionState['currentDesignUuid'] ?? null;
+        $design = null;
+        if ($designUuid) {
+            $design = $user->designs()->where('uuid', $designUuid)->first();
+        }
+
+        if ($design) {
+            // Actualizar el diseño existente
+            $design->fill([
+                'name' => trim((string) ($sessionState['designTitle'] ?? '')) ?: 'Diseño sin título',
+                'name_manual' => (bool) ($sessionState['designTitleManual'] ?? false),
+                'objective' => $sessionState['objective'] ?? null,
+                'output_type' => $sessionState['outputType'] ?? null,
+                'format' => $sessionState['format'] ?? null,
+                'size_label' => $sessionState['size'] ?? null,
+                'surface_width' => $sessionState['designSurface']['width'] ?? null,
+                'surface_height' => $sessionState['designSurface']['height'] ?? null,
+                'template_category' => $sessionState['templateCategory'] ?? null,
+                'selected_template_id' => $sessionState['selectedTemplateId'] ?? null,
+                'state' => $sessionState,
+                'status' => 'draft',
+                'last_opened_at' => now(),
+            ])->save();
+        } else {
+            // Crear copia nueva para el usuario
+            $design = $user->designs()->create([
+                'uuid' => (string) Str::uuid(),
+                'name' => trim((string) ($sessionState['designTitle'] ?? '')) ?: 'Diseño sin título',
+                'name_manual' => (bool) ($sessionState['designTitleManual'] ?? false),
+                'objective' => $sessionState['objective'] ?? null,
+                'output_type' => $sessionState['outputType'] ?? null,
+                'format' => $sessionState['format'] ?? null,
+                'size_label' => $sessionState['size'] ?? null,
+                'surface_width' => $sessionState['designSurface']['width'] ?? null,
+                'surface_height' => $sessionState['designSurface']['height'] ?? null,
+                'template_category' => $sessionState['templateCategory'] ?? null,
+                'selected_template_id' => $sessionState['selectedTemplateId'] ?? null,
+                'state' => $sessionState,
+                'status' => 'draft',
+                'last_opened_at' => now(),
+            ]);
+        }
+
+        // Limpiar la sesión
+        $request->session()->forget(self::SESSION_KEY);
+
+        return response()->json([
+            'recovered' => true,
+            'designUuid' => $design->uuid,
+        ]);
+    }
+
     private const SESSION_KEY = 'designer.state';
 
     public function __construct(
@@ -104,7 +173,11 @@ class DesignerController extends Controller
 
     public function export(): Response
     {
-        return $this->page('export');
+        $requiresLogin = !Auth::check();
+        $response = $this->page('export');
+        // Añadir prop para el frontend
+        $response->with(['requiresLogin' => $requiresLogin]);
+        return $response;
     }
 
     public function saveState(Request $request): JsonResponse
@@ -117,7 +190,15 @@ class DesignerController extends Controller
 
         $state = $validated['state'];
 
-        abort_unless(Auth::check(), 401, 'Debes iniciar sesión para guardar diseños.');
+        if (!Auth::check()) {
+            // Usuario no autenticado: guardar el diseño en sesión
+            $request->session()->put(self::SESSION_KEY, $state);
+            return response()->json([
+                'saved' => true,
+                'designUuid' => $state['currentDesignUuid'] ?? null,
+                'temporal' => true,
+            ]);
+        }
 
         /** @var User $user */
         $user = $request->user();
@@ -317,27 +398,71 @@ class DesignerController extends Controller
             ? $routeDesign->uuid
             : (is_string($routeDesign) ? $routeDesign : ($request->query('design') ?: null));
 
-        if (!$designUuid || !$request->user()) {
+        if (!$designUuid) {
             return null;
         }
 
-        /** @var User $user */
-        $user = $request->user();
-
-        /** @var Design|null $design */
-        $design = $user->designs()->where('uuid', $designUuid)->first();
-
+        $design = Design::where('uuid', $designUuid)->first();
         if (!$design) {
             return null;
         }
 
-        $state = $design->state ?? [];
-        $state['currentDesignUuid'] = $design->uuid;
-        $state['designTitle'] = $design->name;
-        $state['designTitleManual'] = (bool) $design->name_manual;
-        $design->state = $state;
+        $user = $request->user();
 
-        return $design;
+        // Si hay usuario autenticado y el diseño es suyo, devolverlo tal cual
+        if ($user && $design->user_id === $user->id) {
+            $state = $design->state ?? [];
+            $state['currentDesignUuid'] = $design->uuid;
+            $state['designTitle'] = $design->name;
+            $state['designTitleManual'] = (bool) $design->name_manual;
+            $design->state = $state;
+            return $design;
+        }
+
+        // Si hay usuario autenticado y el diseño NO es suyo, crear copia para él
+        if ($user && $design->user_id !== $user->id) {
+            $copy = $user->designs()->create([
+                'uuid' => (string) Str::uuid(),
+                'name' => $design->name . ' (copia)',
+                'name_manual' => $design->name_manual,
+                'objective' => $design->objective,
+                'output_type' => $design->output_type,
+                'format' => $design->format,
+                'size_label' => $design->size_label,
+                'surface_width' => $design->surface_width,
+                'surface_height' => $design->surface_height,
+                'template_category' => $design->template_category,
+                'selected_template_id' => $design->selected_template_id,
+                'state' => $design->state,
+                'status' => 'draft',
+                'last_opened_at' => now(),
+            ]);
+            $state = $copy->state ?? [];
+            $state['currentDesignUuid'] = $copy->uuid;
+            $state['designTitle'] = $copy->name;
+            $state['designTitleManual'] = (bool) $copy->name_manual;
+            $copy->state = $state;
+            return $copy;
+        }
+
+        // Si NO hay usuario autenticado, guardar el diseño en sesión como temporal
+        if (!$user) {
+            $state = $design->state ?? [];
+            $state['currentDesignUuid'] = null; // No asociar UUID real
+            $state['designTitle'] = $design->name;
+            $state['designTitleManual'] = (bool) $design->name_manual;
+            // Guardar en sesión para edición temporal
+            $request->session()->put(self::SESSION_KEY, $state);
+            // Devolver un objeto Design simulado solo para el frontend
+            $fakeDesign = new Design();
+            $fakeDesign->uuid = null;
+            $fakeDesign->name = $design->name;
+            $fakeDesign->state = $state;
+            $fakeDesign->updated_at = $design->updated_at;
+            return $fakeDesign;
+        }
+
+        return null;
     }
 
     private function storeThumbnailDataUrl(User $user, Design $design, string $dataUrl): ?string
