@@ -56,9 +56,16 @@ const jpgQuality = ref(0.95);
 const isExporting = ref(false);
 const exportError = ref('');
 const exportSuccess = ref('');
+
 const exportPreviewRef = ref(null);
-const generatedCanvasHostRef = ref(null);
-const isPreviewRendering = ref(false);
+const previewImageUrl = ref('');
+// Genera un SVG transparente con las dimensiones deseadas y lo convierte a data-uri
+function svgPlaceholder(width, height) {
+  // SVG sin width/height, solo viewBox, para que el <img> lo escale igual que la imagen real
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${width} ${height}'></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+const isPreviewRendering = ref(true);
 const previewRenderError = ref('');
 let previewTimer = null;
 let previewRenderSeq = 0;
@@ -198,48 +205,68 @@ const canvasBackgroundImageStyle = computed(() => buildCoverImageStyle({
 async function buildRendererOptions(width, height) {
     return {};
 }
-function mountPreviewCanvas(canvas) {
-    const host = generatedCanvasHostRef.value;
-    if (!host) return;
-    host.innerHTML = '';
-    canvas.className = 'h-auto w-full';
-    canvas.style.width = '100%';
-    canvas.style.height = 'auto';
-    host.appendChild(canvas);
-}
-async function renderGeneratedCanvasPreview() {
-    if (!exportPreviewRef.value || !generatedCanvasHostRef.value) return;
-    const runId = ++previewRenderSeq;
-    isPreviewRendering.value = true;
-    previewRenderError.value = '';
-    try {
-        await nextTick();
-        if (document.fonts?.ready) {
-            await document.fonts.ready;
-        }
-        const canvas = await toCanvasExport(exportPreviewRef.value, {
-            width: baseCanvasDimensions.value.width,
-            height: baseCanvasDimensions.value.height,
-        });
-        if (runId !== previewRenderSeq) return;
-        mountPreviewCanvas(canvas);
-    } catch (error) {
-        if (runId !== previewRenderSeq) return;
-        console.error('No se pudo renderizar la vista de canvas', error);
-        previewRenderError.value = 'No se pudo actualizar la vista del canvas generado.';
-    } finally {
-        if (runId === previewRenderSeq) {
-            isPreviewRendering.value = false;
-        }
+
+async function renderGeneratedImagePreview() {
+  if (!exportPreviewRef.value) return;
+  const runId = ++previewRenderSeq;
+  isPreviewRendering.value = true;
+  previewRenderError.value = '';
+  try {
+    await nextTick();
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
     }
+    const node = exportPreviewRef.value;
+    const { width, height } = targetDimensions.value;
+    const baseWidth = baseCanvasDimensions.value.width;
+    const baseHeight = baseCanvasDimensions.value.height;
+    const prevWidth = node.style.width;
+    const prevHeight = node.style.height;
+    const prevTransform = node.style.transform;
+    const scaleX = width / baseWidth;
+    const scaleY = height / baseHeight;
+    node.style.width = baseWidth + 'px';
+    node.style.height = baseHeight + 'px';
+    node.style.transformOrigin = 'top left';
+    node.style.transform = `scale(${scaleX}, ${scaleY})`;
+    let dataUrl;
+    if (selectedExportFormat.value === 'jpg') {
+      dataUrl = await toJpegExport(node, {
+        width,
+        height,
+        quality: clamp(Number(jpgQuality.value), 0.6, 1),
+      });
+    } else {
+      dataUrl = await toPngExport(node, {
+        width,
+        height,
+      });
+    }
+    if (runId !== previewRenderSeq) return;
+    previewImageUrl.value = dataUrl;
+    // Restaurar estilos
+    node.style.width = prevWidth;
+    node.style.height = prevHeight;
+    node.style.transform = prevTransform;
+  } catch (error) {
+    if (runId !== previewRenderSeq) return;
+    console.error('No se pudo renderizar la vista previa', error);
+    previewRenderError.value = 'No se pudo actualizar la vista previa.';
+  } finally {
+    if (runId === previewRenderSeq) {
+      isPreviewRendering.value = false;
+    }
+  }
 }
+
+
 function schedulePreviewRender() {
-    if (previewTimer) {
-        clearTimeout(previewTimer);
-    }
-    previewTimer = setTimeout(() => {
-        renderGeneratedCanvasPreview();
-    }, 120);
+  if (previewTimer) {
+    clearTimeout(previewTimer);
+  }
+  previewTimer = setTimeout(() => {
+    renderGeneratedImagePreview();
+  }, 120);
 }
 async function downloadImage() {
     exportError.value = '';
@@ -295,7 +322,8 @@ async function downloadImage() {
 }
 
 onMounted(() => {
-    schedulePreviewRender();
+  isPreviewRendering.value = true;
+  schedulePreviewRender();
 });
 onBeforeUnmount(() => {
     if (previewTimer) {
@@ -319,8 +347,12 @@ watch(() => state.elementLayout, () => {
 </script>
 
 <template>
-  <dialog open class="modal modal-open backdrop-blur">
+  <dialog open class="modal modal-open backdrop-blur" @click="emit('close')">
     <div class="modal-box max-w-4xl w-full relative" @click.stop>
+      <!-- Botón de cierre -->
+      <button @click="emit('close')" aria-label="Cerrar" class="absolute top-3 right-3 z-20 btn btn-sm btn-circle btn-ghost text-xl">
+        <span aria-hidden="true">&times;</span>
+      </button>
       <h3 class="font-bold text-xl mb-4">Exportar diseño</h3>
       <section class="grid gap-8 md:grid-cols-[1.5fr_0.8fr] items-start">
         <!-- Opciones de exportación -->
@@ -378,12 +410,26 @@ watch(() => state.elementLayout, () => {
         <!-- Preview reducida -->
         <div class="glass soft-shadow rounded-4xl border border-white/70 p-5 flex flex-col items-center dark:border-slate-700/70 mx-auto">
           <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary mb-2">Vista previa</p>
-          <div class="mx-auto bg-white p-2 rounded-xl shadow-2xl dark:bg-slate-900 flex flex-col items-center w-full">
-            <div ref="generatedCanvasHostRef" class="mx-auto w-full max-w-[220px]"></div>
-            <p v-if="isPreviewRendering" class="mt-2 text-xs text-base-content/70">Actualizando preview...</p>
+          <div
+            class="mx-auto bg-white p-2 rounded-xl shadow-2xl dark:bg-slate-900 flex flex-col items-center w-full"
+            :style="{
+              aspectRatio: `${targetDimensions.width} / ${targetDimensions.height}`,
+              maxWidth: '220px',
+              width: '100%'
+            }"
+          >
+            <img
+              :src="isPreviewRendering
+                ? svgPlaceholder(targetDimensions.width, targetDimensions.height)
+                : previewImageUrl"
+              :alt="isPreviewRendering ? 'Cargando preview...' : 'Preview exportación'"
+              class="w-full rounded-md border border-base-200 shadow"
+              style="display:block;object-fit:contain;"
+              :style="isPreviewRendering ? 'opacity:0.5;' : ''"
+            />
             <p v-if="previewRenderError" class="mt-2 text-xs text-red-500">{{ previewRenderError }}</p>
           </div>
-          <!-- Canvas oculto para exportación -->
+          <!-- DOM oculto para exportación/preview -->
           <div class="pointer-events-none fixed top-0 opacity-0" style="left: -99999px;">
             <div ref="exportPreviewRef" class="relative overflow-hidden p-7 text-white" :style="{ ...canvasBackgroundStyle, width: `${baseCanvasDimensions.width}px`, height: `${baseCanvasDimensions.height}px` }">
               <div v-if="state.elementLayout.background?.backgroundImageSrc" class="pointer-events-none absolute inset-0 overflow-hidden">
