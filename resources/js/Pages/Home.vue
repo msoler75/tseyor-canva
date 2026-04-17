@@ -5,6 +5,7 @@ import { computed, ref } from 'vue';
 import ChoiceCard from './../Components/designer/ChoiceCard.vue';
 import SelectionIndicator from './../Components/designer/SelectionIndicator.vue';
 import TemplateCard from './../Components/designer/TemplateCard.vue';
+import DesignerAssistant from './../Components/designer/DesignerAssistant.vue';
 import DesignerLayout from './../Layouts/DesignerLayout.vue';
 import {
     filterLabels,
@@ -317,7 +318,7 @@ const deleteDesign = async (design) => {
                                 <button type="button" tabindex="0" class="btn btn-ghost btn-sm btn-circle">
                                     <IconifyIcon icon="ph:dots-three-outline-vertical-fill" class="text-lg" />
                                 </button>
-                                <ul tabindex="0" class="dropdown-content menu z-[70] mt-2 w-52 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
+                                <ul tabindex="0" class="dropdown-content menu z-70 mt-2 w-52 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
                                     <li><button type="button" @click="openExistingDesign(project)">Abrir</button></li>
                                     <li><button type="button" @click="duplicateDesign(project)">Hacer una copia</button></li>
                                     <li><button type="button" @click="renameDesign(project)">Cambiar título</button></li>
@@ -345,10 +346,10 @@ const deleteDesign = async (design) => {
                         v-for="item in communityDesigns"
                         :key="item.uuid"
                         type="button"
-                        class="rounded-2xl border border-base-300 bg-gradient-to-br from-base-100 to-base-200 p-4 text-left hover:border-primary/60"
+                        class="rounded-2xl border border-base-300 bg-linear-to-br from-base-100 to-base-200 p-4 text-left hover:border-primary/60"
                         @click="openExistingDesign(item)"
                     >
-                        <div class="h-28 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-500 to-emerald-400 opacity-90 flex items-center justify-center">
+                        <div class="h-28 rounded-xl bg-linear-to-br from-indigo-500 via-cyan-500 to-emerald-400 opacity-90 flex items-center justify-center">
                             <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.name" class="h-full w-full object-contain rounded-xl bg-white" />
                             <span v-else class="text-xs text-white/70">Sin miniatura</span>
                         </div>
@@ -360,228 +361,16 @@ const deleteDesign = async (design) => {
             </div>
         </section>
 
-        <div v-if="assistantOpen" class="fixed inset-0 z-[90]">
-            <div class="absolute inset-0 bg-slate-950/55" @click="closeAssistant"></div>
-
-            <div class="absolute left-1/2 top-1/2 z-[91] w-[min(1120px,92vw)] -translate-x-1/2 -translate-y-1/2">
-                <section class="max-h-[90vh] overflow-hidden rounded-[30px] border border-base-300 bg-base-100 shadow-2xl">
-                    <header class="border-b border-base-300 px-6 py-5">
-                        <div class="flex items-start justify-between gap-4">
-                            <div>
-                                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Asistente de creación</p>
-                                <h3 class="mt-1 text-2xl font-semibold">Configura tu diseño</h3>
-                                <p class="mt-1 text-sm text-base-content/70">Objetivo, formato, datos y plantilla antes de entrar al editor.</p>
-                            </div>
-                            <button type="button" class="btn btn-ghost btn-sm rounded-full" @click="closeAssistant">Cerrar</button>
-                        </div>
-
-                        <nav class="mt-4 flex flex-wrap gap-2">
-                            <button
-                                v-for="(step, index) in assistantSteps"
-                                :key="step.id"
-                                type="button"
-                                class="btn btn-sm rounded-full"
-                                :class="assistantStep === step.id ? 'btn-primary' : (index <= assistantIndex ? 'btn-outline' : 'btn-ghost')"
-                                @click="assistantStep = step.id"
-                            >
-                                {{ index + 1 }}. {{ step.label }}
-                            </button>
-                        </nav>
-                    </header>
-
-                    <div class="max-h-[62vh] overflow-y-auto px-6 py-5">
-                        <section v-if="assistantStep === 'objective'" class="space-y-4">
-                            <div class="alert border border-base-300 bg-base-100/80 text-base-content">
-                                <span>Elige para que quieres crear esta pieza.</span>
-                            </div>
-                            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                <ChoiceCard
-                                    v-for="item in objectiveOptions"
-                                    :key="item.id"
-                                    :title="item.title"
-                                    :description="item.description"
-                                    :recommendation="item.recommendation + ' · ' + item.categoryHint"
-                                    :selected="state.objective === item.id"
-                                    @click="state.objective = item.id"
-                                />
-                            </div>
-                        </section>
-
-                        <section v-else-if="assistantStep === 'format'" class="space-y-6">
-                            <div v-if="state.objective" class="alert border border-base-300 bg-base-100/80 text-base-content shadow-sm">
-                                <span>Objetivo activo: <strong>{{ objectiveTitle }}</strong></span>
-                            </div>
-
-                            <div class="grid gap-5 lg:grid-cols-3">
-                                <article class="card border border-base-300 bg-base-100/80">
-                                    <div class="card-body p-5">
-                                        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 1</p>
-                                        <p class="mt-1 text-base font-semibold">Salida</p>
-                                        <div class="mt-3 grid gap-3">
-                                            <button
-                                                type="button"
-                                                class="card rounded-2xl border-2 p-3 text-left"
-                                                :class="state.outputType === 'print' ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40'"
-                                                @click="state.outputType = 'print'; state.size = null"
-                                            >
-                                                <div class="flex items-start justify-start gap-3">
-                                                    <span class="font-medium">Impresion</span>
-                                                    <SelectionIndicator :selected="state.outputType === 'print'" />
-                                                </div>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                class="card rounded-2xl border-2 p-3 text-left"
-                                                :class="state.outputType === 'digital' ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40'"
-                                                @click="state.outputType = 'digital'; state.size = null"
-                                            >
-                                                <div class="flex items-start justify-start gap-3">
-                                                    <span class="font-medium">Digital</span>
-                                                    <SelectionIndicator :selected="state.outputType === 'digital'" />
-                                                </div>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </article>
-
-                                <article class="card border border-base-300 bg-base-100/80">
-                                    <div class="card-body p-5">
-                                        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 2</p>
-                                        <p class="mt-1 text-base font-semibold">Formato</p>
-                                        <div class="mt-3 grid gap-3">
-                                            <button
-                                                v-for="item in formatCards"
-                                                :key="item.id"
-                                                type="button"
-                                                class="rounded-2xl border px-3 py-2 text-left"
-                                                :disabled="!state.outputType"
-                                                :class="state.format === item.id ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40 disabled:opacity-50'"
-                                                @click="state.format = item.id; state.size = null"
-                                            >
-                                                <span class="font-medium">{{ item.title }}</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </article>
-
-                                <article class="card border border-base-300 bg-base-100/80">
-                                    <div class="card-body p-5">
-                                        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 3</p>
-                                        <p class="mt-1 text-base font-semibold">Tamano</p>
-                                        <div class="mt-3 flex flex-col items-start justify-start gap-3">
-                                            <label class="w-full">
-                                                <span class="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-base-content/60">Listado de tamanos</span>
-                                                <select
-                                                    v-model="selectedSizeId"
-                                                    class="select select-bordered w-full rounded-2xl bg-base-100"
-                                                    :disabled="!state.format"
-                                                >
-                                                    <option disabled value="">Selecciona un tamano recomendado</option>
-                                                    <option v-for="size in sizes" :key="size.id" :value="size.id">
-                                                        {{ size.label }} · {{ size.detail }}
-                                                    </option>
-                                                </select>
-                                            </label>
-
-                                            <div v-if="state.size" class="rounded-2xl border border-primary/30 bg-primary/10 px-3 py-2 text-left">
-                                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Seleccionado</p>
-                                                <p class="mt-1 text-sm font-medium text-base-content">{{ state.size }}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </article>
-                            </div>
-                        </section>
-
-                        <section v-else-if="assistantStep === 'content'" class="space-y-4">
-                            <div class="alert border border-base-300 bg-base-100/80 text-base-content">
-                                <span>Rellena los datos clave para completar las plantillas.</span>
-                            </div>
-
-                            <div class="grid gap-4 sm:grid-cols-2">
-                                <label
-                                    v-for="field in fields"
-                                    :key="field.key"
-                                    class="rounded-[22px] border border-base-300 bg-base-100/80 p-4 text-sm font-medium text-base-content"
-                                    :class="field.type === 'textarea' ? 'sm:col-span-2' : ''"
-                                >
-                                    <span class="block">{{ field.label }}</span>
-                                    <span v-if="field.helper" class="mt-1 block text-xs font-normal leading-5 text-base-content/65">
-                                        {{ field.helper }}
-                                    </span>
-                                    <textarea v-if="field.type === 'textarea'" v-model="state.content[field.key]" class="textarea textarea-bordered mt-2 min-h-[120px] w-full text-base" :placeholder="fieldPlaceholders[field.key] || 'Escribe aqui...'" @input="state.autosaveMessage = 'Guardado automatico · hace un instante'"></textarea>
-                                    <input v-else v-model="state.content[field.key]" class="input input-bordered mt-2 w-full text-base" :placeholder="fieldPlaceholders[field.key] || 'Escribe aqui...'" @input="state.autosaveMessage = 'Guardado automatico · hace un instante'" />
-                                </label>
-                            </div>
-                        </section>
-
-                        <section v-else class="space-y-5">
-                            <div class="flex flex-wrap gap-2">
-                                <button
-                                    v-for="filter in templateFilters"
-                                    :key="filter"
-                                    type="button"
-                                    class="btn btn-sm rounded-full"
-                                    :class="state.templateCategory === filter ? 'btn-primary' : 'btn-outline'"
-                                    @click="state.templateCategory = filter"
-                                >
-                                    {{ filterLabels[filter] }}
-                                </button>
-                            </div>
-
-                            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                <TemplateCard
-                                    v-for="template in filteredTemplates"
-                                    :key="template.id"
-                                    :template="template"
-                                    :content="state.content"
-                                    :meta-line="metaLine"
-                                    :contact-line="venueLine"
-                                    :selected="state.selectedTemplateId === template.id"
-                                    @click="state.selectedTemplateId = template.id"
-                                />
-
-                                <article
-                                    class="flex min-h-[340px] cursor-pointer flex-col items-center justify-center rounded-[28px] border border-dashed border-base-300 bg-base-100/80 p-6 text-center transition hover:border-primary/60"
-                                    :class="!state.selectedTemplateId ? 'ring-2 ring-primary/30' : ''"
-                                    @click="state.selectedTemplateId = null"
-                                >
-                                    <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-base-100 text-3xl text-base-content/40 shadow-sm">+</div>
-                                    <h4 class="mt-5 text-lg font-semibold text-base-content">Plantilla vacia</h4>
-                                    <p class="mt-2 max-w-xs text-sm leading-6 text-base-content/70">
-                                        Empieza desde cero, manteniendo objetivo, formato y datos.
-                                    </p>
-                                </article>
-                            </div>
-                        </section>
-                    </div>
-
-                    <footer class="flex items-center justify-between gap-3 border-t border-base-300 px-6 py-4">
-                        <button type="button" class="btn btn-outline btn-sm rounded-full" :disabled="isFirstStep" @click="goPrevious">Anterior</button>
-
-                        <div class="flex items-center gap-3">
-                            <button
-                                v-if="!isLastStep"
-                                type="button"
-                                class="btn btn-primary btn-sm rounded-full"
-                                :disabled="!canGoNext"
-                                @click="goNext"
-                            >
-                                Siguiente
-                            </button>
-
-                            <button
-                                v-else
-                                type="button"
-                                class="btn btn-primary btn-sm rounded-full"
-                                @click="finishAndOpenEditor"
-                            >
-                                Abrir editor
-                            </button>
-                        </div>
-                    </footer>
-                </section>
+        <dialog v-if="assistantOpen" class="modal modal-open backdrop-blur-sm" style="z-index:90;">
+            <div class="modal-box w-full max-w-3xl p-0 overflow-visible bg-base-100 rounded-[30px] shadow-2xl border border-base-300">
+                <DesignerAssistant
+                    :step="assistantStep"
+                    :show-footer="true"
+                    :show-close="true"
+                    @close="closeAssistant"
+                    @finish="finishAndOpenEditor"
+                />
             </div>
-        </div>
+        </dialog>
     </DesignerLayout>
 </template>

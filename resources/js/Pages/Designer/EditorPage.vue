@@ -22,9 +22,46 @@ import { useEditorInteractions } from '../../composables/useEditorInteractions';
 import { applyFormatToDimensions, buildCoverImageStyle, parseSizeDetail } from '../../utils/editorShared';
 import { dataUrlToFile, extractImageFilesFromDataTransfer, fileToDataUrl, hasFilesInTransfer, isDataImageUrl, isEditableTarget, optimizeImageFile } from '../../utils/imageUploads';
 
+import DesignerAssistant from '../../Components/designer/DesignerAssistant.vue';
+
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const page = usePage();
 const state = useDesignerState();
+
+// Estado y lógica del asistente (como en Home.vue)
+
+const assistantOpen = ref(false);
+const assistantStep = ref('objective');
+const assistantSteps = [
+  { id: 'objective', label: 'Objetivo' },
+  { id: 'format', label: 'Formato' },
+  { id: 'content', label: 'Datos' },
+  { id: 'templates', label: 'Plantillas' },
+];
+const assistantIndex = computed(() => assistantSteps.findIndex((step) => step.id === assistantStep.value));
+const isFirstStep = computed(() => assistantIndex.value <= 0);
+const isLastStep = computed(() => assistantIndex.value === assistantSteps.length - 1);
+
+const openAssistant = () => {
+  // Opcional: resetDesignerState();
+  state.mode = 'guided';
+  state.templateCategory = 'all';
+  state.currentDesignUuid = null;
+  state.designSurface = null;
+  assistantStep.value = 'objective';
+  assistantOpen.value = true;
+};
+const closeAssistant = () => {
+  assistantOpen.value = false;
+};
+const goNext = () => {
+  if (isLastStep.value) return;
+  assistantStep.value = assistantSteps[assistantIndex.value + 1].id;
+};
+const goPrevious = () => {
+  if (isFirstStep.value) return;
+  assistantStep.value = assistantSteps[assistantIndex.value - 1].id;
+};
 if (!state.customElements || Array.isArray(state.customElements)) {
   state.customElements = Object.fromEntries(Object.entries(state.customElements ?? {}));
 }
@@ -2720,6 +2757,7 @@ watch(
     @toggle-dark="state.darkMode = !state.darkMode"
   >
     <div class="flex h-full min-h-0 flex-col overflow-hidden bg-base-100">
+
     <EditorTopBar
       :design-title="state.designTitle"
       :size="state.size"
@@ -2741,6 +2779,7 @@ watch(
       @update-zoom-level="setZoomLevel"
       @toggle-dark-mode="state.darkMode = !state.darkMode"
       @export-navigate="handleExportNavigation"
+      @open-assistant="openAssistant"
     />
 
     <section class="relative min-h-0 flex-1 overflow-hidden">
@@ -2932,6 +2971,18 @@ watch(
       </div>
     </section>
     </div>
+    <!-- Diálogo de asistente -->
+    <dialog v-if="assistantOpen" class="modal modal-open backdrop-blur-sm" style="z-index:90;">
+      <div class="modal-box w-full max-w-3xl p-0 overflow-visible bg-base-100 rounded-[30px] shadow-2xl border border-base-300">
+        <DesignerAssistant
+          :step="assistantStep"
+          :show-footer="true"
+          :show-close="true"
+          @close="closeAssistant"
+          @finish="closeAssistant"
+        />
+      </div>
+    </dialog>
   </DesignerLayout>
 </template>
 

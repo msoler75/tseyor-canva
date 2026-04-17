@@ -27,14 +27,16 @@ defineProps({
 
 <template>
     <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <Link
-            v-if="previousUrl"
-            :href="previousUrl"
-            class="btn btn-outline btn-sm rounded-full"
-        >
-            Anterior
-        </Link>
-        <span v-else></span>
+        <slot name="left">
+            <Link
+                v-if="previousUrl"
+                :href="previousUrl"
+                class="btn btn-outline btn-sm rounded-full"
+            >
+                Anterior
+            </Link>
+            <span v-else></span>
+        </slot>
 
         <div class="flex flex-wrap items-center gap-3">
             <span
@@ -43,21 +45,23 @@ defineProps({
             >
                 {{ hint }}
             </span>
-            <button
-                v-if="nextUrl && nextDisabled"
-                type="button"
-                disabled
-                class="btn btn-primary btn-sm rounded-full"
-            >
-                {{ nextLabel }}
-            </button>
-            <Link
-                v-else-if="nextUrl"
-                :href="nextUrl"
-                class="btn btn-primary btn-sm rounded-full"
-            >
-                {{ nextLabel }}
-            </Link>
+            <slot name="right">
+                <button
+                    v-if="nextUrl && nextDisabled"
+                    type="button"
+                    disabled
+                    class="btn btn-primary btn-sm rounded-full"
+                >
+                    {{ nextLabel }}
+                </button>
+                <Link
+                    v-else-if="nextUrl"
+                    :href="nextUrl"
+                    class="btn btn-primary btn-sm rounded-full"
+                >
+                    {{ nextLabel }}
+                </Link>
+            </slot>
         </div>
     </div>
 </template>

@@ -53,6 +53,7 @@ const emit = defineEmits([
   'updateZoomLevel',
   'toggleDarkMode',
   'exportNavigate',
+  'open-assistant',
 ]);
 
 const handleZoomInput = (event) => {
@@ -84,7 +85,7 @@ const handleZoomInput = (event) => {
           Archivo
           <Icon icon="ph:caret-down-bold" class="text-sm" />
         </button>
-        <ul tabindex="0" class="dropdown-content menu z-[60] mt-2 w-64 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
+        <ul tabindex="0" class="dropdown-content menu z-60 mt-2 w-64 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
           <li>
             <button type="button" @click="emit('createNewDesign')">
               <Icon icon="ph:file-plus-bold" class="text-lg" />
@@ -120,6 +121,15 @@ const handleZoomInput = (event) => {
 
       <span class="rounded-xl bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">Editor</span>
       <span class="max-w-[22ch] truncate text-sm font-semibold text-base-content">{{ designTitle || 'Diseño sin título' }}</span>
+      <button
+        type="button"
+        class="btn btn-sm btn-ghost btn-circle ml-1"
+        title="Abrir asistente de diseño"
+        aria-label="Asistente de diseño"
+        @click="emit('open-assistant')"
+      >
+        <Icon icon="ph:magic-wand-bold" class="text-2xl text-primary" />
+      </button>
       <span class="text-sm text-base-content/65">{{ size || 'Tamaño no definido' }}</span>
     </div>
 
