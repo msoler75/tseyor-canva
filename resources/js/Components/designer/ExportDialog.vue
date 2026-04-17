@@ -320,73 +320,70 @@ watch(() => state.elementLayout, () => {
 
 <template>
   <dialog open class="modal modal-open backdrop-blur">
-    <div class="modal-box max-w-3xl w-full relative" @click.stop>
-      <!-- Botón de cerrar (cruz) -->
-      <button type="button" aria-label="Cerrar" class="btn btn-sm btn-circle absolute right-2 top-2 z-10" @click="$emit('close')">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-      </button>
-      <h3 class="font-bold text-lg mb-2">Exportar diseño</h3>
-      <section class="grid gap-6 xl:grid-cols-[1fr_340px]">
-        <div class="glass soft-shadow rounded-4xl border border-white/70 p-6 sm:p-8 dark:border-slate-700/70">
-          <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <div class="rounded-[28px] bg-neutral p-6 text-neutral-content">
-              <p class="text-xs font-semibold uppercase tracking-[0.22em] text-white/60">Exportar</p>
-              <h3 class="mt-3 text-3xl font-semibold">Imagen fiel al diseño</h3>
-              <p class="mt-4 text-sm leading-6 text-white/78">
-                Se renderiza el diseño con html-to-image para respetar capas, tipografías, sombras, formas e imágenes.
-              </p>
-              <div class="mt-6 space-y-4">
-                <div class="rounded-2xl border border-white/20 bg-white/5 p-4">
-                  <p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Formato</p>
-                  <div class="mt-3 grid grid-cols-2 gap-2">
-                    <button type="button" class="btn btn-sm rounded-xl" :class="selectedExportFormat === 'png' ? 'btn-primary' : 'btn-outline text-white border-white/40 hover:bg-white/10'" @click="selectedExportFormat = 'png'">PNG</button>
-                    <button type="button" class="btn btn-sm rounded-xl" :class="selectedExportFormat === 'jpg' ? 'btn-primary' : 'btn-outline text-white border-white/40 hover:bg-white/10'" @click="selectedExportFormat = 'jpg'">JPG</button>
-                  </div>
-                  <p class="mt-2 text-sm text-white/70">PNG para máxima fidelidad; JPG para menor peso.</p>
+    <div class="modal-box max-w-4xl w-full relative" @click.stop>
+      <h3 class="font-bold text-xl mb-4">Exportar diseño</h3>
+      <section class="grid gap-8 md:grid-cols-[1.5fr_0.8fr] items-start">
+        <!-- Opciones de exportación -->
+        <div class="glass soft-shadow rounded-4xl border border-white/70 p-6 sm:p-10 dark:border-slate-700/70">
+          <div class="space-y-6">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary mb-1">Opciones de exportación</p>
+              <h4 class="text-2xl font-bold mb-2">Elige cómo exportar tu diseño</h4>
+              <p class="text-sm text-base-content/70 mb-2">Personaliza el formato, calidad y resolución de la imagen exportada.</p>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="rounded-2xl border border-white/20 bg-white/5 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Formato</p>
+                <div class="mt-3 flex gap-2">
+                  <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'png' ? 'btn-primary' : 'btn-outline text-white border-white/40 hover:bg-white/10'" @click="selectedExportFormat = 'png'">PNG</button>
+                  <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'jpg' ? 'btn-primary' : 'btn-outline text-white border-white/40 hover:bg-white/10'" @click="selectedExportFormat = 'jpg'">JPG</button>
                 </div>
-                <div v-if="selectedExportFormat === 'jpg'" class="rounded-2xl border border-white/20 bg-white/5 p-4">
-                  <p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Calidad JPG</p>
-                  <div class="mt-3 flex items-center gap-3">
-                    <input v-model.number="jpgQuality" type="range" min="0.6" max="1" step="0.01" class="range range-primary flex-1" />
-                    <span class="w-14 text-right text-sm font-semibold">{{ Math.round(jpgQuality * 100) }}%</span>
-                  </div>
+                <p class="mt-2 text-xs text-white/70">PNG para máxima fidelidad; JPG para menor peso.</p>
+              </div>
+              <div v-if="selectedExportFormat === 'jpg'" class="rounded-2xl border border-white/20 bg-white/5 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Calidad JPG</p>
+                <div class="mt-3 flex items-center gap-3">
+                  <input v-model.number="jpgQuality" type="range" min="0.6" max="1" step="0.01" class="range range-primary flex-1" />
+                  <span class="w-14 text-right text-sm font-semibold">{{ Math.round(jpgQuality * 100) }}%</span>
                 </div>
-                <div class="rounded-2xl border border-white/20 bg-white/5 p-4">
-                  <p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Resolución (DPI / PPP)</p>
-                  <div class="mt-3 grid gap-2 sm:grid-cols-3">
-                    <button v-for="option in dpiOptions" :key="option.value" type="button" class="btn btn-sm h-auto rounded-xl px-3 py-2 text-left" :class="selectedDpi === option.value ? 'btn-primary' : 'btn-outline text-white border-white/40 hover:bg-white/10'" @click="selectedDpi = option.value">
-                      <span class="block text-xs font-semibold">{{ option.label }}</span>
-                      <span class="block text-[11px] opacity-75">{{ option.helper }}</span>
-                    </button>
-                  </div>
+              </div>
+              <div class="rounded-2xl border border-white/20 bg-white/5 p-4 md:col-span-2">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Resolución (DPI / PPP)</p>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <button v-for="option in dpiOptions" :key="option.value" type="button" class="btn btn-sm h-auto rounded-xl px-3 py-2 text-left" :class="selectedDpi === option.value ? 'btn-primary' : 'btn-outline text-white border-white/40 hover:bg-white/10'" @click="selectedDpi = option.value">
+                    <span class="block text-xs font-semibold">{{ option.label }}</span>
+                    <span class="block text-[11px] opacity-75">{{ option.helper }}</span>
+                  </button>
                 </div>
-                <div class="rounded-2xl border border-white/20 bg-white/5 p-4 text-sm">
-                  <p>
-                    Tamaño base: <strong>{{ state.size || 'Sin tamaño' }}</strong>
-                    <span class="opacity-80">· {{ selectedSizeDetail }}</span>
-                  </p>
-                  <p class="mt-1">
-                    Salida final: <strong>{{ targetDimensions.width }} × {{ targetDimensions.height }} px</strong>
-                  </p>
-                  <p class="mt-1 opacity-80">Objetivo: {{ objectiveTitle }}</p>
-                </div>
-                <button type="button" class="btn btn-primary w-full rounded-2xl" :disabled="isExporting" @click="downloadImage">
-                  {{ exportButtonLabel }}
-                </button>
-                <p v-if="exportSuccess" class="text-sm text-emerald-300">{{ exportSuccess }}</p>
-                <p v-if="exportError" class="text-sm text-red-300">{{ exportError }}</p>
               </div>
             </div>
+            <div class="rounded-2xl border border-white/20 bg-white/5 p-4 text-sm">
+              <p>
+                Tamaño base: <strong>{{ state.size || 'Sin tamaño' }}</strong>
+                <span class="opacity-80">· {{ selectedSizeDetail }}</span>
+              </p>
+              <p class="mt-1">
+                Salida final: <strong>{{ targetDimensions.width }} × {{ targetDimensions.height }} px</strong>
+              </p>
+              <p class="mt-1 opacity-80">Objetivo: {{ objectiveTitle }}</p>
+            </div>
+            <button type="button" class="btn btn-primary w-full rounded-2xl text-lg py-3 mt-2" :disabled="isExporting" @click="downloadImage">
+              {{ exportButtonLabel }}
+            </button>
+            <p v-if="exportSuccess" class="text-sm text-emerald-300">{{ exportSuccess }}</p>
+            <p v-if="exportError" class="text-sm text-red-300">{{ exportError }}</p>
           </div>
-          <StepFooter :previous-url="navigation?.previous" />
+          <!-- StepFooter eliminado -->
         </div>
-        <div class="glass soft-shadow rounded-4xl border border-white/70 p-6 dark:border-slate-700/70">
-          <p class="text-sm font-semibold uppercase tracking-[0.22em] text-primary">Vista del canvas generado</p>
-          <div class="mx-auto mt-5 max-w-100 bg-white p-4 shadow-2xl dark:bg-slate-900">
-            <div ref="generatedCanvasHostRef" class="mx-auto w-full"></div>
-            <p v-if="isPreviewRendering" class="mt-3 text-xs text-base-content/70">Actualizando canvas generado...</p>
-            <p v-if="previewRenderError" class="mt-3 text-xs text-red-500">{{ previewRenderError }}</p>
+        <!-- Preview reducida -->
+        <div class="glass soft-shadow rounded-4xl border border-white/70 p-5 flex flex-col items-center dark:border-slate-700/70 mx-auto">
+          <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary mb-2">Vista previa</p>
+          <div class="mx-auto bg-white p-2 rounded-xl shadow-2xl dark:bg-slate-900 flex flex-col items-center w-full">
+            <div ref="generatedCanvasHostRef" class="mx-auto w-full max-w-[220px]"></div>
+            <p v-if="isPreviewRendering" class="mt-2 text-xs text-base-content/70">Actualizando preview...</p>
+            <p v-if="previewRenderError" class="mt-2 text-xs text-red-500">{{ previewRenderError }}</p>
           </div>
+          <!-- Canvas oculto para exportación -->
           <div class="pointer-events-none fixed top-0 opacity-0" style="left: -99999px;">
             <div ref="exportPreviewRef" class="relative overflow-hidden p-7 text-white" :style="{ ...canvasBackgroundStyle, width: `${baseCanvasDimensions.width}px`, height: `${baseCanvasDimensions.height}px` }">
               <div v-if="state.elementLayout.background?.backgroundImageSrc" class="pointer-events-none absolute inset-0 overflow-hidden">
@@ -418,9 +415,6 @@ watch(() => state.elementLayout, () => {
           </div>
         </div>
       </section>
-      <form method="dialog" class="modal-backdrop">
-        <button type="button" class="btn" @click="$emit('close')">Cerrar</button>
-      </form>
     </div>
   </dialog>
 </template>
