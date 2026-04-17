@@ -1,12 +1,34 @@
 # Lista de familias de fuentes para el editor (selección variada)
 # Una por línea, sin comillas
-Orbitron
+Lobster
+Montserrat
+Oswald
+Caveat
 Abril Fatface
 Indie Flower
 Fruktur
 Fira Mono
 Amatic SC
 Pacifico
+Orbitron
 Bungee
 Rubik Moonrocks
 Major Mono Display
+
+# Fuentes adicionales para mayor variedad visual
+Shadows Into Light
+Dancing Script
+Bebas Neue
+Merriweather
+Raleway
+Permanent Marker
+Satisfy
+Press Start 2P
+Gloria Hallelujah
+Fredoka One
+VT323
+Architects Daughter
+Quicksand
+Poiret One
+Patua One
+Special Elite
