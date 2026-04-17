@@ -1,16 +1,12 @@
-﻿<script setup>
+<script setup>
 import axios from 'axios';
-import { toJpegExport } from '../../utils/useHtml2Image';
-import ExportDialog from '../../Components/designer/ExportDialog.vue';
 import { Icon } from '@iconify/vue';
 import { usePage } from '@inertiajs/vue3';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
 import EditorTopBar from '../../Components/designer/EditorTopBar.vue';
 import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.vue';
-import EditorContextPanel from '../../Components/designer/EditorContextPanel.vue';
 import EditorCanvasStage from '../../Components/designer/EditorCanvasStage.vue';
-import SelectionOverlay from '../../Components/designer/SelectionOverlay.vue';
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { objectiveRecommendations } from '../../data/designer';
 import { useDesignerState } from '../../composables/useDesignerState';
 import { flushDesignerStatePersistence } from '../../composables/useDesignerState';
@@ -23,7 +19,11 @@ import { useEditorInteractions } from '../../composables/useEditorInteractions';
 import { applyFormatToDimensions, buildCoverImageStyle, parseSizeDetail } from '../../utils/editorShared';
 import { dataUrlToFile, extractImageFilesFromDataTransfer, fileToDataUrl, hasFilesInTransfer, isDataImageUrl, isEditableTarget, optimizeImageFile } from '../../utils/imageUploads';
 
-import DesignerAssistant from '../../Components/designer/DesignerAssistant.vue';
+const DesignerAssistant = defineAsyncComponent(() => import('../../Components/designer/DesignerAssistant.vue'));
+const EditorContextPanel = defineAsyncComponent(() => import('../../Components/designer/EditorContextPanel.vue'));
+const EditorFloatingToolbar = defineAsyncComponent(() => import('../../Components/designer/EditorFloatingToolbar.vue'));
+const ExportDialog = defineAsyncComponent(() => import('../../Components/designer/ExportDialog.vue'));
+const SelectionOverlay = defineAsyncComponent(() => import('../../Components/designer/SelectionOverlay.vue'));
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const page = usePage();
@@ -1131,6 +1131,7 @@ const scheduleThumbnailCapture = () => {
     if (!canvasRef.value) return;
 
     try {
+      const { toJpegExport } = await import('../../utils/useHtml2Image');
       const dataUrl = await toJpegExport(canvasRef.value, {
         quality: 0.6,
         pixelRatio: 0.35,
@@ -2846,40 +2847,19 @@ watch(
 
     <section class="relative min-h-0 flex-1 overflow-hidden">
       <div class="h-full overflow-hidden border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        <div
+        <EditorFloatingToolbar
           v-if="hasSelection && !hasMultiSelection && !isGroupSelection"
-          data-editor-keep-selection="true"
-          class="pointer-events-none absolute z-50 flex justify-center"
-          :style="{ left: '70px', right: '0', top: `${toolbarPosition.y}px` }"
-        >
-          <div :style="{ transform: `translateX(${toolbarPosition.x}px)` }" class="pointer-events-none">
-          <div data-editor-keep-selection="true" class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90">
-            <div class="card-body p-1.5">
-                <div class="flex flex-wrap items-center gap-3">
-                    <button type="button" class="order-first btn btn-ghost text-lg cursor-grab active:cursor-grabbing" @pointerdown="startToolbarDrag">⋮⋮</button>
-                  <button v-for="tab in selectedPropertyTabs" :key="tab.id" type="button" class="btn border-0 py-1 px-2" :class="[activePropertyPanel === tab.id ? 'btn-primary' : 'btn-outline', tab.class]"
-                        :title="tab.title || tab.label"
-                        @click="handlePropertyTabClick(tab)">
-                        <span v-if="tab.label" class="text-sm text-base-100-accent" :class="tab.labelClass">{{ tab.label }}</span>
-                        <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl"/>
-                    </button>
-                  <template v-if="hasTextSelection">
-                    <input v-model.number="selectedTextStyle.fontSize" type="number" min="8" max="200" step="1" class="input input-bordered join-item w-12 text-center order-first" />
-                    <button type="button" class="btn text-lg" :class="selectedTextStyle.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
-                    <button type="button" class="btn text-lg italic" :class="selectedTextStyle.italic ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.italic = !selectedTextStyle.italic">I</button>
-                    <button type="button" class="btn text-lg w-12" :class="selectedTextStyle.uppercase ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.uppercase = !selectedTextStyle.uppercase">Aa</button>
-                    <button type="button" class="btn text-lg btn-outline" @click="cycleAlignment">
-                      <Icon :icon="currentAlignmentIcon" class="scale-150"/>
-                    </button>
-                  </template>
-                  <template v-else>
-                    <span class="rounded-full border border-base-300 bg-base-100 px-3 py-1 text-[11px] font-medium text-base-content/70">{{ activeElementLabel }}</span>
-                  </template>
-                </div>
-            </div>
-          </div>
-          </div>
-        </div>
+          :active-element-label="activeElementLabel"
+          :active-property-panel="activePropertyPanel"
+          :current-alignment-icon="currentAlignmentIcon"
+          :has-text-selection="hasTextSelection"
+          :selected-property-tabs="selectedPropertyTabs"
+          :selected-text-style="selectedTextStyle"
+          :toolbar-position="toolbarPosition"
+          @cycle-alignment="cycleAlignment"
+          @property-tab-click="handlePropertyTabClick"
+          @start-drag="startToolbarDrag"
+        />
 
         <div class="relative grid h-full min-h-0 gap-0" :style="editorGridStyle">
           <!-- Panel de CreaciÃ³n (vertical, siempre visible) -->
@@ -3005,6 +2985,7 @@ watch(
           >
             <template #overlay>
               <SelectionOverlay
+                v-if="activeSelectionIds.length || selectionMarquee.active || multiSelectionIds.length > 1"
                 :show-selection-controls="!!(activeSelectionIds.length && state.selectedElementId !== 'background')"
                 :show-marquee="selectionMarquee.active"
                 :show-group-button="multiSelectionIds.length > 1"

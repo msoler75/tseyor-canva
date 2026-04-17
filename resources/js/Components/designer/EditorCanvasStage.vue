@@ -1,5 +1,7 @@
 <script setup>
-import RichTextEditor from './RichTextEditor.vue';
+import { defineAsyncComponent } from 'vue';
+
+const RichTextEditor = defineAsyncComponent(() => import('./RichTextEditor.vue'));
 
 const props = defineProps({
   canvasGridStyle: Object,
