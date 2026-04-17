@@ -12,6 +12,7 @@ let saveInFlight = false;
 let queuedSave = null;
 let currentSaveEndpoint = '/designer/state';
 let currentHydratedDesignUuid = null;
+let currentRequestIsAuthenticated = false;
 let persistenceMeta = {};
 
 function normalizeUploadedAssetUrl(value) {
@@ -45,6 +46,7 @@ export function useDesignerState() {
     const saveEndpoint = page.props.designer?.endpoints?.save ?? '/designer/state';
     const incomingDesignUuid = sessionState?.currentDesignUuid ?? page.props.designer?.currentDesign?.uuid ?? null;
     currentSaveEndpoint = saveEndpoint;
+    currentRequestIsAuthenticated = Boolean(page.props.auth?.user);
 
     if (!designerState) {
         designerState = reactive(buildInitialState(sessionState));
@@ -259,6 +261,10 @@ function bootstrapPersistence(saveEndpoint) {
 }
 
 async function persistStateSnapshot(saveEndpoint, snapshot) {
+    if (currentRequestIsAuthenticated && !snapshot.currentDesignUuid) {
+        return;
+    }
+
     queuedSave = { saveEndpoint, snapshot, meta: { ...persistenceMeta } };
 
     if (saveInFlight) {
@@ -275,6 +281,7 @@ async function persistStateSnapshot(saveEndpoint, snapshot) {
 
             if (designerState && response?.data?.designUuid) {
                 designerState.currentDesignUuid = response.data.designUuid;
+                currentHydratedDesignUuid = response.data.designUuid;
             }
 
             if (next.meta?.thumbnailDataUrl && persistenceMeta.thumbnailDataUrl === next.meta.thumbnailDataUrl) {

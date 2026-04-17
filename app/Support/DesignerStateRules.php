@@ -23,6 +23,7 @@ final class DesignerStateRules
             "{$prefix}.selectedElementId" => ['nullable', 'string'],
             "{$prefix}.designTitle" => ['nullable', 'string', 'max:255'],
             "{$prefix}.designTitleManual" => ['nullable', 'boolean'],
+            "{$prefix}.currentDesignUuid" => ['nullable', 'string', 'max:36'],
             "{$prefix}.designSurface" => ['nullable', 'array'],
             "{$prefix}.designSurface.width" => ['nullable', 'numeric'],
             "{$prefix}.designSurface.height" => ['nullable', 'numeric'],

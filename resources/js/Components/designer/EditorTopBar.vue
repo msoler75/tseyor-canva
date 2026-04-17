@@ -34,10 +34,6 @@ defineProps({
     type: Boolean,
     default: false,
   },
-  exportHref: {
-    type: String,
-    default: '/designer/export',
-  },
 });
 
 const emit = defineEmits([
@@ -199,7 +195,7 @@ const handleZoomInput = (event) => {
         {{ darkMode ? '🌙' : '☀️' }}
       </button>
 
-      <a :href="exportHref" class="btn btn-sm btn-primary rounded-full" @click="emit('exportNavigate', $event)">Exportar</a>
+      <button type="button" class="btn btn-sm btn-primary rounded-full" @click="emit('exportNavigate', $event)">Exportar</button>
     </div>
   </nav>
 </template>

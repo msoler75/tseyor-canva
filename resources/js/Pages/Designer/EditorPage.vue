@@ -31,12 +31,39 @@ const page = usePage();
 function hydrateDesignerStateFromPage() {
   const sessionState = page.props.designer?.state ?? null;
   const designUuid = page.props.designer?.currentDesign?.uuid ?? null;
-  const fresh = sessionState ? { ...sessionState } : {};
-  // Asignar siempre el uuid del diseño abierto
+  const state = useDesignerState();
+
+  if (!sessionState) {
+    if (designUuid) {
+      state.currentDesignUuid = designUuid;
+    }
+    return state;
+  }
+
+  const mergedElementLayout = { ...(state.elementLayout ?? {}) };
+  Object.entries(sessionState.elementLayout ?? {}).forEach(([key, value]) => {
+    mergedElementLayout[key] = {
+      ...(mergedElementLayout[key] ?? {}),
+      ...(value ?? {}),
+    };
+  });
+
+  const fresh = {
+    ...state,
+    ...sessionState,
+    content: {
+      ...(state.content ?? {}),
+      ...(sessionState.content ?? {}),
+    },
+    elementLayout: mergedElementLayout,
+    customElements: sessionState.customElements ?? state.customElements ?? {},
+    userUploadedImages: sessionState.userUploadedImages ?? state.userUploadedImages ?? [],
+  };
+
   if (designUuid) {
     fresh.currentDesignUuid = designUuid;
   }
-  const state = useDesignerState();
+
   Object.keys(state).forEach((key) => {
     delete state[key];
   });
@@ -51,39 +78,21 @@ const state = hydrateDesignerStateFromPage();
 // Estado para mostrar el modal de exportación
 const exportDialogOpen = ref(false);
 
-// Estado y lógica del asistente (como en Home.vue)
-
+// Estado y lógica del asistente modal.
 const assistantOpen = ref(false);
 const assistantStep = ref('objective');
-const assistantSteps = [
-  { id: 'objective', label: 'Objetivo' },
-  { id: 'format', label: 'Formato' },
-  { id: 'content', label: 'Datos' },
-  { id: 'templates', label: 'Plantillas' },
-];
-const assistantIndex = computed(() => assistantSteps.findIndex((step) => step.id === assistantStep.value));
-const isFirstStep = computed(() => assistantIndex.value <= 0);
-const isLastStep = computed(() => assistantIndex.value === assistantSteps.length - 1);
-
-const openAssistant = () => {
-  // Opcional: resetDesignerState();
+const openAssistant = (step = 'objective', resetCurrentDesign = true) => {
   state.mode = 'guided';
-  state.templateCategory = 'all';
-  state.currentDesignUuid = null;
-  state.designSurface = null;
-  assistantStep.value = 'objective';
+  if (resetCurrentDesign) {
+    state.templateCategory = 'all';
+    state.currentDesignUuid = null;
+    state.designSurface = null;
+  }
+  assistantStep.value = step;
   assistantOpen.value = true;
 };
 const closeAssistant = () => {
   assistantOpen.value = false;
-};
-const goNext = () => {
-  if (isLastStep.value) return;
-  assistantStep.value = assistantSteps[assistantIndex.value + 1].id;
-};
-const goPrevious = () => {
-  if (isFirstStep.value) return;
-  assistantStep.value = assistantSteps[assistantIndex.value - 1].id;
 };
 if (!state.customElements || Array.isArray(state.customElements)) {
   state.customElements = Object.fromEntries(Object.entries(state.customElements ?? {}));
@@ -1095,6 +1104,20 @@ const requestImmediateStateFlush = () => {
   });
 };
 
+const resolveThumbnailBackgroundColor = () => {
+  const background = state.elementLayout?.background;
+
+  if (background?.fillMode === 'gradient') {
+    return null;
+  }
+
+  if (background?.backgroundColor && background.backgroundColor !== 'transparent') {
+    return background.backgroundColor;
+  }
+
+  return '#ffffff';
+};
+
 const scheduleThumbnailCapture = () => {
   if (!authUser.value) return;
 
@@ -1103,23 +1126,20 @@ const scheduleThumbnailCapture = () => {
   }
 
   thumbnailTimer = setTimeout(async () => {
+    thumbnailTimer = null;
+
     if (!canvasRef.value) return;
 
     try {
-      // Obtener color de fondo real del diseño
-      let backgroundColor = '#ffffff';
-      const bg = state.elementLayout?.background;
-      if (bg && bg.fillMode === 'solid' && bg.backgroundColor && bg.backgroundColor !== 'transparent') {
-        backgroundColor = bg.backgroundColor;
-      }
       const dataUrl = await toJpegExport(canvasRef.value, {
         quality: 0.6,
         pixelRatio: 0.35,
-        backgroundColor,
+        backgroundColor: resolveThumbnailBackgroundColor(),
         filter: (node) => !(node instanceof Element && node.closest?.('[data-editor-control="true"]')),
       });
 
       setDesignerThumbnailDataUrl(dataUrl);
+      await flushDesignerStatePersistence();
     } catch (error) {
       console.error('No se pudo generar la miniatura del diseño', error);
     }
@@ -2645,12 +2665,7 @@ const handleFormatAssistantNavigation = async () => {
     console.error('Failed to flush designer state before format assistant', error);
   }
 
-  const returnUrl = state.currentDesignUuid
-    ? `/designer/designs/${state.currentDesignUuid}/edit`
-    : '/designer/editor';
-
-  const designQuery = state.currentDesignUuid ? `&design=${encodeURIComponent(state.currentDesignUuid)}` : '';
-  window.location.href = `/designer/format?return=${encodeURIComponent(returnUrl)}${designQuery}`;
+  openAssistant('format', false);
 };
 
 const handleHomeNavigation = async () => {

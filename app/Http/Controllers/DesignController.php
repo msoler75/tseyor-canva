@@ -57,21 +57,38 @@ class DesignController extends Controller
         ]);
 
         $state = $validated['state'];
+        $requestedUuid = (string) ($state['currentDesignUuid'] ?? '');
+        $uuid = Str::isUuid($requestedUuid) ? $requestedUuid : (string) Str::uuid();
+        $state['currentDesignUuid'] = $uuid;
 
-        $design = $user->designs()->create([
+        $existingDesign = Design::query()->where('uuid', $uuid)->first();
+        abort_if($existingDesign && ! $existingDesign->user?->is($user), 409);
+
+        $attributes = [
             ...$this->extractDesignMetadata($state),
-            'uuid' => (string) Str::uuid(),
             'name' => $validated['name'] ?? $this->resolveDesignName($state),
             'thumbnail_path' => $validated['thumbnail_path'] ?? null,
             'state' => $state,
             'status' => $validated['status'] ?? 'draft',
             'last_opened_at' => now(),
             'public' => $validated['public'] ?? ($state['public'] ?? false),
-        ]);
+        ];
+
+        $status = 201;
+        if ($existingDesign) {
+            $existingDesign->fill($attributes)->save();
+            $design = $existingDesign;
+            $status = 200;
+        } else {
+            $design = $user->designs()->create([
+                ...$attributes,
+                'uuid' => $uuid,
+            ]);
+        }
 
         return response()->json([
             'design' => $design->fresh(),
-        ], 201);
+        ], $status);
     }
 
     public function show(Request $request, Design $design): JsonResponse
@@ -178,7 +195,7 @@ class DesignController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $state
+     * @param  array<string, mixed>  $state
      * @return array<string, mixed>
      */
     private function extractDesignMetadata(array $state): array
@@ -197,7 +214,7 @@ class DesignController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $state
+     * @param  array<string, mixed>  $state
      */
     private function resolveDesignName(array $state): string
     {

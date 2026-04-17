@@ -22,12 +22,12 @@ class DesignerController extends Controller
     // Se puede llamar desde el frontend tras login, o integrarse en el flujo de bienvenida
     public static function recoverSessionDesign(Request $request): JsonResponse
     {
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             return response()->json(['recovered' => false, 'reason' => 'No autenticado'], 401);
         }
 
         $sessionState = $request->session()->get(self::SESSION_KEY);
-        if (!$sessionState) {
+        if (! $sessionState) {
             return response()->json(['recovered' => false, 'reason' => 'No hay diseño temporal en sesión']);
         }
 
@@ -91,20 +91,7 @@ class DesignerController extends Controller
 
     public function __construct(
         private readonly JwtService $jwtService,
-    ) {
-    }
-
-    /**
-     * @var array<string, array{component:string,label:string,url:string}>
-     */
-    private array $steps = [
-        'objective' => ['component' => 'Designer/ObjectivePage', 'label' => 'Objetivo', 'url' => '/designer/objective'],
-        'format' => ['component' => 'Designer/FormatPage', 'label' => 'Formato', 'url' => '/designer/format'],
-        'content' => ['component' => 'Designer/ContentPage', 'label' => 'Datos', 'url' => '/designer/content'],
-        'templates' => ['component' => 'Designer/TemplatesPage', 'label' => 'Plantillas', 'url' => '/designer/templates'],
-        'editor' => ['component' => 'Designer/EditorPage', 'label' => 'Editor', 'url' => '/designer/editor'],
-        'export' => ['component' => 'Designer/ExportPage', 'label' => 'Exportar', 'url' => '/designer/export'],
-    ];
+    ) {}
 
     public function welcome(Request $request): Response
     {
@@ -174,38 +161,46 @@ class DesignerController extends Controller
         ]);
     }
 
-    public function objective(): Response
-    {
-        return $this->page('objective');
-    }
-
-    public function format(): Response
-    {
-        return $this->page('format');
-    }
-
-    public function content(): Response
-    {
-        return $this->page('content');
-    }
-
-    public function templates(): Response
-    {
-        return $this->page('templates');
-    }
-
     public function editor(): Response
     {
-        return $this->page('editor');
-    }
+        $request = request();
 
-    public function export(): Response
-    {
-        $requiresLogin = !Auth::check();
-        $response = $this->page('export');
-        // Añadir prop para el frontend
-        $response->with(['requiresLogin' => $requiresLogin]);
-        return $response;
+        $activeDesign = $this->resolveRequestedDesign($request);
+        $fontFamilies = $this->fontFamilies();
+
+        return Inertia::render('Designer/EditorPage', [
+            'currentStep' => 'editor',
+            'steps' => [],
+            'navigation' => [
+                'previous' => null,
+                'next' => null,
+            ],
+            'fontFamilies' => $fontFamilies,
+            'designer' => [
+                'state' => $activeDesign?->state,
+                'currentDesign' => $activeDesign
+                    ? [
+                        'uuid' => $activeDesign->uuid,
+                        'name' => $activeDesign->name,
+                        'updated_at' => $activeDesign->updated_at,
+                    ]
+                    : null,
+                'endpoints' => [
+                    'save' => route('designer.state.save'),
+                    'reset' => route('designer.state.reset'),
+                    'upload' => route('designer.uploads.store'),
+                    'designsIndex' => Auth::check() ? route('designer.designs.index') : null,
+                    'designsStore' => Auth::check() ? route('designer.designs.store') : null,
+                    'assetsIndex' => Auth::check() ? route('designer.assets.index') : null,
+                ],
+                'imageUploads' => [
+                    'maxWidth' => config('designer.image_uploads.max_width'),
+                    'maxHeight' => config('designer.image_uploads.max_height'),
+                    'jpegQuality' => config('designer.image_uploads.jpeg_quality'),
+                    'webpQuality' => config('designer.image_uploads.webp_quality'),
+                ],
+            ],
+        ]);
     }
 
     public function saveState(Request $request): JsonResponse
@@ -218,9 +213,10 @@ class DesignerController extends Controller
 
         $state = $validated['state'];
 
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             // Usuario no autenticado: guardar el diseño en sesión
             $request->session()->put(self::SESSION_KEY, $state);
+
             return response()->json([
                 'saved' => true,
                 'designUuid' => $state['currentDesignUuid'] ?? null,
@@ -233,27 +229,15 @@ class DesignerController extends Controller
 
         $design = null;
 
-        if (!empty($state['currentDesignUuid'])) {
+        if (! empty($state['currentDesignUuid'])) {
             $design = $user->designs()->where('uuid', $state['currentDesignUuid'])->first();
         }
 
-        if (!$design) {
-            $design = $user->designs()->create([
-                'uuid' => (string) Str::uuid(),
-                'name' => trim((string) ($state['designTitle'] ?? '')) ?: 'Diseño sin título',
-                'name_manual' => (bool) ($state['designTitleManual'] ?? false),
-                'objective' => $state['objective'] ?? null,
-                'output_type' => $state['outputType'] ?? null,
-                'format' => $state['format'] ?? null,
-                'size_label' => $state['size'] ?? null,
-                'surface_width' => $state['designSurface']['width'] ?? null,
-                'surface_height' => $state['designSurface']['height'] ?? null,
-                'template_category' => $state['templateCategory'] ?? null,
-                'selected_template_id' => $state['selectedTemplateId'] ?? null,
-                'state' => $state,
-                'status' => 'draft',
-                'last_opened_at' => now(),
-            ]);
+        if (! $design) {
+            return response()->json([
+                'saved' => false,
+                'message' => 'No se puede autoguardar un diseño autenticado sin currentDesignUuid.',
+            ], 409);
         } else {
             $design->fill([
                 'name' => trim((string) ($state['designTitle'] ?? '')) ?: 'Diseño sin título',
@@ -271,7 +255,7 @@ class DesignerController extends Controller
             ])->save();
         }
 
-        if (!empty($validated['thumbnailDataUrl'])) {
+        if (! empty($validated['thumbnailDataUrl'])) {
             $thumbnailPath = $this->storeThumbnailDataUrl($user, $design, $validated['thumbnailDataUrl']);
             if ($thumbnailPath) {
                 $design->forceFill([
@@ -352,71 +336,26 @@ class DesignerController extends Controller
         ]);
     }
 
-
-    private function page(string $currentStep): Response
+    /**
+     * @return array<int, string>
+     */
+    private function fontFamilies(): array
     {
-        $request = request();
-
-        $activeDesign = $this->resolveRequestedDesign($request);
-
-        $stepKeys = array_keys($this->steps);
-        $currentIndex = array_search($currentStep, $stepKeys, true);
-        $previous = $currentIndex > 0 ? $this->steps[$stepKeys[$currentIndex - 1]]['url'] : null;
-        $next = $currentIndex < count($stepKeys) - 1 ? $this->steps[$stepKeys[$currentIndex + 1]]['url'] : null;
-
-        // Leer la lista de fuentes desde resources/fonts_list.txt
         $fontsListPath = base_path('resources/fonts_list.txt');
+        if (! file_exists($fontsListPath)) {
+            return [];
+        }
+
         $fontFamilies = [];
-        if (file_exists($fontsListPath)) {
-            $lines = file($fontsListPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            foreach ($lines as $line) {
-                $line = trim($line);
-                if ($line !== '' && $line[0] !== '#') {
-                    $fontFamilies[] = $line;
-                }
+        $lines = file($fontsListPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line !== '' && $line[0] !== '#') {
+                $fontFamilies[] = $line;
             }
         }
 
-        return Inertia::render($this->steps[$currentStep]['component'], [
-            'currentStep' => $currentStep,
-            'steps' => array_map(
-                fn (string $key): array => [
-                    'id' => $key,
-                    'label' => $this->steps[$key]['label'],
-                    'url' => $this->steps[$key]['url'],
-                ],
-                $stepKeys
-            ),
-            'navigation' => [
-                'previous' => $previous,
-                'next' => $next,
-            ],
-            'fontFamilies' => $fontFamilies,
-            'designer' => [
-                'state' => $activeDesign?->state,
-                'currentDesign' => $activeDesign
-                    ? [
-                        'uuid' => $activeDesign->uuid,
-                        'name' => $activeDesign->name,
-                        'updated_at' => $activeDesign->updated_at,
-                    ]
-                    : null,
-                'endpoints' => [
-                    'save' => route('designer.state.save'),
-                    'reset' => route('designer.state.reset'),
-                    'upload' => route('designer.uploads.store'),
-                    'designsIndex' => Auth::check() ? route('designer.designs.index') : null,
-                    'designsStore' => Auth::check() ? route('designer.designs.store') : null,
-                    'assetsIndex' => Auth::check() ? route('designer.assets.index') : null,
-                ],
-                'imageUploads' => [
-                    'maxWidth' => config('designer.image_uploads.max_width'),
-                    'maxHeight' => config('designer.image_uploads.max_height'),
-                    'jpegQuality' => config('designer.image_uploads.jpeg_quality'),
-                    'webpQuality' => config('designer.image_uploads.webp_quality'),
-                ],
-            ],
-        ]);
+        return $fontFamilies;
     }
 
     public static function sessionKey(): string
@@ -431,12 +370,12 @@ class DesignerController extends Controller
             ? $routeDesign->uuid
             : (is_string($routeDesign) ? $routeDesign : ($request->query('design') ?: null));
 
-        if (!$designUuid) {
+        if (! $designUuid) {
             return null;
         }
 
         $design = Design::where('uuid', $designUuid)->first();
-        if (!$design) {
+        if (! $design) {
             return null;
         }
 
@@ -449,6 +388,7 @@ class DesignerController extends Controller
             $state['designTitle'] = $design->name;
             $state['designTitleManual'] = (bool) $design->name_manual;
             $design->state = $state;
+
             return $design;
         }
 
@@ -456,7 +396,7 @@ class DesignerController extends Controller
         if ($user && $design->user_id !== $user->id) {
             $copy = $user->designs()->create([
                 'uuid' => (string) Str::uuid(),
-                'name' => $design->name . ' (copia)',
+                'name' => $design->name.' (copia)',
                 'name_manual' => $design->name_manual,
                 'objective' => $design->objective,
                 'output_type' => $design->output_type,
@@ -475,11 +415,12 @@ class DesignerController extends Controller
             $state['designTitle'] = $copy->name;
             $state['designTitleManual'] = (bool) $copy->name_manual;
             $copy->state = $state;
+
             return $copy;
         }
 
         // Si NO hay usuario autenticado, guardar el diseño en sesión como temporal
-        if (!$user) {
+        if (! $user) {
             $state = $design->state ?? [];
             $state['currentDesignUuid'] = null; // No asociar UUID real
             $state['designTitle'] = $design->name;
@@ -487,11 +428,12 @@ class DesignerController extends Controller
             // Guardar en sesión para edición temporal
             $request->session()->put(self::SESSION_KEY, $state);
             // Devolver un objeto Design simulado solo para el frontend
-            $fakeDesign = new Design();
+            $fakeDesign = new Design;
             $fakeDesign->uuid = null;
             $fakeDesign->name = $design->name;
             $fakeDesign->state = $state;
             $fakeDesign->updated_at = $design->updated_at;
+
             return $fakeDesign;
         }
 
@@ -500,7 +442,7 @@ class DesignerController extends Controller
 
     private function storeThumbnailDataUrl(User $user, Design $design, string $dataUrl): ?string
     {
-        if (!preg_match('/^data:image\/(?<type>[a-zA-Z0-9.+-]+);base64,(?<data>.+)$/', $dataUrl, $matches)) {
+        if (! preg_match('/^data:image\/(?<type>[a-zA-Z0-9.+-]+);base64,(?<data>.+)$/', $dataUrl, $matches)) {
             return null;
         }
 

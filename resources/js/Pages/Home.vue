@@ -2,20 +2,9 @@
 import axios from 'axios';
 import { router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
-import ChoiceCard from './../Components/designer/ChoiceCard.vue';
-import SelectionIndicator from './../Components/designer/SelectionIndicator.vue';
-import TemplateCard from './../Components/designer/TemplateCard.vue';
 import DesignerAssistant from './../Components/designer/DesignerAssistant.vue';
 import DesignerLayout from './../Layouts/DesignerLayout.vue';
 import TimeAgo from '../Components/TimeAgo.vue';
-import {
-    filterLabels,
-    formatCards,
-    objectiveOptions,
-    objectiveRecommendations,
-    templateCatalog,
-    templateFilters,
-} from '../data/designer';
 import { flushDesignerStatePersistence, resetDesignerState, useDesignerState } from '../composables/useDesignerState';
 
 const props = defineProps({
@@ -36,74 +25,12 @@ const page = usePage();
 const state = useDesignerState();
 const assistantOpen = ref(false);
 const assistantStep = ref('objective');
-
-const assistantSteps = [
-    { id: 'objective', label: 'Objetivo' },
-    { id: 'format', label: 'Formato' },
-    { id: 'content', label: 'Datos' },
-    { id: 'templates', label: 'Plantillas' },
-];
+const isCreatingDesign = ref(false);
 
 const authUser = computed(() => page.props.auth?.user ?? null);
 const recentProjects = computed(() => props.designs ?? []);
 
 const communityDesigns = computed(() => props.communityDesigns ?? []);
-
-const assistantIndex = computed(() => assistantSteps.findIndex((step) => step.id === assistantStep.value));
-const isFirstStep = computed(() => assistantIndex.value <= 0);
-const isLastStep = computed(() => assistantIndex.value === assistantSteps.length - 1);
-
-const objectiveTitle = computed(() => objectiveOptions.find((item) => item.id === state.objective)?.title ?? 'Sin objetivo');
-
-const sizes = computed(() => {
-    if (!state.outputType) return [];
-    const rules = objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic;
-    return rules[state.outputType];
-});
-
-const selectedSizeId = computed({
-    get: () => sizes.value.find((size) => size.label === state.size)?.id ?? '',
-    set: (sizeId) => {
-        const selected = sizes.value.find((size) => size.id === sizeId);
-        if (selected) {
-            selectSizeOption(selected);
-        }
-    },
-});
-
-const fields = computed(() => (objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic).fields);
-
-const fieldPlaceholders = {
-    title: 'Ej. Festival de Primavera',
-    subtitle: 'Ej. Musica, talleres y actividades para toda la familia',
-    date: 'Ej. 25 abril 2026',
-    time: 'Ej. 18:00',
-    location: 'Ej. Plaza Mayor',
-    platform: 'Ej. https://zoom.us/j/123456789',
-    teacher: 'Ej. Maria Lopez',
-    price: 'Ej. Entrada gratuita',
-    contact: 'Ej. 600 123 123 · hola@tudominio.com',
-    extra: 'Ej. Aforo limitado · Reserva previa · Traer material',
-};
-
-const filteredTemplates = computed(() => (!state.templateCategory || state.templateCategory === 'all')
-    ? templateCatalog
-    : templateCatalog.filter((item) => item.category === state.templateCategory));
-
-const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
-const venueLine = computed(() => {
-    if (state.objective === 'event_virtual') {
-        return state.content.platform?.trim() || state.content.contact?.trim() || '';
-    }
-
-    return state.content.location?.trim() || state.content.contact?.trim() || '';
-});
-
-const canGoNext = computed(() => {
-    if (assistantStep.value === 'objective') return Boolean(state.objective);
-    if (assistantStep.value === 'format') return Boolean(state.outputType && state.format && state.size);
-    return true;
-});
 
 const openAssistant = () => {
     resetDesignerState();
@@ -119,44 +46,62 @@ const closeAssistant = () => {
     assistantOpen.value = false;
 };
 
-const goNext = () => {
-    if (!canGoNext.value || isLastStep.value) return;
-    assistantStep.value = assistantSteps[assistantIndex.value + 1].id;
-};
-
-const goPrevious = () => {
-    if (isFirstStep.value) return;
-    assistantStep.value = assistantSteps[assistantIndex.value - 1].id;
-};
-
-const selectSizeOption = (option) => {
-    state.size = option.label;
-
-    if (state.format === 'other' && option.formatHint) {
-        state.format = option.formatHint;
+const newDesignUuid = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
     }
+
+    return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (char) => (
+        Number(char) ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> Number(char) / 4
+    ).toString(16));
 };
 
-const finishAndOpenEditor = () => {
+const resolveInitialDesignName = (snapshot) => {
+    const candidates = [
+        snapshot.designTitle,
+        snapshot.content?.title,
+        snapshot.content?.subtitle,
+    ];
+
+    const name = candidates
+        .map((candidate) => String(candidate ?? '').trim())
+        .find((candidate) => candidate && candidate.toLowerCase() !== 'diseño sin título');
+
+    return name || 'Diseño sin título';
+};
+
+const finishAndOpenEditor = async () => {
     if (!authUser.value) {
         window.alert('Debes iniciar sesión para crear y guardar diseños.');
         return;
     }
 
+    if (isCreatingDesign.value) return;
+
+    isCreatingDesign.value = true;
     assistantOpen.value = false;
 
-    axios.post('/designer/designs', {
-        name: state.designTitle,
-        state: JSON.parse(JSON.stringify(state)),
-    }).then((response) => {
+    const snapshot = JSON.parse(JSON.stringify(state));
+    snapshot.currentDesignUuid = snapshot.currentDesignUuid || newDesignUuid();
+    snapshot.designTitle = resolveInitialDesignName(snapshot);
+
+    try {
+        const response = await axios.post('/designer/designs', {
+            name: snapshot.designTitle,
+            state: snapshot,
+        });
+
         const designUuid = response.data?.design?.uuid;
         if (designUuid) {
             state.currentDesignUuid = designUuid;
+            state.designTitle = response.data?.design?.name ?? snapshot.designTitle;
             router.visit(`/designer/designs/${designUuid}/edit`);
         }
-    }).catch((error) => {
+    } catch (error) {
+        isCreatingDesign.value = false;
+        assistantOpen.value = true;
         console.error('No se pudo crear el diseño inicial', error);
-    });
+    }
 };
 
 const openExistingDesign = async (design) => {

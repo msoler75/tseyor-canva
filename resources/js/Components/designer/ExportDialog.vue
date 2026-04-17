@@ -1,10 +1,8 @@
 <script setup>
-// Componente de exportación extraído de ExportPage.vue
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue';
 import { toCanvasExport, toJpegExport, toPngExport } from '../../utils/useHtml2Image';
 import { useDesignerState } from '../../composables/useDesignerState';
 import { objectiveOptions, objectiveRecommendations } from '../../data/designer';
-import StepFooter from './StepFooter.vue';
 import RichTextEditor from './RichTextEditor.vue';
 import {
     BASE_TEXT_ELEMENT_IDS,
@@ -419,7 +417,6 @@ watch(() => state.elementLayout, () => {
             <p v-if="exportSuccess" class="text-sm text-emerald-300">{{ exportSuccess }}</p>
             <p v-if="exportError" class="text-sm text-red-300">{{ exportError }}</p>
           </div>
-          <!-- StepFooter eliminado -->
         </div>
         <!-- Preview reducida -->
         <div class="glass soft-shadow rounded-4xl border border-white/70 p-5 flex flex-col items-center dark:border-slate-700/70 mx-auto">

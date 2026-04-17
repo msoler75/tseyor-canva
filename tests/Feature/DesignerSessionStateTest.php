@@ -15,14 +15,14 @@ class DesignerSessionStateTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_designer_pages_include_shared_session_state_props(): void
+    public function test_designer_editor_includes_shared_session_state_props(): void
     {
         $user = User::factory()->create();
 
-        $response = $this->actingAs($user)->get('/designer/content');
+        $response = $this->actingAs($user)->get('/designer/editor');
 
         $response->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->component('Designer/ContentPage')
+            ->component('Designer/EditorPage')
             ->has('designer.endpoints.save')
             ->has('designer.endpoints.upload')
             ->where('designer.imageUploads.maxWidth', config('designer.image_uploads.max_width'))
@@ -31,6 +31,98 @@ class DesignerSessionStateTest extends TestCase
             ->where('designer.imageUploads.webpQuality', config('designer.image_uploads.webp_quality'))
             ->where('designer.state', null)
         );
+    }
+
+    public function test_legacy_assistant_and_export_pages_are_not_routed(): void
+    {
+        foreach (['objective', 'format', 'content', 'templates', 'export'] as $legacyPage) {
+            $this->get("/designer/{$legacyPage}")->assertNotFound();
+        }
+    }
+
+    public function test_authenticated_autosave_without_design_uuid_does_not_create_design(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->putJson('/designer/state', ['state' => $this->validDesignerState()])
+            ->assertStatus(409)
+            ->assertJson(['saved' => false]);
+
+        $this->assertDatabaseCount('designs', 0);
+    }
+
+    public function test_create_then_autosave_updates_same_design(): void
+    {
+        $user = User::factory()->create();
+        $clientUuid = (string) Str::uuid();
+        $state = $this->validDesignerState([
+            'currentDesignUuid' => $clientUuid,
+            'designTitle' => 'Diseño único',
+            'designTitleManual' => true,
+        ]);
+
+        $createResponse = $this->actingAs($user)
+            ->postJson('/designer/designs', [
+                'name' => 'Diseño único',
+                'state' => $state,
+            ])
+            ->assertCreated();
+
+        $designUuid = $createResponse->json('design.uuid');
+
+        $this->assertSame($clientUuid, $designUuid);
+        $this->assertSame($designUuid, $createResponse->json('design.state.currentDesignUuid'));
+        $this->assertDatabaseCount('designs', 1);
+
+        $state['currentDesignUuid'] = $designUuid;
+        $state['elementLayout']['background']['backgroundColor'] = 'red';
+
+        $this->actingAs($user)
+            ->putJson('/designer/state', ['state' => $state])
+            ->assertOk()
+            ->assertJson([
+                'saved' => true,
+                'designUuid' => $designUuid,
+            ]);
+
+        $this->assertDatabaseCount('designs', 1);
+        $this->assertDatabaseHas('designs', [
+            'uuid' => $designUuid,
+            'name' => 'Diseño único',
+        ]);
+    }
+
+    public function test_repeated_create_with_same_client_uuid_is_idempotent(): void
+    {
+        $user = User::factory()->create();
+        $clientUuid = (string) Str::uuid();
+        $state = $this->validDesignerState([
+            'currentDesignUuid' => $clientUuid,
+            'designTitle' => 'Primer nombre',
+            'designTitleManual' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/designer/designs', [
+                'name' => 'Primer nombre',
+                'state' => $state,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('design.uuid', $clientUuid);
+
+        $state['designTitle'] = 'Nombre reenviado';
+
+        $this->actingAs($user)
+            ->postJson('/designer/designs', [
+                'name' => 'Nombre reenviado',
+                'state' => $state,
+            ])
+            ->assertOk()
+            ->assertJsonPath('design.uuid', $clientUuid)
+            ->assertJsonPath('design.name', 'Nombre reenviado');
+
+        $this->assertDatabaseCount('designs', 1);
     }
 
     public function test_designer_state_is_loaded_from_persisted_design(): void
@@ -235,5 +327,47 @@ class DesignerSessionStateTest extends TestCase
         $this->get($response->json('url'))
             ->assertOk()
             ->assertHeader('content-type', 'image/png');
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function validDesignerState(array $overrides = []): array
+    {
+        return [
+            'darkMode' => true,
+            'mode' => 'guided',
+            'objective' => 'event_presential',
+            'outputType' => 'print',
+            'format' => 'vertical',
+            'size' => 'A4',
+            'templateCategory' => 'modern',
+            'selectedTemplateId' => 'template-1',
+            'autosaveMessage' => 'Guardado automático',
+            'selectedElementId' => 'title',
+            'designTitle' => 'Diseño sin título',
+            'designTitleManual' => false,
+            'currentDesignUuid' => null,
+            'content' => [
+                'title' => 'Título',
+                'subtitle' => '',
+                'date' => '',
+                'time' => '',
+                'location' => '',
+                'platform' => '',
+                'teacher' => '',
+                'price' => '',
+                'contact' => '',
+                'extra' => '',
+            ],
+            'elementLayout' => [
+                'background' => ['backgroundColor' => '#ffffff'],
+                'title' => ['x' => 20, 'y' => 60, 'w' => 280, 'fontSize' => 42, 'zIndex' => 10],
+            ],
+            'customElements' => [],
+            'userUploadedImages' => [],
+            ...$overrides,
+        ];
     }
 }
