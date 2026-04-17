@@ -352,26 +352,30 @@ class DesignerController extends Controller
         ]);
     }
 
+
     private function page(string $currentStep): Response
     {
         $request = request();
 
-        /*if(!Auth::check()) {
-            return Inertia::render('Error', ['status' => 401, 'message' => 'Debes iniciar sesión.']);
-        }*/
-
         $activeDesign = $this->resolveRequestedDesign($request);
-
-        /*if(!$activeDesign && !Auth::check()) {
-            return Inertia::render('Error', ['status' => 401, 'message' => 'Debes iniciar sesión para acceder a esta página.']);
-        }*/
 
         $stepKeys = array_keys($this->steps);
         $currentIndex = array_search($currentStep, $stepKeys, true);
         $previous = $currentIndex > 0 ? $this->steps[$stepKeys[$currentIndex - 1]]['url'] : null;
         $next = $currentIndex < count($stepKeys) - 1 ? $this->steps[$stepKeys[$currentIndex + 1]]['url'] : null;
 
-
+        // Leer la lista de fuentes desde resources/fonts_list.txt
+        $fontsListPath = base_path('resources/fonts_list.txt');
+        $fontFamilies = [];
+        if (file_exists($fontsListPath)) {
+            $lines = file($fontsListPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if ($line !== '' && $line[0] !== '#') {
+                    $fontFamilies[] = $line;
+                }
+            }
+        }
 
         return Inertia::render($this->steps[$currentStep]['component'], [
             'currentStep' => $currentStep,
@@ -387,6 +391,7 @@ class DesignerController extends Controller
                 'previous' => $previous,
                 'next' => $next,
             ],
+            'fontFamilies' => $fontFamilies,
             'designer' => [
                 'state' => $activeDesign?->state,
                 'currentDesign' => $activeDesign

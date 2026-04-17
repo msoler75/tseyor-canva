@@ -1,121 +1,149 @@
 import os
-import re
-import requests
+import subprocess
 from pathlib import Path
 
-# Lista de familias de fuentes extraídas de app.blade.php
-FAMILIES = [
-    "Anton",
-    "Bebas Neue",
-    "Caveat",
-    "Inter",
-    "Libre Baskerville",
-    "Lobster",
-    "Manrope",
-    "Merriweather",
-    "Montserrat",
-    "Nunito",
-    "Oswald",
-    "Pacifico",
-    "Playfair Display",
-    "Poppins",
-    "Quicksand",
-    "Raleway",
-    "Roboto Slab",
-    "Rubik",
-    "Source Sans 3",
-    "Ubuntu",
-    "Work Sans",
-]
+# Configuración de rutas
+FONTS_LIST_FILE = './resources/fonts_list.txt'
+FONTS_DIR = './public/fontsx'
+CSS_FILE = './public/fontsx/fonts.css'  # Solo debe estar en public/fontsx/fonts.css
 
-# Variantes a descargar para cada fuente
-VARIANTS = ["400", "400italic", "700", "700italic"]
 
-# Genera la lista de fuentes para el script
-FONTS = [
-    {"family": fam, "variants": VARIANTS} for fam in FAMILIES
-]
+# Detectar ruta de goog-webfont-dl en Windows (npm global)
+import sys
+def get_goog_webfont_dl_path():
+    if sys.platform.startswith('win'):
+        npm_path = os.path.expandvars(r'%APPDATA%/npm/goog-webfont-dl.cmd')
+        if os.path.exists(npm_path):
+            return npm_path
+    # Fallback: buscar en PATH
+    return 'goog-webfont-dl'
 
-GOOGLE_FONTS_CSS = "https://fonts.googleapis.com/css2?family={family}:{axes}"
-FONTS_DIR = Path("public/fontsx")
-CSS_OUTPUT = Path("public/fontsx/fonts.css")
+GOOG_WEBFONT_DL = get_goog_webfont_dl_path()
 
-# Utilidades
 
-def variant_to_axis(variant):
-    # Convierte '400italic' -> (400, italic)
-    match = re.match(r"(\d+)(italic)?", variant)
-    if not match:
-        return ("400", "normal")
-    weight = match.group(1)
-    style = "italic" if match.group(2) else "normal"
-    return (weight, style)
+def load_fonts_list(fonts_list_file):
+    fonts = []
+    with open(fonts_list_file, encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            fonts.append(line)
+    return fonts
 
-def get_css_url(family, variants):
-    # Construye la URL de Google Fonts para la familia y variantes (API v2)
-    # Ejemplo: family=Roboto:ital,wght@0,400;1,400;0,700;1,700
-    axis_set = set()
-    for v in variants:
-        w, s = variant_to_axis(v)
-        ital = "1" if s == "italic" else "0"
-        axis_set.add(f"{ital},{w}")
-    axis_list = sorted(axis_set)
-    axes_str = ",".join(["ital","wght"]) + "@" + ";".join(axis_list)
-    return f"https://fonts.googleapis.com/css2?family={family.replace(' ', '+')}:{axes_str}&display=swap"
 
-def download_and_parse_css(family, variants):
-    # Descarga el CSS de Google Fonts y extrae los @font-face
-    url = get_css_url(family, variants)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
-    }
-    r = requests.get(url, headers=headers)
-    r.raise_for_status()
-    css = r.text
-    # Extrae los bloques @font-face
-    font_faces = re.findall(r"(@font-face\s*\{[^}]+\})", css)
-    return font_faces, css
+def check_requirements():
+    """Verifica que goog-webfont-dl esté instalado."""
+    try:
+        subprocess.run([GOOG_WEBFONT_DL, '--help'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        print('❌ goog-webfont-dl no está instalado. Instálalo con: npm install -g goog-webfont-dl')
+        exit(1)
 
-def download_woff2_from_css(font_faces, family):
-    local_font_faces = []
-    for block in font_faces:
-        # Busca la URL del woff2
-        m = re.search(r"src: [^;]*url\(([^)]+\.woff2)\)", block)
-        if not m:
+
+def create_directories():
+    os.makedirs(FONTS_DIR, exist_ok=True)
+
+
+def download_fonts(fonts):
+    font_map = {}
+    for font_name in fonts:
+        print(f'📥 Descargando: {font_name} ...')
+        temp_dir = f'temp_{font_name.replace(" ", "_")}'
+        os.makedirs(temp_dir, exist_ok=True)
+        # Ejecutar goog-webfont-dl
+        try:
+            result = subprocess.run([
+                GOOG_WEBFONT_DL,
+                '-f', font_name,
+                '-W',
+                '-d', temp_dir,
+                '-o', os.path.join(temp_dir, 'font.css')
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', errors='replace')
+        except TypeError:
+            # Para compatibilidad con Python <3.6
+            result = subprocess.run([
+                GOOG_WEBFONT_DL,
+                '-f', font_name,
+                '-W',
+                '-d', temp_dir,
+                '-o', os.path.join(temp_dir, 'font.css')
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            result.stdout = result.stdout.decode('utf-8', errors='replace') if hasattr(result.stdout, 'decode') else result.stdout
+            result.stderr = result.stderr.decode('utf-8', errors='replace') if hasattr(result.stderr, 'decode') else result.stderr
+        if result.returncode != 0:
+            print(f'  ❌ Error descargando {font_name}: {result.stderr}')
             continue
-        url = m.group(1)
-        # Extrae peso y estilo
-        weight = re.search(r"font-weight: (\d+);", block).group(1)
-        style = re.search(r"font-style: (\w+);", block).group(1)
-        # Nombre de archivo local
-        fname = f"{family.replace(' ', '_')}-{weight}-{style}.woff2"
-        fpath = FONTS_DIR / fname
-        # Descarga si no existe
-        if not fpath.exists():
-            print(f"Descargando {fname}...")
-            resp = requests.get(url)
-            resp.raise_for_status()
-            with open(fpath, "wb") as f:
-                f.write(resp.content)
-        # Reemplaza la URL en el bloque CSS
-        local_block = re.sub(r"url\([^)]+\)", f"url('/fonts/{fname}')", block)
-        local_font_faces.append(local_block)
-    return local_font_faces
+        # Mover solo archivos .woff2 de variante 400 y mapear a nombre original
+        for woff2_file in Path(temp_dir).glob('*.woff2'):
+            fname = woff2_file.name
+            if not (fname.endswith('-400.woff2') or fname.endswith('-Regular.woff2') or fname.endswith('-normal-400.woff2')):
+                continue
+            dest = Path(FONTS_DIR) / fname
+            woff2_file.replace(dest)
+            print(f'  ✅ {fname}')
+            font_map[fname] = font_name
+        # Limpiar carpeta temporal
+        for f in Path(temp_dir).iterdir():
+            f.unlink()
+        Path(temp_dir).rmdir()
+    return font_map
+
+
+def generate_css():
+    print('🎨 Generando CSS...')
+    css_lines = [
+        '/* Generated by Google Fonts Downloader (Python) */',
+        '/* Total fonts: */',
+        ''
+    ]
+    # Leer el mapeo de archivo a nombre de fuente si existe
+    font_map_path = './public/fontsx/font_map.txt'
+    font_map = {}
+    if os.path.exists(font_map_path):
+        with open(font_map_path, 'r', encoding='utf-8') as fmap:
+            for line in fmap:
+                fname, fname_orig = line.strip().split('::', 1)
+                font_map[fname] = fname_orig
+    for woff2_file in Path(FONTS_DIR).glob('*.woff2'):
+        filename = woff2_file.name
+        # Solo archivos exactamente 400 (no 700, 900, etc)
+        # Ejemplo válido: Orbitron-normal-400.woff2
+        # Ejemplo inválido: Orbitron-normal-700.woff2
+        if not (filename.endswith('-400.woff2') or filename.endswith('-Regular.woff2') or filename.endswith('-normal-400.woff2')):
+            continue
+        font_name = font_map.get(filename)
+        if not font_name:
+            # Fallback: método anterior
+            parts = filename.rsplit('.', 1)[0].split('-')
+            font_name = parts[0].replace('_', ' ')
+        weight = '400'
+        style = 'normal'
+        # Si el nombre del archivo contiene 'italic', marcar como italic
+        if 'italic' in filename.lower():
+            style = 'italic'
+        css_lines.append(f"@font-face {{\n    font-family: '{font_name}';\n    src: url('./{filename}') format('woff2');\n    font-weight: {weight};\n    font-style: {style};\n    font-display: swap;\n}}\n")
+    with open(CSS_FILE, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(css_lines))
+    print(f'✨ CSS generado: {CSS_FILE}')
+
 
 def main():
-    FONTS_DIR.mkdir(parents=True, exist_ok=True)
-    all_font_faces = []
-    for font in FONTS:
-        family = font["family"]
-        variants = font["variants"]
-        font_faces, _ = download_and_parse_css(family, variants)
-        local_faces = download_woff2_from_css(font_faces, family)
-        all_font_faces.extend(local_faces)
-    # Escribe el CSS
-    CSS_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    with open(CSS_OUTPUT, "w", encoding="utf-8") as f:
-        f.write("\n".join(all_font_faces))
-    print(f"Fuentes y CSS generados correctamente en {FONTS_DIR} y {CSS_OUTPUT}")
+    print('╔════════════════════════════════════════╗')
+    print('║  🚀 Google Fonts → WOFF2 Downloader   ║')
+    print('╚════════════════════════════════════════╝')
+    check_requirements()
+    create_directories()
+    fonts = load_fonts_list(FONTS_LIST_FILE)
+    print(f'📋 Fuentes a descargar: {len(fonts)}')
+    font_map = download_fonts(fonts)
+    # Guardar el mapeo para el CSS
+    font_map_path = './public/fontsx/font_map.txt'
+    with open(font_map_path, 'w', encoding='utf-8') as fmap:
+        for fname, fname_orig in font_map.items():
+            fmap.write(f"{fname}::{fname_orig}\n")
+    generate_css()
+    print('\n✅ Proceso completado.')
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

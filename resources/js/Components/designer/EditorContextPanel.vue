@@ -1,9 +1,12 @@
 <script setup>
-import { computed, toRefs } from 'vue';
+
+import { onMounted, watch, computed, toRefs } from 'vue';
 import { Icon } from '@iconify/vue';
 import ColorPaletteSection from './ColorPaletteSection.vue';
 import ColorValueField from './ColorValueField.vue';
 import FillColorPanel from './FillColorPanel.vue';
+
+
 
 const props = defineProps({
   state: Object,
@@ -64,7 +67,6 @@ const props = defineProps({
   resetSelectedImageCrop: Function,
 });
 
-const emit = defineEmits(['closePanel', 'updateImagePanelTab', 'updateImageUrlInput', 'updateShapeCategoryFilter']);
 
 const {
   state,
@@ -85,7 +87,6 @@ const {
   backgroundHasImage,
   selectedTextStyle,
   activeParagraphLabel,
-  fontOptions,
   colorOptions,
   backgroundOptions,
   designColorOptions,
@@ -121,6 +122,16 @@ const {
   toggleSelectedImageFlip,
   resetSelectedImageCrop,
 } = toRefs(props);
+
+
+const safeFontOptions = computed(() => props.fontOptions ?? []);
+console.log('safeFontOptions:', safeFontOptions.value);
+console.log('activePropertyPanel:', props.activePropertyPanel, 'hasTextSelection:', props.hasTextSelection);
+
+
+// Ya no es necesario cargar fuentes dinámicamente, todo está en fonts.css global
+
+const emit = defineEmits(['closePanel', 'updateImagePanelTab', 'updateImageUrlInput', 'updateShapeCategoryFilter']);
 
 const imagePanelTab = computed({
   get: () => props.imagePanelTab,
@@ -343,14 +354,14 @@ const closePanel = () => emit('closePanel');
                   <div class="flex items-center justify-between gap-3">
                     <p class="text-sm font-semibold text-base-content">Tipo de fuente</p>
                     <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
-                      {{ fontOptions.length }} fuentes
+                      {{ safeFontOptions.length }} fuentes
                     </span>
                   </div>
                   <p class="mt-1 text-xs text-base-content/60">Lista simple: una fuente por línea y mostrada con su propio tipo de letra.</p>
                   <p class="mt-2 text-xs font-medium text-primary/80">Estos ajustes se aplican al {{ activeParagraphLabel.toLowerCase() }}.</p>
                   <div class="mt-3 max-h-80 overflow-y-auto border-y border-base-300/70">
                     <button
-                      v-for="font in fontOptions"
+                      v-for="font in safeFontOptions"
                       :key="font.family"
                       type="button"
                       class="block w-full border-b border-base-300/70 px-1 py-3 text-left transition last:border-b-0"

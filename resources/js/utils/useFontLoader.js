@@ -2,7 +2,12 @@
 // Uso: loadFont('Bebas Neue', 400, 'normal')
 // Siempre usa rutas same-origin para evitar problemas CORS con html-2-image
 
-const FONT_BASE = '/fonts'; // O '/fontsx' según config, puedes parametrizarlo
+
+// Detecta la ruta base de fuentes según variable global inyectada desde Blade
+let FONT_BASE = '/fonts';
+if (window && window.DESIGNER_FONTS_BASE) {
+    FONT_BASE = window.DESIGNER_FONTS_BASE;
+}
 
 /**
  * Carga dinámicamente una variante de fuente local si no está ya cargada.

@@ -181,29 +181,12 @@ const normalizeHexCandidate = (value) => {
   }
   return null;
 };
-const fontOptions = [
-    { label: 'Poppins', family: 'Poppins, sans-serif' },
-    { label: 'Montserrat', family: 'Montserrat, sans-serif' },
-    { label: 'Raleway', family: 'Raleway, sans-serif' },
-    { label: 'Playfair Display', family: '"Playfair Display", serif' },
-    { label: 'Pacifico', family: 'Pacifico, cursive' },
-    { label: 'Work Sans', family: '"Work Sans", sans-serif' },
-    { label: 'Manrope', family: 'Manrope, sans-serif' },
-    { label: 'Rubik', family: 'Rubik, sans-serif' },
-    { label: 'Quicksand', family: 'Quicksand, sans-serif' },
-    { label: 'Ubuntu', family: 'Ubuntu, sans-serif' },
-    { label: 'Oswald', family: 'Oswald, sans-serif' },
-    { label: 'Nunito', family: 'Nunito, sans-serif' },
-    { label: 'Inter', family: 'Inter, sans-serif' },
-    { label: 'Lobster', family: 'Lobster, cursive' },
-    { label: 'Bebas Neue', family: '"Bebas Neue", sans-serif' },
-    { label: 'Anton', family: 'Anton, sans-serif' },
-    { label: 'Source Sans 3', family: '"Source Sans 3", sans-serif' },
-    { label: 'Merriweather', family: 'Merriweather, serif' },
-    { label: 'Roboto Slab', family: '"Roboto Slab", serif' },
-    { label: 'Libre Baskerville', family: '"Libre Baskerville", serif' },
-    { label: 'Caveat', family: 'Caveat, cursive' },
-];
+console.log('fontFamilies prop:', page.props.fontFamilies);
+const fontOptions = (page.props.fontFamilies ?? []).map(f => ({
+  label: f,
+  family: f,
+}));
+console.log('fontOptions:', fontOptions);
 const textPropertyTabs = [
     { id: 'typography', label: 'Fuente' , class: 'order-first'},
     { id: 'color', label: 'A', labelClass:'border-b-5 border-blue-500 text-xl',class: '' },

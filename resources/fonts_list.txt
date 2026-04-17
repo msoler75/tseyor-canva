@@ -1,0 +1,12 @@
+# Lista de familias de fuentes para el editor (selección variada)
+# Una por línea, sin comillas
+Orbitron
+Abril Fatface
+Indie Flower
+Fruktur
+Fira Mono
+Amatic SC
+Pacifico
+Bungee
+Rubik Moonrocks
+Major Mono Display
