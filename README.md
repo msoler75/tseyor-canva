@@ -1,59 +1,372 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# TSEYOR Canva
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+TSEYOR Canva es una aplicación Laravel + Inertia + Vue para crear, editar y exportar diseños gráficos desde el navegador. Incluye un asistente modal para configurar objetivo, formato, datos y plantilla, un editor visual con guardado automático, gestión de proyectos recientes, diseños públicos de comunidad, subida de imágenes y exportación a imagen.
 
-## About Laravel
+## Stack principal
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Backend:** Laravel 12, PHP 8.2+
+- **Frontend:** Vue 3, Inertia, Vite
+- **UI:** Tailwind CSS 4 + daisyUI
+- **Editor rich text:** TipTap
+- **Exportación de imagen:** html-to-image local en `resources/js/html-2-image`
+- **Base de datos:** MySQL por defecto en `.env.example`
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Funcionalidades
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- Home con proyectos recientes del usuario y diseños públicos de la comunidad.
+- Asistente de diseño integrado en modal:
+  - Objetivo
+  - Formato/dimensiones
+  - Campos/datos
+  - Plantilla
+- Editor visual con:
+  - textos editables,
+  - imágenes,
+  - formas,
+  - fondo sólido/degradado/imagen,
+  - historial undo/redo,
+  - autoguardado en `/designer/state`,
+  - miniaturas automáticas.
+- Exportación desde diálogo modal dentro del editor.
+- Deploy remoto de `public/build` mediante comando Artisan y endpoint receptor.
 
-## Learning Laravel
+## Requisitos
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+- PHP 8.2 o superior
+- Composer
+- Node.js + npm
+- MySQL/MariaDB
+- Extensiones PHP habituales de Laravel, más:
+  - `zip` para crear/descomprimir el paquete de despliegue,
+  - `curl` para enviar el ZIP con `php artisan deploy:build`.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Instalación local
 
-## Laravel Sponsors
+```bash
+composer install
+npm install
+cp .env.example .env
+php artisan key:generate
+```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+Configura la base de datos en `.env`:
 
-### Premium Partners
+```env
+DB_CONNECTION=mysql
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=tseyor_canva
+DB_USERNAME=root
+DB_PASSWORD=
+```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+Ejecuta migraciones:
 
-## Contributing
+```bash
+php artisan migrate
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Compila assets:
 
-## Code of Conduct
+```bash
+npm run build
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+O levanta entorno de desarrollo:
 
-## Security Vulnerabilities
+```bash
+composer run dev
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Ese comando arranca, en paralelo:
 
-## License
+- `php artisan serve`
+- cola Laravel
+- logs con `pail`
+- Vite dev server
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+También puedes ejecutarlos por separado:
+
+```bash
+php artisan serve
+npm run dev
+```
+
+## Variables de entorno relevantes
+
+### Aplicación
+
+```env
+APP_NAME="TSEYOR Canva"
+APP_ENV=local
+APP_DEBUG=true
+APP_URL=http://localhost:8000
+```
+
+### Fuentes locales
+
+Para desarrollo con `php artisan serve`, puede ser útil servir fuentes desde Laravel:
+
+```env
+DESIGNER_SERVE_FONTS_ROUTE=true
+```
+
+Si está activo, se habilita:
+
+```text
+/fonts/{filename}
+```
+
+### Procesado de imágenes
+
+```env
+DESIGNER_IMAGE_MAX_WIDTH=2400
+DESIGNER_IMAGE_MAX_HEIGHT=2400
+DESIGNER_IMAGE_JPEG_QUALITY=95
+DESIGNER_IMAGE_WEBP_QUALITY=95
+```
+
+### Login portal / JWT
+
+```env
+JWT_SECRET=
+JWT_TTL=10080
+
+PORTAL_LOGIN_URL=https://tseyor.org/tseyor-canva
+PORTAL_LOGIN_CALLBACK_PARAMETER=from
+```
+
+## Comandos útiles
+
+Tests:
+
+```bash
+php artisan test
+```
+
+Tests de la parte de editor/estado:
+
+```bash
+php artisan test tests/Feature/DesignerSessionStateTest.php
+```
+
+Formateo PHP:
+
+```bash
+vendor/bin/pint
+```
+
+Build frontend:
+
+```bash
+npm run build
+```
+
+## Estructura relevante
+
+```text
+app/
+  Http/Controllers/
+    DesignerController.php   # Home, editor, estado, uploads, thumbnails
+    DesignController.php     # CRUD de diseños guardados
+    DeployController.php     # Endpoint receptor del deploy de public/build
+  Services/
+    DeployHelper.php         # ZIP, envío, validación y extracción de build
+
+resources/js/
+  Pages/
+    Home.vue
+    Designer/EditorPage.vue
+  Components/designer/
+    DesignerAssistant.vue
+    EditorTopBar.vue
+    EditorContextPanel.vue
+    EditorCanvasStage.vue
+    ExportDialog.vue
+
+routes/
+  web.php
+  console.php
+```
+
+## Flujo de guardado de diseños
+
+El flujo esperado es:
+
+1. Home abre el asistente.
+2. Al pulsar **Abrir editor**, Home crea un único diseño con:
+
+   ```http
+   POST /designer/designs
+   ```
+
+3. El editor actualiza siempre ese mismo diseño con:
+
+   ```http
+   PUT /designer/state
+   ```
+
+4. El estado debe incluir:
+
+   ```json
+   {
+     "state": {
+       "currentDesignUuid": "uuid-del-diseno"
+     }
+   }
+   ```
+
+El backend rechaza autoguardados autenticados sin `currentDesignUuid` para evitar crear diseños duplicados accidentalmente.
+
+## Deployment de `public/build`
+
+La app incluye un mecanismo simple para desplegar solo los assets compilados de Vite (`public/build`) desde una instalación local/origen hacia un servidor/destino.
+
+### Variables de deploy
+
+En el entorno que **envía**:
+
+```env
+DEPLOY_ENDPOINT=https://tu-servidor.com/deploy/build
+DEPLOY_TOKEN=un-token-largo-y-secreto
+DEPLOY_VERIFY_SSL=true
+DEPLOY_TIMEOUT=1800
+```
+
+En el servidor que **recibe**:
+
+```env
+DEPLOY_TOKEN=un-token-largo-y-secreto
+DEPLOY_ROUTE_ENABLED=true
+```
+
+Si quieres desactivar el endpoint receptor:
+
+```env
+DEPLOY_ROUTE_ENABLED=false
+```
+
+### Endpoint receptor
+
+La ruta receptora está definida en `routes/web.php`:
+
+```text
+POST /deploy/build
+```
+
+Controlador:
+
+```text
+App\Http\Controllers\DeployController@build
+```
+
+El endpoint espera:
+
+- `mode=public_build`
+- `file` con un ZIP
+- header opcional/normalmente requerido si hay token:
+
+```http
+X-Deploy-Token: un-token-largo-y-secreto
+```
+
+### Comando de deploy
+
+Primero genera la build:
+
+```bash
+npm run build
+```
+
+Luego despliega:
+
+```bash
+php artisan deploy:build
+```
+
+También puedes pasar opciones explícitas:
+
+```bash
+php artisan deploy:build \
+  --endpoint=https://tu-servidor.com/deploy/build \
+  --token=un-token-largo-y-secreto
+```
+
+Opciones disponibles:
+
+```bash
+--endpoint=URL   # sobrescribe DEPLOY_ENDPOINT
+--token=TOKEN    # sobrescribe DEPLOY_TOKEN
+--insecure       # no verifica SSL al enviar
+--keep-zip       # conserva el ZIP temporal local
+```
+
+### Qué hace internamente
+
+El comando:
+
+1. Comprime `public/build` en un ZIP temporal dentro de `storage/app`.
+2. Envía el ZIP al endpoint configurado.
+3. El servidor valida el token.
+4. `DeployController` guarda el ZIP temporalmente.
+5. `DeployHelper` valida las entradas del ZIP.
+6. Crea backup del `public/build` actual en:
+
+   ```text
+   storage/app/deploy-backups/_backup_public_build_YYYYMMDDHHMMSS
+   ```
+
+7. Descomprime el ZIP en el `public/build` del servidor.
+8. Mantiene los últimos 5 backups.
+
+### Notas de seguridad
+
+- Configura siempre `DEPLOY_TOKEN` en producción.
+- Sirve `/deploy/build` solo por HTTPS.
+- Si el endpoint no se va a usar, pon:
+
+  ```env
+  DEPLOY_ROUTE_ENABLED=false
+  ```
+
+- El ZIP se valida para evitar rutas inseguras, rutas absolutas, `../`, ficheros `.php`, `storage/` y `vendor/`.
+
+## Troubleshooting
+
+### `No existe public/build`
+
+Ejecuta:
+
+```bash
+npm run build
+```
+
+### Error SSL al desplegar
+
+Comprueba el certificado del servidor. Solo para pruebas puedes usar:
+
+```bash
+php artisan deploy:build --insecure
+```
+
+### 403 en `/deploy/build`
+
+El token del cliente no coincide con el del servidor. Revisa:
+
+```env
+DEPLOY_TOKEN=
+```
+
+### 404 en `/deploy/build`
+
+Revisa en el servidor:
+
+```env
+DEPLOY_ROUTE_ENABLED=true
+```
+
+Y confirma la ruta:
+
+```bash
+php artisan route:list --path=deploy
+```

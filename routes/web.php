@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\DeployController;
 use App\Http\Controllers\DesignAssetController;
 use App\Http\Controllers\DesignController;
 use App\Http\Controllers\DesignerController;
@@ -40,6 +41,8 @@ Route::prefix('designer')->group(function (): void {
     Route::get('/assets', [DesignAssetController::class, 'index'])->name('designer.assets.index');
     Route::post('/assets', [DesignAssetController::class, 'store'])->name('designer.assets.store');
 });
+
+Route::post('/deploy/build', [DeployController::class, 'build'])->name('deploy.build');
 
 // Ruta para servir fuentes locales solo si está habilitado en config/designer.php
 if (config('designer.serve_fonts_route')) {

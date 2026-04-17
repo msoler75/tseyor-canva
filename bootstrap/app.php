@@ -1,13 +1,15 @@
 <?php
 
 use App\Http\Middleware\HandleInertiaRequests;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
-use Illuminate\Auth\AuthenticationException;
+use Throwable as ThrowableContract;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -19,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'auth/*',
             'designer/*',
+            'deploy/build',
         ]);
 
         $middleware->web(append: [
@@ -26,25 +29,24 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->render(function (\Throwable $exception, Request $request) {
+        $exceptions->render(function (ThrowableContract $exception, Request $request) {
             $status = $exception instanceof HttpExceptionInterface
                 ? $exception->getStatusCode()
                 : 500;
 
             // Loguear detalles de excepción si es error 500
             if ($status === 500) {
-                \Log::error('[Error 500]', [
+                Log::error('[Error 500]', [
                     'exception' => $exception,
                     'url' => $request->fullUrl(),
                     'input' => $request->all(),
                 ]);
             }
 
-
-            if($exception instanceof AuthenticationException) {
-                 return Inertia::render('Error', [
+            if ($exception instanceof AuthenticationException) {
+                return Inertia::render('Error', [
                     'status' => 401,
-                    'message' => "Necesitas iniciar sesión para acceder a esta página.",
+                    'message' => 'Necesitas iniciar sesión para acceder a esta página.',
                 ])->toResponse($request)->setStatusCode($status);
             }
 
