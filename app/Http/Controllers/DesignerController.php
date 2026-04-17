@@ -212,6 +212,12 @@ class DesignerController extends Controller
         ]);
 
         $state = $validated['state'];
+        if (! $this->isPersistableDesignerState($state)) {
+            return response()->json([
+                'saved' => false,
+                'message' => 'El estado recibido esta incompleto y no se ha guardado.',
+            ], 422);
+        }
 
         if (! Auth::check()) {
             // Usuario no autenticado: guardar el diseño en sesión
@@ -239,6 +245,8 @@ class DesignerController extends Controller
                 'message' => 'No se puede autoguardar un diseño autenticado sin currentDesignUuid.',
             ], 409);
         } else {
+            $state['currentDesignUuid'] = $design->uuid;
+
             $design->fill([
                 'name' => trim((string) ($state['designTitle'] ?? '')) ?: 'Diseño sin título',
                 'name_manual' => (bool) ($state['designTitleManual'] ?? false),
@@ -263,8 +271,6 @@ class DesignerController extends Controller
                 ])->save();
             }
         }
-
-        $state['currentDesignUuid'] = $design->uuid;
 
         return response()->json([
             'saved' => true,
@@ -460,5 +466,19 @@ class DesignerController extends Controller
         Storage::disk('public')->put($path, $binary);
 
         return $path;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     */
+    private function isPersistableDesignerState(array $state): bool
+    {
+        return isset($state['darkMode'], $state['mode'])
+            && is_array($state['content'] ?? null)
+            && is_array($state['elementLayout'] ?? null)
+            && is_array($state['elementLayout']['background'] ?? null)
+            && is_array($state['elementLayout']['title'] ?? null)
+            && (! isset($state['customElements']) || is_array($state['customElements']))
+            && (! isset($state['userUploadedImages']) || is_array($state['userUploadedImages']));
     }
 }

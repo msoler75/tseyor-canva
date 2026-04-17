@@ -1,4 +1,4 @@
-﻿import { reactive, watch } from 'vue';
+import { reactive, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { initialDesignerState } from '../data/designer';
@@ -260,7 +260,28 @@ function bootstrapPersistence(saveEndpoint) {
     );
 }
 
+function isPersistableDesignerStateSnapshot(snapshot) {
+    return Boolean(
+        snapshot
+        && typeof snapshot === 'object'
+        && typeof snapshot.darkMode === 'boolean'
+        && typeof snapshot.mode === 'string'
+        && snapshot.content
+        && typeof snapshot.content === 'object'
+        && snapshot.elementLayout
+        && typeof snapshot.elementLayout === 'object'
+        && snapshot.elementLayout.background
+        && snapshot.elementLayout.title
+        && (snapshot.customElements == null || typeof snapshot.customElements === 'object')
+        && (snapshot.userUploadedImages == null || Array.isArray(snapshot.userUploadedImages))
+    );
+}
+
 async function persistStateSnapshot(saveEndpoint, snapshot) {
+    if (!isPersistableDesignerStateSnapshot(snapshot)) {
+        return;
+    }
+
     if (currentRequestIsAuthenticated && !snapshot.currentDesignUuid) {
         return;
     }

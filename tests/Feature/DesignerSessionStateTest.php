@@ -93,6 +93,49 @@ class DesignerSessionStateTest extends TestCase
         ]);
     }
 
+    public function test_incomplete_autosave_does_not_overwrite_existing_design(): void
+    {
+        $user = User::factory()->create();
+        $state = $this->validDesignerState([
+            'designTitle' => 'Estado completo',
+            'designTitleManual' => true,
+        ]);
+
+        $design = Design::query()->create([
+            'user_id' => $user->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Estado completo',
+            'name_manual' => true,
+            'objective' => 'event_presential',
+            'output_type' => 'print',
+            'format' => 'vertical',
+            'size_label' => 'A4',
+            'state' => [
+                ...$state,
+                'currentDesignUuid' => null,
+            ],
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        $partialState = $this->validDesignerState([
+            'currentDesignUuid' => $design->uuid,
+            'elementLayout' => [
+                'background' => ['backgroundColor' => '#ffffff'],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->putJson('/designer/state', ['state' => $partialState])
+            ->assertStatus(422)
+            ->assertJson(['saved' => false]);
+
+        $design->refresh();
+        $this->assertSame('Estado completo', $design->name);
+        $this->assertSame('Título', $design->state['content']['title']);
+        $this->assertArrayHasKey('title', $design->state['elementLayout']);
+    }
+
     public function test_repeated_create_with_same_client_uuid_is_idempotent(): void
     {
         $user = User::factory()->create();
