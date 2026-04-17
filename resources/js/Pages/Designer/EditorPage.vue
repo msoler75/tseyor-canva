@@ -27,7 +27,26 @@ import DesignerAssistant from '../../Components/designer/DesignerAssistant.vue';
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const page = usePage();
-const state = useDesignerState();
+// Función para hidratar el estado tras reset
+function hydrateDesignerStateFromPage() {
+  const sessionState = page.props.designer?.state ?? null;
+  const designUuid = page.props.designer?.currentDesign?.uuid ?? null;
+  const fresh = sessionState ? { ...sessionState } : {};
+  // Asignar siempre el uuid del diseño abierto
+  if (designUuid) {
+    fresh.currentDesignUuid = designUuid;
+  }
+  const state = useDesignerState();
+  Object.keys(state).forEach((key) => {
+    delete state[key];
+  });
+  Object.assign(state, fresh);
+  return state;
+}
+
+// Siempre reset y rehidratar al montar
+resetDesignerState();
+const state = hydrateDesignerStateFromPage();
 
 // Estado para mostrar el modal de exportación
 const exportDialogOpen = ref(false);
@@ -1087,10 +1106,16 @@ const scheduleThumbnailCapture = () => {
     if (!canvasRef.value) return;
 
     try {
+      // Obtener color de fondo real del diseño
+      let backgroundColor = '#ffffff';
+      const bg = state.elementLayout?.background;
+      if (bg && bg.fillMode === 'solid' && bg.backgroundColor && bg.backgroundColor !== 'transparent') {
+        backgroundColor = bg.backgroundColor;
+      }
       const dataUrl = await toJpegExport(canvasRef.value, {
         quality: 0.6,
         pixelRatio: 0.35,
-        backgroundColor: '#ffffff',
+        backgroundColor,
         filter: (node) => !(node instanceof Element && node.closest?.('[data-editor-control="true"]')),
       });
 
@@ -2473,14 +2498,15 @@ const cancelTextEdit = () => {
     paragraphSelection.active = false;
 };
 
+
 onMounted(() => {
+  // Ya se hizo resetDesignerState y rehidratación arriba
   const nextSurface = currentCanvasDimensions();
   if (state.designSurface?.width && state.designSurface?.height) {
     rescaleDesignSurface(state.designSurface, nextSurface);
   } else {
     state.designSurface = nextSurface;
   }
-
   pushHistorySnapshot({ force: true });
   document.addEventListener('pointerdown', handleGlobalPointerDown, true);
   document.addEventListener('pointermove', moveDrag, { passive: false });
@@ -2494,6 +2520,17 @@ onMounted(() => {
   syncPendingUploadsFromPersistedState();
   refreshElementObservers();
 });
+
+// Watcher para rehidratar si cambia el diseño (uuid)
+watch(
+  () => page.props.designer?.currentDesign?.uuid,
+  (newUuid, oldUuid) => {
+    if (newUuid && newUuid !== oldUuid) {
+      resetDesignerState();
+      hydrateDesignerStateFromPage();
+    }
+  }
+);
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
@@ -2531,9 +2568,14 @@ watch(editorElements, () => {
 
 watch(
   () => [state.content, state.elementLayout, state.customElements],
-  () => {
+  async () => {
     scheduleHistorySnapshot();
     scheduleThumbnailCapture();
+    try {
+      await flushDesignerStatePersistence();
+    } catch (error) {
+      console.error('No se pudo guardar el estado del diseño automáticamente', error);
+    }
   },
   { deep: true }
 );

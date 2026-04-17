@@ -7,6 +7,7 @@ import SelectionIndicator from './../Components/designer/SelectionIndicator.vue'
 import TemplateCard from './../Components/designer/TemplateCard.vue';
 import DesignerAssistant from './../Components/designer/DesignerAssistant.vue';
 import DesignerLayout from './../Layouts/DesignerLayout.vue';
+import TimeAgo from '../Components/TimeAgo.vue';
 import {
     filterLabels,
     formatCards,
@@ -294,27 +295,25 @@ const deleteDesign = async (design) => {
                         </div>
                     </div>
 
-                    <div v-if="recentProjects.length" class="space-y-3">
+                    <div v-if="recentProjects.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
                         <div
                             v-for="project in recentProjects"
                             :key="project.uuid"
-                            class="flex items-center justify-between rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-left hover:border-primary/50"
+                            class="rounded-2xl border border-base-300 bg-linear-to-br from-base-100 to-base-200 p-4 text-left hover:border-primary/60 relative"
                         >
                             <button
                                 type="button"
-                                class="min-w-0 flex flex-1 items-center gap-3 text-left"
+                                class="w-full text-left"
                                 @click="openExistingDesign(project)"
                             >
-                                <div class="h-14 w-14 overflow-hidden rounded-xl border border-base-300 bg-base-200 shrink-0">
-                                    <img v-if="project.thumbnail_url" :src="project.thumbnail_url" :alt="project.name" class="h-full w-full object-cover" />
-                                    <div v-else class="flex h-full w-full items-center justify-center text-[10px] text-base-content/45">Sin miniatura</div>
+                                <div class="h-36 rounded-xl opacity-90 flex items-center justify-center mb-2 bg-gray-500/10">
+                                    <img v-if="project.thumbnail_url" :src="project.thumbnail_url" :alt="project.name" class="h-full w-full object-contain rounded-xl bg-transparent" />
+                                    <span v-else class="text-xs text-white/70">Sin miniatura</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <p class="font-medium text-base-content truncate">{{ project.name }}</p>
-                                    <p class="text-xs text-base-content/65">{{ formatProjectUpdatedAt(project.updated_at) }}</p>
-                                </div>
+                                <p class="font-semibold">{{ project.name }}</p>
+                                <TimeAgo :date="project.updated_at" class="text-xs text-base-content/65" />
                             </button>
-                            <div class="dropdown dropdown-end">
+                            <div class="dropdown dropdown-end absolute top-3 right-3">
                                 <button type="button" tabindex="0" class="btn btn-ghost btn-sm btn-circle">
                                     <IconifyIcon icon="ph:dots-three-outline-vertical-fill" class="text-lg" />
                                 </button>
@@ -349,12 +348,14 @@ const deleteDesign = async (design) => {
                         class="rounded-2xl border border-base-300 bg-linear-to-br from-base-100 to-base-200 p-4 text-left hover:border-primary/60"
                         @click="openExistingDesign(item)"
                     >
-                        <div class="h-28 rounded-xl bg-linear-to-br from-indigo-500 via-cyan-500 to-emerald-400 opacity-90 flex items-center justify-center">
-                            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.name" class="h-full w-full object-contain rounded-xl bg-white" />
+                        <div class="h-36 rounded-xl opacity-90 flex items-center justify-center bg-gray-500/10 mb-2">
+                            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.name" class="h-full w-full object-contain rounded-xl bg-transparent" />
                             <span v-else class="text-xs text-white/70">Sin miniatura</span>
                         </div>
                         <p class="mt-3 font-semibold">{{ item.name }}</p>
                         <p class="text-xs text-base-content/65">{{ item.objective || 'Comunidad' }}</p>
+                        <TimeAgo :date="item.updated_at" class="text-xs text-base-content/65" />
+
                         <p class="mt-2 text-xs font-medium text-primary">Clonar y editar</p>
                     </button>
                 </div>

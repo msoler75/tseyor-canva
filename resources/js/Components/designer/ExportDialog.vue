@@ -229,17 +229,24 @@ async function renderGeneratedImagePreview() {
     node.style.height = baseHeight + 'px';
     node.style.transformOrigin = 'top left';
     node.style.transform = `scale(${scaleX}, ${scaleY})`;
+    // Determinar color de fondo
+    let backgroundColor = null;
+    if (state.elementLayout.background?.fillMode === 'solid') {
+      backgroundColor = state.elementLayout.background?.backgroundColor || '#fff';
+    }
     let dataUrl;
     if (selectedExportFormat.value === 'jpg') {
       dataUrl = await toJpegExport(node, {
         width,
         height,
         quality: clamp(Number(jpgQuality.value), 0.6, 1),
+        backgroundColor,
       });
     } else {
       dataUrl = await toPngExport(node, {
         width,
         height,
+        backgroundColor,
       });
     }
     if (runId !== previewRenderSeq) return;
@@ -294,16 +301,23 @@ async function downloadImage() {
         if (document.fonts?.ready) {
             await document.fonts.ready;
         }
+        // Determinar color de fondo
+        let backgroundColor = null;
+        if (state.elementLayout.background?.fillMode === 'solid') {
+          backgroundColor = state.elementLayout.background?.backgroundColor || '#fff';
+        }
         const dataUrl = selectedExportFormat.value === 'jpg'
-            ? await toJpegExport(node, {
-                width,
-                height,
-                quality: clamp(Number(jpgQuality.value), 0.6, 1),
-            })
-            : await toPngExport(node, {
-                width,
-                height,
-            });
+          ? await toJpegExport(node, {
+            width,
+            height,
+            quality: clamp(Number(jpgQuality.value), 0.6, 1),
+            backgroundColor,
+          })
+          : await toPngExport(node, {
+            width,
+            height,
+            backgroundColor,
+          });
         const link = document.createElement('a');
         link.download = fileName.value;
         link.href = dataUrl;
