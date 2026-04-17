@@ -1,6 +1,7 @@
 ﻿<script setup>
 import axios from 'axios';
 import { toJpegExport } from '../../utils/useHtml2Image';
+import ExportDialog from '../../Components/designer/ExportDialog.vue';
 import { Icon } from '@iconify/vue';
 import { usePage } from '@inertiajs/vue3';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
@@ -27,6 +28,9 @@ import DesignerAssistant from '../../Components/designer/DesignerAssistant.vue';
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const page = usePage();
 const state = useDesignerState();
+
+// Estado para mostrar el modal de exportación
+const exportDialogOpen = ref(false);
 
 // Estado y lógica del asistente (como en Home.vue)
 
@@ -2580,17 +2584,16 @@ const setRichEditorRef = (id, element) => {
   }
   delete richEditorRefs.value[id];
 };
+
+// Nuevo handler para abrir el modal de exportación
 const handleExportNavigation = async (event) => {
   event?.preventDefault?.();
+  exportDialogOpen.value = true;
   try {
     await flushDesignerStatePersistence();
   } catch (error) {
     console.error('Failed to flush designer state before export', error);
   }
-  const destination = state.currentDesignUuid
-    ? `/designer/export?design=${encodeURIComponent(state.currentDesignUuid)}`
-    : '/designer/export';
-  window.location.href = destination;
 };
 
 const handleFormatAssistantNavigation = async () => {
@@ -2780,7 +2783,9 @@ watch(
       @toggle-dark-mode="state.darkMode = !state.darkMode"
       @export-navigate="handleExportNavigation"
       @open-assistant="openAssistant"
-    />
+
+      />
+    <ExportDialog v-if="exportDialogOpen" :navigation="navigation" @close="exportDialogOpen = false" />
 
     <section class="relative min-h-0 flex-1 overflow-hidden">
       <div class="h-full overflow-hidden border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
