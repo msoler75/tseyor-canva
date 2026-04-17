@@ -94,6 +94,15 @@ const openAssistant = (step = 'objective', resetCurrentDesign = true) => {
 const closeAssistant = () => {
   assistantOpen.value = false;
 };
+const openAssistantStep = async (step) => {
+  try {
+    await flushDesignerStatePersistence();
+  } catch (error) {
+    console.error('Failed to flush designer state before opening assistant', error);
+  }
+
+  openAssistant(step, false);
+};
 if (!state.customElements || Array.isArray(state.customElements)) {
   state.customElements = Object.fromEntries(Object.entries(state.customElements ?? {}));
 }
@@ -2659,16 +2668,6 @@ const handleExportNavigation = async (event) => {
   }
 };
 
-const handleFormatAssistantNavigation = async () => {
-  try {
-    await flushDesignerStatePersistence();
-  } catch (error) {
-    console.error('Failed to flush designer state before format assistant', error);
-  }
-
-  openAssistant('format', false);
-};
-
 const handleHomeNavigation = async () => {
   try {
     await flushDesignerStatePersistence();
@@ -2834,13 +2833,12 @@ watch(
       @duplicate-design="handleDuplicateDesign"
       @logout="handleLogout"
       @rename-design="handleRenameDesign"
-      @open-format-assistant="handleFormatAssistantNavigation"
+      @open-design-assistant-step="openAssistantStep"
       @undo="performUndo"
       @redo="performRedo"
       @update-zoom-level="setZoomLevel"
       @toggle-dark-mode="state.darkMode = !state.darkMode"
       @export-navigate="handleExportNavigation"
-      @open-assistant="openAssistant"
 
       />
     <ExportDialog v-if="exportDialogOpen" :navigation="navigation" @close="exportDialogOpen = false" />

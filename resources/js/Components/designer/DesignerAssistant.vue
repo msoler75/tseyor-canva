@@ -77,6 +77,12 @@ const canGoNext = computed(() => {
   if (assistantStep.value === 'format') return Boolean(state.outputType && state.format && state.size);
   return true;
 });
+const isAssistantComplete = computed(() => Boolean(
+  state.objective
+  && state.outputType
+  && state.format
+  && state.size
+));
 
 function goNext() {
   if (!canGoNext.value || isLastStep.value) return;
@@ -295,6 +301,14 @@ defineExpose({ assistantStep });
         <button type="button" class="btn btn-outline btn-sm rounded-full" :disabled="isFirstStep" @click="goPrevious">Anterior</button>
       </template>
       <template #right>
+        <button
+          v-if="isAssistantComplete"
+          type="button"
+          class="btn btn-outline btn-sm rounded-full"
+          @click="finishAndOpenEditor"
+        >
+          Aplicar
+        </button>
         <button
           v-if="!isLastStep"
           type="button"

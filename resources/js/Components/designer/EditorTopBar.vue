@@ -43,13 +43,12 @@ const emit = defineEmits([
   'duplicateDesign',
   'logout',
   'renameDesign',
-  'openFormatAssistant',
+  'openDesignAssistantStep',
   'undo',
   'redo',
   'updateZoomLevel',
   'toggleDarkMode',
   'exportNavigate',
-  'open-assistant',
 ]);
 
 const handleZoomInput = (event) => {
@@ -115,31 +114,46 @@ const handleZoomInput = (event) => {
         </ul>
       </div>
 
+      <div class="dropdown dropdown-start">
+        <button
+          tabindex="0"
+          type="button"
+          class="btn btn-sm btn-outline rounded-full"
+          title="Diseño"
+          aria-label="Diseño"
+        >
+          Diseño
+          <Icon icon="ph:caret-down-bold" class="text-sm" />
+        </button>
+        <ul tabindex="0" class="dropdown-content menu z-60 mt-2 w-72 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
+          <li>
+            <button type="button" @click="emit('openDesignAssistantStep', 'format')">
+              <Icon icon="ph:frame-corners-bold" class="text-lg" />
+              Cambiar formato/dimensiones
+            </button>
+          </li>
+          <li>
+            <button type="button" @click="emit('openDesignAssistantStep', 'content')">
+              <Icon icon="ph:list-bullets-bold" class="text-lg" />
+              Editar campos/datos
+            </button>
+          </li>
+          <li>
+            <button type="button" @click="emit('openDesignAssistantStep', 'templates')">
+              <Icon icon="ph:layout-bold" class="text-lg" />
+              Cambiar plantilla
+            </button>
+          </li>
+        </ul>
+      </div>
+
       <span class="rounded-xl bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">Editor</span>
       <span class="max-w-[22ch] truncate text-sm font-semibold text-base-content">{{ designTitle || 'Diseño sin título' }}</span>
-      <button
-        type="button"
-        class="btn btn-sm btn-ghost btn-circle ml-1"
-        title="Abrir asistente de diseño"
-        aria-label="Asistente de diseño"
-        @click="emit('open-assistant')"
-      >
-        <Icon icon="ph:magic-wand-bold" class="text-2xl text-primary" />
-      </button>
       <span class="text-sm text-base-content/65">{{ size || 'Tamaño no definido' }}</span>
     </div>
 
     <div class="flex flex-wrap items-center gap-3">
       <div class="flex items-center gap-3 rounded-2xl p-1 shadow-sm">
-        <button
-          type="button"
-          class="btn btn-sm btn-ghost rounded-full"
-          title="Cambiar formato o tamaño del diseño"
-          aria-label="Cambiar formato"
-          @click="emit('openFormatAssistant')"
-        >
-          <Icon icon="ph:frame-corners-bold" class="text-2xl" />
-        </button>
         <button
           type="button"
           class="btn btn-sm btn-ghost btn-circle"
