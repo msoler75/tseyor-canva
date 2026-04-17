@@ -33,9 +33,9 @@ const BASE_CANVAS_SHORT_SIDE = 368;
 const BASE_CANVAS_LONG_SIDE = 620;
 const baseTextElementIds = BASE_TEXT_ELEMENT_IDS;
 const dpiOptions = [
-    { value: 72, label: '72 DPI', helper: 'Web / borrador' },
+    { value: 96, label: '96 DPI', helper: 'Web / estándar' },
     { value: 150, label: '150 DPI', helper: 'Calidad media' },
-    { value: 300, label: '300 DPI', helper: 'Impresion alta' },
+    { value: 300, label: '300 DPI', helper: 'Impresión alta' },
 ];
 const SHAPE_CLIP_PATHS = {
     diamond: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
@@ -82,7 +82,7 @@ const SHAPE_CLIP_PATHS = {
 };
 
 const objectiveTitle = computed(() => objectiveOptions.find((item) => item.id === state.objective)?.title ?? 'Genérico');
-const selectedDpi = ref(150);
+const selectedDpi = ref(96);
 const selectedExportFormat = ref('png');
 const jpgQuality = ref(0.95);
 const isExporting = ref(false);
@@ -167,15 +167,27 @@ function clamp(value, min, max) {
 }
 
 function resolveTargetDimensions(detail, dpi) {
+    // Si no hay dpi definido, usar 96
+    dpi = dpi || 96;
     const parsed = applyFormatToDimensions(parseSizeDetail(detail), state.format);
 
     if (parsed.unit === 'cm') {
+        // Para cm, siempre calcular con dpi
         return {
             width: Math.max(1, Math.round((parsed.width / 2.54) * dpi)),
             height: Math.max(1, Math.round((parsed.height / 2.54) * dpi)),
         };
     }
 
+    // Si el dpi es 96, exportar 1:1
+    if (dpi === 96) {
+        return {
+            width: Math.max(1, Math.round(parsed.width)),
+            height: Math.max(1, Math.round(parsed.height)),
+        };
+    }
+
+    // Si el dpi es distinto de 96, escalar
     const scale = dpi / 96;
     return {
         width: Math.max(1, Math.round(parsed.width * scale)),
@@ -334,21 +346,35 @@ async function downloadImage() {
 
     isExporting.value = true;
 
+    // --- FIX: Ajustar tamaño y escala del nodo exportPreviewRef temporalmente ---
+    const node = exportPreviewRef.value;
+    const { width, height } = targetDimensions.value;
+    const baseWidth = baseCanvasDimensions.value.width;
+    const baseHeight = baseCanvasDimensions.value.height;
+    const prevWidth = node.style.width;
+    const prevHeight = node.style.height;
+    const prevTransform = node.style.transform;
+    // Escala proporcional
+    const scaleX = width / baseWidth;
+    const scaleY = height / baseHeight;
+    node.style.width = baseWidth + 'px';
+    node.style.height = baseHeight + 'px';
+    node.style.transformOrigin = 'top left';
+    node.style.transform = `scale(${scaleX}, ${scaleY})`;
+
     try {
         await nextTick();
         if (document.fonts?.ready) {
             await document.fonts.ready;
         }
 
-        const { width, height } = targetDimensions.value;
-
         const dataUrl = selectedExportFormat.value === 'jpg'
-            ? await toJpegExport(exportPreviewRef.value, {
+            ? await toJpegExport(node, {
                 width,
                 height,
                 quality: clamp(Number(jpgQuality.value), 0.6, 1),
             })
-            : await toPngExport(exportPreviewRef.value, {
+            : await toPngExport(node, {
                 width,
                 height,
             });
@@ -364,6 +390,10 @@ async function downloadImage() {
         console.error('No se pudo exportar la imagen', error);
         exportError.value = 'No se pudo exportar la imagen. Si usas imagenes externas, revisa que permitan CORS.';
     } finally {
+        // Restaurar tamaño y transform original
+        node.style.width = prevWidth;
+        node.style.height = prevHeight;
+        node.style.transform = prevTransform;
         isExporting.value = false;
     }
 }
