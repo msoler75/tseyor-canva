@@ -594,8 +594,8 @@ const closePanel = () => emit('closePanel');
                           <span
                             class="inline-flex h-18 w-full items-center justify-center rounded-xl border transition"
                             :class="activeTextEffectId === effect.id
-                              ? 'border-primary bg-white ring-1 ring-primary/35'
-                              : 'border-base-300 bg-white hover:border-primary/45 hover:bg-white'"
+                              ? 'border-primary bg-base-100 ring-1 ring-primary/35'
+                              : 'border-base-300 bg-base-100 hover:border-primary/45 hover:bg-base-200'"
                           >
                             <span :style="textEffectPreviewStyle(effect.id)">Ag</span>
                           </span>
@@ -856,8 +856,8 @@ const closePanel = () => emit('closePanel');
                           <span
                             class="inline-flex h-18 w-full items-center justify-center rounded-xl border transition"
                             :class="activeVisualEffectId === effect.id
-                              ? 'border-primary bg-white ring-1 ring-primary/35'
-                              : 'border-base-300 bg-white hover:border-primary/45 hover:bg-white'"
+                              ? 'border-primary bg-base-100 ring-1 ring-primary/35'
+                              : 'border-base-300 bg-base-100 hover:border-primary/45 hover:bg-base-200'"
                           >
                             <span :style="visualEffectPreviewStyle(effect.id)"></span>
                           </span>

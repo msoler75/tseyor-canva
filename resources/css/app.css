@@ -24,7 +24,7 @@ body {
         radial-gradient(circle at top left, rgba(124, 58, 237, 0.16), transparent 26%),
         radial-gradient(circle at top right, rgba(45, 212, 191, 0.12), transparent 22%),
         linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-    color: hsl(var(--bc));
+    color: var(--color-base-content);
 }
 
 html.dark body {

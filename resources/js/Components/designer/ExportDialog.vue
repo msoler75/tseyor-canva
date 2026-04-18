@@ -368,7 +368,7 @@ watch(() => state.elementLayout, () => {
       <h3 class="font-bold text-xl mb-4">Exportar diseño</h3>
       <section class="grid gap-8 md:grid-cols-[1.5fr_0.8fr] items-start">
         <!-- Opciones de exportación -->
-        <div class="glass soft-shadow rounded-4xl border border-white/70 p-6 sm:p-10 dark:border-slate-700/70">
+        <div class="glass soft-shadow rounded-4xl border border-base-300/70 p-6 text-base-content sm:p-10">
           <div class="space-y-6">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary mb-1">Opciones de exportación</p>
@@ -376,32 +376,32 @@ watch(() => state.elementLayout, () => {
               <p class="text-sm text-base-content/70 mb-2">Personaliza el formato, calidad y resolución de la imagen exportada.</p>
             </div>
             <div class="grid gap-4 md:grid-cols-2">
-              <div class="rounded-2xl border border-white/20 bg-white/5 p-4">
-                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Formato</p>
+              <div class="rounded-2xl border border-base-300 bg-base-100/70 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/70">Formato</p>
                 <div class="mt-3 flex gap-2">
-                  <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'png' ? 'btn-primary' : 'btn-outline text-white border-white/40 hover:bg-white/10'" @click="selectedExportFormat = 'png'">PNG</button>
-                  <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'jpg' ? 'btn-primary' : 'btn-outline text-white border-white/40 hover:bg-white/10'" @click="selectedExportFormat = 'jpg'">JPG</button>
+                  <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'png' ? 'btn-primary' : 'btn-outline'" @click="selectedExportFormat = 'png'">PNG</button>
+                  <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'jpg' ? 'btn-primary' : 'btn-outline'" @click="selectedExportFormat = 'jpg'">JPG</button>
                 </div>
-                <p class="mt-2 text-xs text-white/70">PNG para máxima fidelidad; JPG para menor peso.</p>
+                <p class="mt-2 text-xs text-base-content/70">PNG para máxima fidelidad; JPG para menor peso.</p>
               </div>
-              <div v-if="selectedExportFormat === 'jpg'" class="rounded-2xl border border-white/20 bg-white/5 p-4">
-                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Calidad JPG</p>
+              <div v-if="selectedExportFormat === 'jpg'" class="rounded-2xl border border-base-300 bg-base-100/70 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/70">Calidad JPG</p>
                 <div class="mt-3 flex items-center gap-3">
                   <input v-model.number="jpgQuality" type="range" min="0.6" max="1" step="0.01" class="range range-primary flex-1" />
                   <span class="w-14 text-right text-sm font-semibold">{{ Math.round(jpgQuality * 100) }}%</span>
                 </div>
               </div>
-              <div class="rounded-2xl border border-white/20 bg-white/5 p-4 md:col-span-2">
-                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Resolución (DPI / PPP)</p>
+              <div class="rounded-2xl border border-base-300 bg-base-100/70 p-4 md:col-span-2">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/70">Resolución (DPI / PPP)</p>
                 <div class="mt-3 flex flex-wrap gap-2">
-                  <button v-for="option in dpiOptions" :key="option.value" type="button" class="btn btn-sm h-auto rounded-xl px-3 py-2 text-left" :class="selectedDpi === option.value ? 'btn-primary' : 'btn-outline text-white border-white/40 hover:bg-white/10'" @click="selectedDpi = option.value">
+                  <button v-for="option in dpiOptions" :key="option.value" type="button" class="btn btn-sm h-auto rounded-xl px-3 py-2 text-left" :class="selectedDpi === option.value ? 'btn-primary' : 'btn-outline'" @click="selectedDpi = option.value">
                     <span class="block text-xs font-semibold">{{ option.label }}</span>
                     <span class="block text-[11px] opacity-75">{{ option.helper }}</span>
                   </button>
                 </div>
               </div>
             </div>
-            <div class="rounded-2xl border border-white/20 bg-white/5 p-4 text-sm">
+            <div class="rounded-2xl border border-base-300 bg-base-100/70 p-4 text-sm text-base-content">
               <p>
                 Tamaño base: <strong>{{ state.size || 'Sin tamaño' }}</strong>
                 <span class="opacity-80">· {{ selectedSizeDetail }}</span>
@@ -414,12 +414,12 @@ watch(() => state.elementLayout, () => {
             <button type="button" class="btn btn-primary w-full rounded-2xl text-lg py-3 mt-2" :disabled="isExporting" @click="downloadImage">
               {{ exportButtonLabel }}
             </button>
-            <p v-if="exportSuccess" class="text-sm text-emerald-300">{{ exportSuccess }}</p>
-            <p v-if="exportError" class="text-sm text-red-300">{{ exportError }}</p>
+            <p v-if="exportSuccess" class="text-sm text-success">{{ exportSuccess }}</p>
+            <p v-if="exportError" class="text-sm text-error">{{ exportError }}</p>
           </div>
         </div>
         <!-- Preview reducida -->
-        <div class="glass soft-shadow rounded-4xl border border-white/70 p-5 flex flex-col items-center dark:border-slate-700/70 mx-auto">
+        <div class="glass soft-shadow rounded-4xl border border-base-300/70 p-5 flex flex-col items-center mx-auto">
           <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary mb-2">Vista previa</p>
           <div
             class="mx-auto bg-white p-2 rounded-xl shadow-2xl dark:bg-slate-900 flex flex-col items-center w-full"

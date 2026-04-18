@@ -1,7 +1,7 @@
 <script setup>
 import axios from 'axios';
 import { Icon } from '@iconify/vue';
-import { usePage } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import DesignerLayout from '../../Layouts/DesignerLayout.vue';
 import EditorTopBar from '../../Components/designer/EditorTopBar.vue';
 import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.vue';
@@ -2687,6 +2687,16 @@ const handleLogout = async () => {
   };
 }
 
+const handleLogin = async () => {
+  try {
+    await flushDesignerStatePersistence();
+  } catch (error) {
+    console.error('Failed to flush designer state before login', error);
+  }
+
+  router.visit('/auth/login');
+};
+
 const handleCreateNewDesign = async () => {
   try {
     await axios.delete(resetEndpoint.value);
@@ -2819,6 +2829,7 @@ watch(
     <div class="flex h-full min-h-0 flex-col overflow-hidden bg-base-100">
 
     <EditorTopBar
+      :auth-user="authUser"
       :design-title="state.designTitle"
       :size="state.size"
       :can-undo="canUndo"
@@ -2831,6 +2842,7 @@ watch(
       @create-new-design="handleCreateNewDesign"
       @download-design="handleExportNavigation"
       @duplicate-design="handleDuplicateDesign"
+      @login="handleLogin"
       @logout="handleLogout"
       @rename-design="handleRenameDesign"
       @open-design-assistant-step="openAssistantStep"

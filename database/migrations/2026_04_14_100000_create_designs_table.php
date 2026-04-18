@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('designs', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->uuid('uuid')->unique();
             $table->string('name', 255);
             $table->boolean('name_manual')->default(false);

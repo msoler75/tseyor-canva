@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, watch } from 'vue';
+import Avatar from '@/Components/Avatar.vue';
 
 const props = defineProps({
     title: String,
@@ -93,10 +94,13 @@ watch(() => props.darkMode, syncTheme);
                                     class="btn btn-sm btn-ghost rounded-full gap-2 border border-base-300/70 px-2"
                                     title="Cuenta"
                                 >
-                                    <span class="flex h-9 w-9 items-center justify-center rounded-full bg-base-200 text-base-content/55">
-                                        <IconifyIcon icon="ph:user-circle-bold" class="text-[1.4rem]" />
-                                    </span>
-                                    <IconifyIcon icon="ph:caret-down-bold" class="text-sm text-base-content/55" />
+                                    <Avatar
+                                        :user="authUser"
+                                        :link="false"
+                                        image-class="h-9 w-9"
+                                        text-class="text-xs font-bold"
+                                        :lazy="true"
+                                    />
                                 </button>
                                 <div tabindex="0" class="dropdown-content z-[70] mt-2 w-64 rounded-2xl border border-base-300 bg-base-100 p-4 shadow-xl">
                                     <p class="font-bold text-base-content">{{ authUser.name }}</p>
@@ -128,7 +132,7 @@ watch(() => props.darkMode, syncTheme);
                             class="btn btn-sm rounded-full border-none text-sm font-semibold transition"
                             :class="step.id === currentStep
                                 ? 'btn-primary text-primary-content'
-                                : 'btn-ghost bg-white/80 text-slate-700 shadow-sm dark:bg-slate-900/80 dark:text-slate-100'"
+                                : 'btn-ghost bg-base-100/80 text-base-content shadow-sm hover:bg-base-200'"
                         >
                             {{ step.label }}
                         </Link>

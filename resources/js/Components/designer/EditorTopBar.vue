@@ -1,7 +1,12 @@
 <script setup>
 import { Icon } from '@iconify/vue';
+import Avatar from '@/Components/Avatar.vue';
 
 defineProps({
+  authUser: {
+    type: Object,
+    default: null,
+  },
   designTitle: {
     type: String,
     default: 'Diseño sin título',
@@ -41,6 +46,7 @@ const emit = defineEmits([
   'createNewDesign',
   'downloadDesign',
   'duplicateDesign',
+  'login',
   'logout',
   'renameDesign',
   'openDesignAssistantStep',
@@ -57,11 +63,11 @@ const handleZoomInput = (event) => {
 </script>
 
 <template>
-  <nav class="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 bg-base-100 px-4 py-3 shadow-sm">
-    <div class="flex flex-wrap items-center gap-2">
+  <nav class="flex flex-wrap items-center justify-between border-b border-base-300 bg-base-100 px-4 py-1 shadow-sm">
+    <div class="flex flex-wrap items-center gap-4">
       <button
         type="button"
-        class="btn btn-sm btn-ghost btn-circle"
+        class="btn btn-ghost btn-circle"
         title="Volver al inicio"
         aria-label="Inicio"
         @click="emit('goHome')"
@@ -73,12 +79,11 @@ const handleZoomInput = (event) => {
         <button
           tabindex="0"
           type="button"
-          class="btn btn-sm btn-outline rounded-full"
+          class="btn rounded-full"
           title="Archivo"
           aria-label="Archivo"
         >
           Archivo
-          <Icon icon="ph:caret-down-bold" class="text-sm" />
         </button>
         <ul tabindex="0" class="dropdown-content menu z-60 mt-2 w-64 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
           <li>
@@ -105,10 +110,16 @@ const handleZoomInput = (event) => {
               Cambiar nombre del diseño
             </button>
           </li>
-          <li>
+          <li v-if="authUser">
             <button type="button" @click="emit('logout')">
               <Icon icon="ph:sign-out-bold" class="text-lg" />
               Cerrar sesión
+            </button>
+          </li>
+          <li v-else>
+            <button type="button" @click="emit('login')">
+              <Icon icon="ph:sign-in-bold" class="text-lg" />
+              Iniciar sesión
             </button>
           </li>
         </ul>
@@ -118,12 +129,11 @@ const handleZoomInput = (event) => {
         <button
           tabindex="0"
           type="button"
-          class="btn btn-sm btn-outline rounded-full"
+          class="btn rounded-full"
           title="Diseño"
           aria-label="Diseño"
         >
           Diseño
-          <Icon icon="ph:caret-down-bold" class="text-sm" />
         </button>
         <ul tabindex="0" class="dropdown-content menu z-60 mt-2 w-72 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
           <li>
@@ -147,16 +157,10 @@ const handleZoomInput = (event) => {
         </ul>
       </div>
 
-      <span class="rounded-xl bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">Editor</span>
-      <span class="max-w-[22ch] truncate text-sm font-semibold text-base-content">{{ designTitle || 'Diseño sin título' }}</span>
-      <span class="text-sm text-base-content/65">{{ size || 'Tamaño no definido' }}</span>
-    </div>
-
-    <div class="flex flex-wrap items-center gap-3">
       <div class="flex items-center gap-3 rounded-2xl p-1 shadow-sm">
         <button
           type="button"
-          class="btn btn-sm btn-ghost btn-circle"
+          class="btn btn-ghost btn-circle"
           :class="canUndo ? 'text-base-content hover:bg-base-200' : 'text-base-content/35'"
           :disabled="!canUndo"
           :title="`Deshacer: ${undoActionLabel} (Ctrl/Cmd + Z)`"
@@ -167,7 +171,7 @@ const handleZoomInput = (event) => {
         </button>
         <button
           type="button"
-          class="btn btn-sm btn-ghost btn-circle"
+          class="btn btn-ghost btn-circle"
           :class="canRedo ? 'text-base-content hover:bg-base-200' : 'text-base-content/35'"
           :disabled="!canRedo"
           :title="`Rehacer: ${redoActionLabel} (Ctrl/Cmd + Y)`"
@@ -177,6 +181,13 @@ const handleZoomInput = (event) => {
           <Icon icon="ci:arrow-undo-up-right" class="text-2xl" />
         </button>
       </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-4">
+
+        <span class="max-w-[22ch] truncate text-sm font-semibold text-base-content">{{ designTitle || 'Diseño sin título' }}</span>
+      <span class="mr-8 text-sm text-base-content/65">{{ size || 'Tamaño no definido' }}</span>
+
       <div class="flex items-center gap-2 rounded-xl border border-base-300 px-3 py-2">
         <span class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">Zoom</span>
         <input
@@ -194,7 +205,7 @@ const handleZoomInput = (event) => {
           min="25"
           max="200"
           step="5"
-          class="input input-bordered input-sm w-20"
+          class="input input-bordered input-sm w-10 text-md"
           @input="handleZoomInput"
         />
         <span class="text-xs text-base-content/60">%</span>
@@ -202,14 +213,51 @@ const handleZoomInput = (event) => {
 
       <button
         type="button"
-        class="btn btn-lg rounded-full"
+        class="btn text-lg rounded-full px-1.5"
         :title="darkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'"
         @click="emit('toggleDarkMode')"
       >
         {{ darkMode ? '🌙' : '☀️' }}
       </button>
 
-      <button type="button" class="btn btn-sm btn-primary rounded-full" @click="emit('exportNavigate', $event)">Exportar</button>
+      <div v-if="authUser" class="dropdown dropdown-end">
+        <button
+          type="button"
+          tabindex="0"
+          class="btn btn-ghost rounded-full gap-2 border border-base-300/70 px-0"
+          title="Cuenta"
+        >
+          <Avatar
+            :user="authUser"
+            :link="false"
+            image-class="h-9 w-9"
+            text-class="text-xs font-bold"
+            :lazy="true"
+          />
+        </button>
+        <div tabindex="0" class="dropdown-content z-[70] mt-2 w-64 rounded-2xl border border-base-300 bg-base-100 p-4 shadow-xl">
+          <p class="font-bold text-base-content">{{ authUser.name }}</p>
+          <p class="mt-1 text-xs text-base-content/60">{{ authUser.email }}</p>
+          <button type="button" class="btn btn-ghost mt-4 justify-start rounded-xl" @click="emit('logout')">
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+
+      <button
+        v-else
+        type="button"
+        class="btn btn-primary rounded-full"
+        title="Iniciar sesión"
+        @click="emit('login')"
+      >
+        <Icon icon="ph:sign-in-bold" class="text-lg" />
+        <span>Iniciar sesión</span>
+      </button>
+
+      <button type="button" class="btn btn-primary rounded-full" @click="emit('exportNavigate', $event)">
+        <Icon icon="ph:export-bold" class="text-lg" />
+        Exportar</button>
     </div>
   </nav>
 </template>

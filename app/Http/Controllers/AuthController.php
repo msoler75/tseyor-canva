@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,9 +22,20 @@ class AuthController extends Controller
     ) {
     }
 
-    public function login() {
+    public function login(Request $request) {
+        if ($request->filled('token')) {
+            Log::info('Auth login received token on GET; forwarding to portal callback');
+
+            return $this->portalCallback($request);
+        }
+
         // si hay sesión iniciado, redirigir a /designer/editor
         if (Auth::check()) {
+            Log::info('Auth login skipped: user already authenticated', [
+                'user_id' => Auth::id(),
+                'target' => route('designer.welcome'),
+            ]);
+
             return redirect()->route('designer.welcome');
         }
 
@@ -31,11 +43,19 @@ class AuthController extends Controller
         $portalLoginUrl = $this->portalLoginUrl();
         // dd($portalLoginUrl);
         if ($portalLoginUrl) {
+            Log::info('Auth login redirecting to remote portal', [
+                'portal_host' => parse_url($portalLoginUrl, PHP_URL_HOST),
+                'callback' => route('auth.login.callback'),
+                'callback_parameter' => config('portal.callback_parameter', 'return_to'),
+            ]);
+
             // return redirect()->away($portalLoginUrl);
             return Inertia::location($portalLoginUrl);
         }
 
         // si no hay URL de portal, mostramos una vista de error
+        Log::error('Auth login failed: PORTAL_LOGIN_URL is not configured');
+
         return Inertia::render('Error', [
             'status' => 500,
             'message' => 'No se ha configurado una URL de login para el portal.',
@@ -44,6 +64,13 @@ class AuthController extends Controller
 
     public function portalCallback(Request $request)
     {
+        Log::info('Portal JWT callback received', [
+            'method' => $request->method(),
+            'has_token' => $request->filled('token'),
+            'token_length' => is_string($request->input('token')) ? strlen($request->input('token')) : 0,
+            'ip' => $request->ip(),
+        ]);
+
         $validated = $request->validate([
             'token' => ['required', 'string'],
         ]);
@@ -69,6 +96,8 @@ class AuthController extends Controller
             'token' => $validated['token'],
         ]);
         if (!$payload) {
+            Log::warning('Portal JWT callback rejected: invalid token');
+
             return Inertia::render('Error', [
                 'status' => 422,
                 'message' => 'Token de bootstrap inválido.',
@@ -80,9 +109,20 @@ class AuthController extends Controller
         $payloadArr = json_decode(json_encode($payload), true);
 
         $email = (string) ($payloadArr['email'] ?? $payloadArr['sub'] ?? '');
-        $name = (string) ($payloadArr['name'] ?? 'Dev');
+        $name = (string) ($payloadArr['name'] ?? data_get($payloadArr, 'user.name', 'Usuario'));
+        $image = (string) ($payloadArr['image'] ?? data_get($payloadArr, 'user.image', ''));
+
+        Log::info('Portal JWT decoded successfully', [
+            'email' => $email,
+            'name' => $name,
+            'image' => $image,
+            'exp' => isset($payloadArr['exp']) ? date(DATE_ATOM, (int) $payloadArr['exp']) : null,
+            'payload' => $payloadArr
+        ]);
 
         if ($email === '') {
+            Log::warning('Portal JWT callback rejected: token has no email/sub');
+
             return Inertia::render('Error', [
                 'status' => 422,
                 'message' => 'El token no contiene un email válido.',
@@ -94,16 +134,31 @@ class AuthController extends Controller
             ['email' => $email],
             [
                 'name' => $name,
+                'image' => $image !== '' ? $image : null,
                 'password' => Str::password(32),
             ]
         );
 
+        $updates = [];
         if ($user->name !== $name) {
-            $user->forceFill(['name' => $name])->save();
+            $updates['name'] = $name;
+        }
+        if ($image !== '' && $user->image !== $image) {
+            $updates['image'] = $image;
+        }
+        if ($updates !== []) {
+            $user->forceFill($updates)->save();
         }
 
         Auth::login($user);
         $request->session()->regenerate();
+
+        Log::info('Portal JWT callback authenticated user', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'created_now' => $user->wasRecentlyCreated,
+            'updated_fields' => array_keys($updates),
+        ]);
 
         // Si hay diseño temporal en sesión, recuperarlo y redirigir a su edición
         $sessionState = $request->session()->get(\App\Http\Controllers\DesignerController::sessionKey());
@@ -128,6 +183,7 @@ class AuthController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'image' => $user->image,
             ],
         ]);
     }
@@ -185,6 +241,7 @@ class AuthController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'image' => $user->image,
             ],
             'redirect_to' => route('designer.welcome'),
         ]);
@@ -195,22 +252,37 @@ class AuthController extends Controller
         $payload = $this->jwtService->decodeToken($token);
         $email = (string) data_get($payload, 'user.email', data_get($payload, 'email', data_get($payload, 'sub', '')));
         $name = (string) data_get($payload, 'user.name', data_get($payload, 'name', 'Usuario'));
+        $image = (string) data_get($payload, 'user.image', data_get($payload, 'image', ''));
 
         if ($email === '') {
             throw new RuntimeException('El token no contiene un email válido.');
         }
+
+        Log::debug('Resolviendo usuario desde token JWT', [
+            'email' => $email,
+            'name' => $name,
+            'has_image' => $image !== '',
+        ]);
 
         /** @var User $user */
         $user = User::query()->firstOrCreate(
             ['email' => $email],
             [
                 'name' => $name,
+                'image' => $image !== '' ? $image : null,
                 'password' => Str::password(32),
             ]
         );
 
+        $updates = [];
         if ($user->name !== $name) {
-            $user->forceFill(['name' => $name])->save();
+            $updates['name'] = $name;
+        }
+        if ($image !== '' && $user->image !== $image) {
+            $updates['image'] = $image;
+        }
+        if ($updates !== []) {
+            $user->forceFill($updates)->save();
         }
 
         return $user;
@@ -225,7 +297,7 @@ class AuthController extends Controller
 
         $separator = str_contains($baseUrl, '?') ? '&' : '?';
         $parameter = config('portal.callback_parameter', 'return_to');
-        $callbackUrl = route('auth.login');
+        $callbackUrl = route('auth.login.callback');
 
         return "{$baseUrl}{$separator}{$parameter}=".urlencode($callbackUrl);
     }

@@ -116,8 +116,8 @@ const openExistingDesign = async (design) => {
     router.visit(`/designer/designs/${design.uuid}/edit`);
 };
 
-const loginAsDev = async () => {
-    router.visit('/auth/login-dev');
+const startRemoteLogin = async () => {
+    router.visit('/auth/login');
 };
 
 const formatProjectUpdatedAt = (value) => {
@@ -222,9 +222,11 @@ const deleteDesign = async (design) => {
                             v-if="!authUser"
                             type="button"
                             class="btn btn-outline btn-lg rounded-full px-8 ml-3"
-                            @click="loginAsDev"
+                            title="Iniciar sesión"
+                            @click="startRemoteLogin"
                         >
-                            <IconifyIcon icon="ph:rocket-launch-bold" class="text-lg" />
+                            <IconifyIcon icon="ph:sign-in-bold" class="text-lg" />
+                            <span>Iniciar sesión</span>
                         </button>
                     </div>
                 </div>
@@ -251,9 +253,9 @@ const deleteDesign = async (design) => {
                                 class="w-full text-left"
                                 @click="openExistingDesign(project)"
                             >
-                                <div class="h-36 rounded-xl opacity-90 flex items-center justify-center mb-2 bg-gray-500/10">
+                                <div class="h-36 rounded-xl opacity-90 flex items-center justify-center mb-2 bg-base-200/80">
                                     <img v-if="project.thumbnail_url" :src="project.thumbnail_url" :alt="project.name" class="h-full w-full object-contain rounded-xl bg-transparent" />
-                                    <span v-else class="text-xs text-white/70">Sin miniatura</span>
+                                    <span v-else class="text-xs font-medium text-base-content/65">Sin miniatura</span>
                                 </div>
                                 <p class="font-semibold">{{ project.name }}</p>
                                 <TimeAgo :date="project.updated_at" class="text-xs text-base-content/65" />
@@ -293,9 +295,9 @@ const deleteDesign = async (design) => {
                         class="rounded-2xl border border-base-300 bg-linear-to-br from-base-100 to-base-200 p-4 text-left hover:border-primary/60"
                         @click="openExistingDesign(item)"
                     >
-                        <div class="h-36 rounded-xl opacity-90 flex items-center justify-center bg-gray-500/10 mb-2">
+                        <div class="h-36 rounded-xl opacity-90 flex items-center justify-center bg-base-200/80 mb-2">
                             <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.name" class="h-full w-full object-contain rounded-xl bg-transparent" />
-                            <span v-else class="text-xs text-white/70">Sin miniatura</span>
+                            <span v-else class="text-xs font-medium text-base-content/65">Sin miniatura</span>
                         </div>
                         <p class="mt-3 font-semibold">{{ item.name }}</p>
                         <p class="text-xs text-base-content/65">{{ item.objective || 'Comunidad' }}</p>
