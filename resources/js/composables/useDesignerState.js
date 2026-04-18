@@ -227,6 +227,19 @@ function mergeElementLayout(defaultLayout, sessionLayout) {
             merged[key].backgroundImageFlipX = Boolean(merged[key].backgroundImageFlipX);
             merged[key].backgroundImageFlipY = Boolean(merged[key].backgroundImageFlipY);
             merged[key].backgroundImageOpacity = Number(merged[key].backgroundImageOpacity ?? 100);
+            merged[key].backgroundImageTransparencyType = merged[key].backgroundImageTransparencyType ?? 'flat';
+            merged[key].backgroundImageTransparencyFadeOpacity = Number(merged[key].backgroundImageTransparencyFadeOpacity ?? 0);
+            merged[key].backgroundImageTransparencyCenterX = Number(merged[key].backgroundImageTransparencyCenterX ?? 50);
+            merged[key].backgroundImageTransparencyCenterY = Number(merged[key].backgroundImageTransparencyCenterY ?? 50);
+            merged[key].backgroundImageTransparencyRadius = Number(merged[key].backgroundImageTransparencyRadius ?? 70);
+            merged[key].backgroundImageTransparencyRadiusX = Number(merged[key].backgroundImageTransparencyRadiusX ?? 70);
+            merged[key].backgroundImageTransparencyRadiusY = Number(merged[key].backgroundImageTransparencyRadiusY ?? 45);
+            merged[key].backgroundImageTransparencyRotation = Number(merged[key].backgroundImageTransparencyRotation ?? 0);
+            merged[key].backgroundImageTransparencyStartX = Number(merged[key].backgroundImageTransparencyStartX ?? 0);
+            merged[key].backgroundImageTransparencyStartY = Number(merged[key].backgroundImageTransparencyStartY ?? 50);
+            merged[key].backgroundImageTransparencyEndX = Number(merged[key].backgroundImageTransparencyEndX ?? 100);
+            merged[key].backgroundImageTransparencyEndY = Number(merged[key].backgroundImageTransparencyEndY ?? 50);
+            merged[key].backgroundImageTransparencyEasing = merged[key].backgroundImageTransparencyEasing ?? 'linear';
         }
 
         if (merged[key]) {
@@ -235,6 +248,24 @@ function mergeElementLayout(defaultLayout, sessionLayout) {
             merged[key].imageCropOffsetY = Number(merged[key].imageCropOffsetY ?? 0);
             merged[key].flipX = Boolean(merged[key].flipX);
             merged[key].flipY = Boolean(merged[key].flipY);
+            merged[key].borderRadius = Number(merged[key].borderRadius ?? 12);
+            merged[key].borderRadiusTopLeft = merged[key].borderRadiusTopLeft == null ? null : Number(merged[key].borderRadiusTopLeft);
+            merged[key].borderRadiusTopRight = merged[key].borderRadiusTopRight == null ? null : Number(merged[key].borderRadiusTopRight);
+            merged[key].borderRadiusBottomRight = merged[key].borderRadiusBottomRight == null ? null : Number(merged[key].borderRadiusBottomRight);
+            merged[key].borderRadiusBottomLeft = merged[key].borderRadiusBottomLeft == null ? null : Number(merged[key].borderRadiusBottomLeft);
+            merged[key].transparencyType = merged[key].transparencyType ?? 'flat';
+            merged[key].transparencyFadeOpacity = Number(merged[key].transparencyFadeOpacity ?? 0);
+            merged[key].transparencyCenterX = Number(merged[key].transparencyCenterX ?? 50);
+            merged[key].transparencyCenterY = Number(merged[key].transparencyCenterY ?? 50);
+            merged[key].transparencyRadius = Number(merged[key].transparencyRadius ?? 70);
+            merged[key].transparencyRadiusX = Number(merged[key].transparencyRadiusX ?? 70);
+            merged[key].transparencyRadiusY = Number(merged[key].transparencyRadiusY ?? 45);
+            merged[key].transparencyRotation = Number(merged[key].transparencyRotation ?? 0);
+            merged[key].transparencyStartX = Number(merged[key].transparencyStartX ?? 0);
+            merged[key].transparencyStartY = Number(merged[key].transparencyStartY ?? 50);
+            merged[key].transparencyEndX = Number(merged[key].transparencyEndX ?? 100);
+            merged[key].transparencyEndY = Number(merged[key].transparencyEndY ?? 50);
+            merged[key].transparencyEasing = merged[key].transparencyEasing ?? 'linear';
         }
     });
 

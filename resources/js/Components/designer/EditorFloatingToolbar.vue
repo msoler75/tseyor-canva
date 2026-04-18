@@ -55,6 +55,7 @@ const tabTooltipLabels = {
   detach: 'Separar imagen del fondo',
   effects: 'Efectos',
   opacity: 'Opacidad',
+  roundness: 'Redondez',
   rotate: 'Girar',
   spacing: 'Interlineado y espaciado',
   'clear-background': 'Borrar fondo',

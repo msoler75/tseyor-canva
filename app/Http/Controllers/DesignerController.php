@@ -118,9 +118,7 @@ class DesignerController extends Controller
                 'objective' => $design->objective,
                 'format' => $design->format,
                 'size_label' => $design->size_label,
-                'thumbnail_url' => $design->thumbnail_path
-                    ? route('designer.uploads.show', ['path' => $design->thumbnail_path])
-                    : null,
+                'thumbnail_url' => $this->thumbnailUrl($design),
                 'updated_at' => $design->updated_at,
                 'created_at' => $design->created_at,
             ]);
@@ -150,9 +148,7 @@ class DesignerController extends Controller
                         'objective' => $design->objective,
                         'format' => $design->format,
                         'size_label' => $design->size_label,
-                        'thumbnail_url' => $design->thumbnail_path
-                            ? route('designer.uploads.show', ['path' => $design->thumbnail_path])
-                            : null,
+                        'thumbnail_url' => $this->thumbnailUrl($design),
                         'updated_at' => $design->updated_at,
                         'created_at' => $design->created_at,
                     ])
@@ -466,6 +462,18 @@ class DesignerController extends Controller
         Storage::disk('public')->put($path, $binary);
 
         return $path;
+    }
+
+    private function thumbnailUrl(Design $design): ?string
+    {
+        if (! $design->thumbnail_path) {
+            return null;
+        }
+
+        return route('designer.uploads.show', [
+            'path' => $design->thumbnail_path,
+            'v' => optional($design->updated_at)->timestamp ?? time(),
+        ]);
     }
 
     /**

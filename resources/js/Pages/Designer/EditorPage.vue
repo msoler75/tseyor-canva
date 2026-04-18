@@ -276,6 +276,7 @@ const textPropertyTabs = [
 const imagePropertyTabs = [
   { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
   { id: 'border', icon: 'radix-icons:border-width', title: 'Borde', class: 'order-first' },
+  { id: 'roundness', icon: 'mdi:rounded-corner', title: 'Redondez', class: 'order-first' },
   { id: 'crop', icon: 'ph:crop-bold', title: 'Recortar', class: 'order-last' },
   { id: 'rotate', icon: '', label: 'Girar', class: 'order-last' },
   { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
@@ -714,6 +715,9 @@ const canvasBackgroundImageStyle = computed(() => buildCoverImageStyle({
   flipX: state.elementLayout.background?.backgroundImageFlipX,
   flipY: state.elementLayout.background?.backgroundImageFlipY,
   opacity: state.elementLayout.background?.backgroundImageOpacity,
+  transparencyLayout: state.elementLayout.background,
+  transparencyPrefix: 'backgroundImage',
+  transparencyOpacityKey: 'backgroundImageOpacity',
 }));
 
 watch([selectedElementType, hasSelection], () => {
@@ -1006,6 +1010,24 @@ const buildDefaultLayout = (overrides = {}) => ({
   imageCropOffsetY: 0,
   flipX: false,
   flipY: false,
+  borderRadius: 12,
+  borderRadiusTopLeft: null,
+  borderRadiusTopRight: null,
+  borderRadiusBottomRight: null,
+  borderRadiusBottomLeft: null,
+  transparencyType: 'flat',
+  transparencyFadeOpacity: 0,
+  transparencyCenterX: 50,
+  transparencyCenterY: 50,
+  transparencyRadius: 70,
+  transparencyRadiusX: 70,
+  transparencyRadiusY: 45,
+  transparencyRotation: 0,
+  transparencyStartX: 0,
+  transparencyStartY: 50,
+  transparencyEndX: 100,
+  transparencyEndY: 50,
+  transparencyEasing: 'linear',
   ...overrides,
 });
 const placeInsideCanvas = (layout) => {
@@ -1383,6 +1405,19 @@ const clearBackgroundImage = () => {
     backgroundImageFlipX: false,
     backgroundImageFlipY: false,
     backgroundImageOpacity: 100,
+    backgroundImageTransparencyType: 'flat',
+    backgroundImageTransparencyFadeOpacity: 0,
+    backgroundImageTransparencyCenterX: 50,
+    backgroundImageTransparencyCenterY: 50,
+    backgroundImageTransparencyRadius: 70,
+    backgroundImageTransparencyRadiusX: 70,
+    backgroundImageTransparencyRadiusY: 45,
+    backgroundImageTransparencyRotation: 0,
+    backgroundImageTransparencyStartX: 0,
+    backgroundImageTransparencyStartY: 50,
+    backgroundImageTransparencyEndX: 100,
+    backgroundImageTransparencyEndY: 50,
+    backgroundImageTransparencyEasing: 'linear',
   };
 };
 
@@ -1427,6 +1462,19 @@ const setBackgroundImage = async ({
     backgroundImageFlipX: false,
     backgroundImageFlipY: false,
     backgroundImageOpacity: 100,
+    backgroundImageTransparencyType: 'flat',
+    backgroundImageTransparencyFadeOpacity: 0,
+    backgroundImageTransparencyCenterX: 50,
+    backgroundImageTransparencyCenterY: 50,
+    backgroundImageTransparencyRadius: 70,
+    backgroundImageTransparencyRadiusX: 70,
+    backgroundImageTransparencyRadiusY: 45,
+    backgroundImageTransparencyRotation: 0,
+    backgroundImageTransparencyStartX: 0,
+    backgroundImageTransparencyStartY: 50,
+    backgroundImageTransparencyEndX: 100,
+    backgroundImageTransparencyEndY: 50,
+    backgroundImageTransparencyEasing: 'linear',
   };
 
   state.selectedElementId = 'background';
@@ -1799,6 +1847,19 @@ const detachBackgroundImage = async () => {
       flipX: Boolean(backgroundLayout.backgroundImageFlipX),
       flipY: Boolean(backgroundLayout.backgroundImageFlipY),
       opacity: Number(backgroundLayout.backgroundImageOpacity ?? 100),
+      transparencyType: backgroundLayout.backgroundImageTransparencyType ?? 'flat',
+      transparencyFadeOpacity: Number(backgroundLayout.backgroundImageTransparencyFadeOpacity ?? 0),
+      transparencyCenterX: Number(backgroundLayout.backgroundImageTransparencyCenterX ?? 50),
+      transparencyCenterY: Number(backgroundLayout.backgroundImageTransparencyCenterY ?? 50),
+      transparencyRadius: Number(backgroundLayout.backgroundImageTransparencyRadius ?? 70),
+      transparencyRadiusX: Number(backgroundLayout.backgroundImageTransparencyRadiusX ?? 70),
+      transparencyRadiusY: Number(backgroundLayout.backgroundImageTransparencyRadiusY ?? 45),
+      transparencyRotation: Number(backgroundLayout.backgroundImageTransparencyRotation ?? 0),
+      transparencyStartX: Number(backgroundLayout.backgroundImageTransparencyStartX ?? 0),
+      transparencyStartY: Number(backgroundLayout.backgroundImageTransparencyStartY ?? 50),
+      transparencyEndX: Number(backgroundLayout.backgroundImageTransparencyEndX ?? 100),
+      transparencyEndY: Number(backgroundLayout.backgroundImageTransparencyEndY ?? 50),
+      transparencyEasing: backgroundLayout.backgroundImageTransparencyEasing ?? 'linear',
     },
   });
 };
@@ -1850,6 +1911,19 @@ const promoteSelectedImageToBackground = async () => {
     backgroundImageFlipX: Boolean(imageLayout.flipX),
     backgroundImageFlipY: Boolean(imageLayout.flipY),
     backgroundImageOpacity: Number(imageLayout.opacity ?? 100),
+    backgroundImageTransparencyType: imageLayout.transparencyType ?? 'flat',
+    backgroundImageTransparencyFadeOpacity: Number(imageLayout.transparencyFadeOpacity ?? 0),
+    backgroundImageTransparencyCenterX: Number(imageLayout.transparencyCenterX ?? 50),
+    backgroundImageTransparencyCenterY: Number(imageLayout.transparencyCenterY ?? 50),
+    backgroundImageTransparencyRadius: Number(imageLayout.transparencyRadius ?? 70),
+    backgroundImageTransparencyRadiusX: Number(imageLayout.transparencyRadiusX ?? 70),
+    backgroundImageTransparencyRadiusY: Number(imageLayout.transparencyRadiusY ?? 45),
+    backgroundImageTransparencyRotation: Number(imageLayout.transparencyRotation ?? 0),
+    backgroundImageTransparencyStartX: Number(imageLayout.transparencyStartX ?? 0),
+    backgroundImageTransparencyStartY: Number(imageLayout.transparencyStartY ?? 50),
+    backgroundImageTransparencyEndX: Number(imageLayout.transparencyEndX ?? 100),
+    backgroundImageTransparencyEndY: Number(imageLayout.transparencyEndY ?? 50),
+    backgroundImageTransparencyEasing: imageLayout.transparencyEasing ?? 'linear',
   };
 
   if (state.customElements?.[elementId]) {

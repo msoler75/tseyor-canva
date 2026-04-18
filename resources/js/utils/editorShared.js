@@ -2,6 +2,92 @@ export const BASE_TEXT_ELEMENT_IDS = new Set(['title', 'subtitle', 'meta', 'cont
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
+const getPrefixedLayoutValue = (layout = {}, prefix = '', key, fallback) => {
+  const prefixedKey = prefix ? `${prefix}${key[0].toUpperCase()}${key.slice(1)}` : key;
+  return layout[prefixedKey] ?? fallback;
+};
+
+const easingFns = {
+  linear: (t) => t,
+  'ease-in': (t) => t * t * t,
+  'ease-out': (t) => 1 - ((1 - t) ** 3),
+  'ease-in-out': (t) => (t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2),
+  quadratic: (t) => t * t,
+  'quadratic-out': (t) => 1 - ((1 - t) * (1 - t)),
+  smoothstep: (t) => t * t * (3 - 2 * t),
+};
+
+const buildCssOpacityStops = (endOpacity, easing = 'linear') => {
+  const ease = easingFns[easing] ?? easingFns.linear;
+  const stops = [];
+
+  for (let i = 0; i <= 10; i += 1) {
+    const t = i / 10;
+    const eased = ease(t);
+    const opacity = 1 + ((endOpacity - 1) * eased);
+    stops.push(`rgba(255, 255, 255, ${opacity.toFixed(4)}) ${Math.round(t * 100)}%`);
+  }
+
+  return stops.join(', ');
+};
+
+export function buildTransparencyMaskStyle(layout = {}, {
+  prefix = '',
+  opacityKey = 'opacity',
+  defaultOpacity = 100,
+  effectBleed = 0,
+} = {}) {
+  const type = getPrefixedLayoutValue(layout, prefix, 'transparencyType', 'flat');
+
+  if (!type || type === 'flat') {
+    return {
+      opacity: `${clamp(Number(layout[opacityKey] ?? defaultOpacity), 0, 100) / 100}`,
+    };
+  }
+
+  const endOpacity = clamp(Number(getPrefixedLayoutValue(layout, prefix, 'transparencyFadeOpacity', 0)), 0, 100) / 100;
+  const centerX = clamp(Number(getPrefixedLayoutValue(layout, prefix, 'transparencyCenterX', 50)), 0, 100);
+  const centerY = clamp(Number(getPrefixedLayoutValue(layout, prefix, 'transparencyCenterY', 50)), 0, 100);
+  const radius = clamp(Number(getPrefixedLayoutValue(layout, prefix, 'transparencyRadius', 70)), 1, 150);
+  const radiusX = clamp(Number(getPrefixedLayoutValue(layout, prefix, 'transparencyRadiusX', 70)), 1, 150);
+  const radiusY = clamp(Number(getPrefixedLayoutValue(layout, prefix, 'transparencyRadiusY', 45)), 1, 150);
+  const rotation = Number(getPrefixedLayoutValue(layout, prefix, 'transparencyRotation', 0));
+  const startX = clamp(Number(getPrefixedLayoutValue(layout, prefix, 'transparencyStartX', 0)), 0, 100);
+  const startY = clamp(Number(getPrefixedLayoutValue(layout, prefix, 'transparencyStartY', 50)), 0, 100);
+  const endX = clamp(Number(getPrefixedLayoutValue(layout, prefix, 'transparencyEndX', 100)), 0, 100);
+  const endY = clamp(Number(getPrefixedLayoutValue(layout, prefix, 'transparencyEndY', 50)), 0, 100);
+  const easing = getPrefixedLayoutValue(layout, prefix, 'transparencyEasing', 'linear');
+  const opacityStops = buildCssOpacityStops(endOpacity, easing);
+  const linearAngle = (Math.atan2(endY - startY, endX - startX) * 180 / Math.PI) + 90;
+  const radialRadiusX = type === 'ellipse' ? radiusX : radius;
+  const radialRadiusY = type === 'ellipse' ? radiusY : radius;
+  const maskImage = type === 'linear'
+    ? `linear-gradient(${linearAngle}deg, ${opacityStops})`
+    : `radial-gradient(ellipse ${radialRadiusX}% ${radialRadiusY}% at ${centerX}% ${centerY}%, ${opacityStops})`;
+  const bleed = Math.max(0, Number(effectBleed ?? 0));
+  const bleedStyle = bleed > 0 ? {
+    margin: `-${bleed}px`,
+    padding: `${bleed}px`,
+    boxSizing: 'content-box',
+    overflow: 'visible',
+  } : {};
+
+  return {
+    opacity: '1',
+    WebkitMaskImage: maskImage,
+    maskImage,
+    WebkitMaskSize: '100% 100%',
+    maskSize: '100% 100%',
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'center',
+    maskPosition: 'center',
+    maskMode: 'alpha',
+    WebkitMaskMode: 'alpha',
+    ...bleedStyle,
+  };
+}
+
 export function buildBorderCss(layout = {}, { defaultColor = '#ffffff', fallbackWhenDisabled = '0' } = {}) {
   if (!layout.border) {
     return fallbackWhenDisabled;
@@ -74,13 +160,22 @@ export function buildCoverImageStyle({
   flipX = false,
   flipY = false,
   opacity = null,
+  transparencyLayout = null,
+  transparencyPrefix = '',
+  transparencyOpacityKey = 'opacity',
 } = {}) {
   const normalizedContainerWidth = Number(containerWidth ?? 0);
   const normalizedContainerHeight = Number(containerHeight ?? 0);
   const intrinsicSize = normalizeIntrinsicSize(imageWidth, imageHeight);
-  const opacityStyle = opacity === null || opacity === undefined
+  const opacityStyle = transparencyLayout
+    ? buildTransparencyMaskStyle(transparencyLayout, {
+        prefix: transparencyPrefix,
+        opacityKey: transparencyOpacityKey,
+        defaultOpacity: opacity ?? 100,
+      })
+    : (opacity === null || opacity === undefined
     ? {}
-    : { opacity: `${clamp(Number(opacity ?? 100), 0, 100) / 100}` };
+    : { opacity: `${clamp(Number(opacity ?? 100), 0, 100) / 100}` });
 
   if (!Number.isFinite(normalizedContainerWidth) || !Number.isFinite(normalizedContainerHeight) || normalizedContainerWidth <= 0 || normalizedContainerHeight <= 0 || !intrinsicSize) {
     return {
@@ -473,12 +568,22 @@ export function buildShapeRenderModel(layout = {}, shapeKind, shapeClipPaths = {
 }
 
 export function buildImageFrameStyle(layout = {}) {
+  const hasAdvancedTransparency = layout?.transparencyType && layout.transparencyType !== 'flat';
+  const fallbackRadius = Number(layout.borderRadius ?? 12);
+  const topLeft = Number(layout.borderRadiusTopLeft ?? fallbackRadius);
+  const topRight = Number(layout.borderRadiusTopRight ?? fallbackRadius);
+  const bottomRight = Number(layout.borderRadiusBottomRight ?? fallbackRadius);
+  const bottomLeft = Number(layout.borderRadiusBottomLeft ?? fallbackRadius);
+
   return {
+    position: 'relative',
     width: '100%',
     height: '100%',
     overflow: 'hidden',
-    borderRadius: '12px',
-    backgroundColor: layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : 'rgba(255,255,255,0.2)',
+    borderRadius: `${topLeft}px ${topRight}px ${bottomRight}px ${bottomLeft}px`,
+    backgroundColor: hasAdvancedTransparency
+      ? 'transparent'
+      : (layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : 'rgba(255,255,255,0.2)'),
     border: buildBorderCss(layout, { defaultColor: '#ffffff', fallbackWhenDisabled: '0' }),
     boxShadow: buildVisualShadow(layout),
   };
@@ -498,11 +603,16 @@ export function buildImageTintOverlayStyle(layout = {}) {
 }
 
 export function buildElementContentStyle(layout = {}, { elementType = null } = {}) {
+  const transparencyType = layout?.transparencyType ?? 'flat';
+  const transparencyStyle = buildTransparencyMaskStyle(layout, {
+    effectBleed: transparencyType === 'flat' ? 0 : 56,
+  });
+
   if (elementType !== 'text') {
     return {
-      opacity: `${(layout.opacity ?? 100) / 100}`,
       width: '100%',
       height: '100%',
+      ...transparencyStyle,
     };
   }
 
@@ -513,9 +623,12 @@ export function buildElementContentStyle(layout = {}, { elementType = null } = {
   const resolvedBackground = hasBackground && /^#[\da-f]{6}$/i.test(layout.backgroundColor)
     ? `${layout.backgroundColor}${backgroundAlphaHex}`
     : (hasBackground ? layout.backgroundColor : 'transparent');
+  const flatOpacityStyle = transparencyType === 'flat'
+    ? { opacity: `${(layout.opacity ?? 100) / 100}` }
+    : { opacity: '1' };
 
   return {
-    opacity: `${(layout.opacity ?? 100) / 100}`,
+    ...flatOpacityStyle,
     backgroundColor: resolvedBackground,
     borderRadius: hasBackground ? `${Math.round(clamp(Number(layout.backgroundRoundness ?? 50), 0, 100) * 0.48)}px` : '0',
     padding: hasBackground ? `${backgroundExpand}px` : '0',
@@ -550,15 +663,19 @@ export function buildElementBoxStyle(layout = {}, { isText = false } = {}) {
 export function buildRichEditorContainerStyle(layout = {}) {
   const firstParagraphColor = layout?.paragraphStyles?.[0]?.color ?? layout?.color ?? '#ffffff';
   const strokeWidth = getTextEffectStrokeWidth(layout);
+  const transparencyType = layout?.transparencyType ?? 'flat';
+  const transparencyStyle = buildTransparencyMaskStyle(layout, {
+    effectBleed: transparencyType === 'flat' ? 0 : 56,
+  });
 
   return {
-    opacity: `${(layout.opacity ?? 100) / 100}`,
     textShadow: buildTextShadow(layout, firstParagraphColor),
     WebkitTextStroke: layout?.border && layout?.hollowText && strokeWidth > 0
       ? `${strokeWidth}px ${firstParagraphColor}`
       : '0',
     WebkitTextFillColor: layout?.hollowText ? 'transparent' : undefined,
     color: layout?.hollowText ? 'transparent' : undefined,
+    ...transparencyStyle,
   };
 }
 

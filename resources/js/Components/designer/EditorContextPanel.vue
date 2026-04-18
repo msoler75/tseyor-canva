@@ -146,6 +146,51 @@ const shapeCategoryFilter = computed({
   set: (value) => emit('updateShapeCategoryFilter', value),
 });
 
+const isBackgroundOpacityTarget = computed(() => props.state?.selectedElementId === 'background');
+const opacityTargetLayout = computed(() => (
+  isBackgroundOpacityTarget.value
+    ? props.state?.elementLayout?.background
+    : props.selectedElement
+));
+const opacityField = (elementField, backgroundField) => (
+  isBackgroundOpacityTarget.value ? backgroundField : elementField
+);
+const getOpacityField = (elementField, backgroundField, fallback) => (
+  opacityTargetLayout.value?.[opacityField(elementField, backgroundField)] ?? fallback
+);
+const setOpacityField = (elementField, backgroundField, value) => {
+  const target = opacityTargetLayout.value;
+  if (!target) return;
+  target[opacityField(elementField, backgroundField)] = value;
+};
+const makeOpacityFieldModel = (elementField, backgroundField, fallback, numeric = true) => computed({
+  get: () => getOpacityField(elementField, backgroundField, fallback),
+  set: (value) => setOpacityField(elementField, backgroundField, numeric ? Number(value) : value),
+});
+const transparencyTypeModel = makeOpacityFieldModel('transparencyType', 'backgroundImageTransparencyType', 'flat', false);
+const flatOpacityModel = makeOpacityFieldModel('opacity', 'backgroundImageOpacity', 100);
+const fadeOpacityModel = makeOpacityFieldModel('transparencyFadeOpacity', 'backgroundImageTransparencyFadeOpacity', 0);
+const centerXModel = makeOpacityFieldModel('transparencyCenterX', 'backgroundImageTransparencyCenterX', 50);
+const centerYModel = makeOpacityFieldModel('transparencyCenterY', 'backgroundImageTransparencyCenterY', 50);
+const radiusModel = makeOpacityFieldModel('transparencyRadius', 'backgroundImageTransparencyRadius', 70);
+const radiusXModel = makeOpacityFieldModel('transparencyRadiusX', 'backgroundImageTransparencyRadiusX', 70);
+const radiusYModel = makeOpacityFieldModel('transparencyRadiusY', 'backgroundImageTransparencyRadiusY', 45);
+const rotationModel = makeOpacityFieldModel('transparencyRotation', 'backgroundImageTransparencyRotation', 0);
+const startXModel = makeOpacityFieldModel('transparencyStartX', 'backgroundImageTransparencyStartX', 0);
+const startYModel = makeOpacityFieldModel('transparencyStartY', 'backgroundImageTransparencyStartY', 50);
+const endXModel = makeOpacityFieldModel('transparencyEndX', 'backgroundImageTransparencyEndX', 100);
+const endYModel = makeOpacityFieldModel('transparencyEndY', 'backgroundImageTransparencyEndY', 50);
+const easingModel = makeOpacityFieldModel('transparencyEasing', 'backgroundImageTransparencyEasing', 'linear', false);
+const transparencyEasingOptions = [
+  { value: 'linear', label: 'Lineal' },
+  { value: 'ease-in', label: 'Ease-in' },
+  { value: 'ease-out', label: 'Ease-out' },
+  { value: 'ease-in-out', label: 'Ease-in-out' },
+  { value: 'quadratic', label: 'Quadratic' },
+  { value: 'quadratic-out', label: 'Quadratic out' },
+  { value: 'smoothstep', label: 'Smoothstep' },
+];
+
 const closePanel = () => emit('closePanel');
 </script>
 
@@ -1046,6 +1091,60 @@ const closePanel = () => emit('closePanel');
                 </div>
               </div>
 
+              <div v-else-if="activePropertyPanel === 'roundness' && selectedElementType === 'image'" class="card border border-base-300 bg-base-100/80">
+                <div class="card-body p-4 space-y-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-semibold text-base-content">Redondez</p>
+                      <p class="text-xs text-base-content/60">Ajusta el radio de las esquinas de la imagen.</p>
+                    </div>
+                    <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                      {{ selectedElement.borderRadius ?? 12 }}px
+                    </span>
+                  </div>
+
+                  <div class="space-y-2">
+                    <div class="flex items-center justify-between gap-3">
+                      <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Todas las esquinas</label>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs rounded-full"
+                        @click="selectedElement.borderRadiusTopLeft = null; selectedElement.borderRadiusTopRight = null; selectedElement.borderRadiusBottomRight = null; selectedElement.borderRadiusBottomLeft = null"
+                      >
+                        Unificar
+                      </button>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <input v-model.number="selectedElement.borderRadius" type="range" min="0" max="120" step="1" class="range range-primary flex-1" />
+                      <input v-model.number="selectedElement.borderRadius" type="number" min="0" max="120" step="1" class="input input-bordered input-sm w-24" />
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-3">
+                    <label class="space-y-2">
+                      <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Superior izq.</span>
+                      <input :value="selectedElement.borderRadiusTopLeft ?? selectedElement.borderRadius ?? 12" type="range" min="0" max="120" step="1" class="range range-primary" @input="selectedElement.borderRadiusTopLeft = Number($event.target.value)" />
+                      <input :value="selectedElement.borderRadiusTopLeft ?? selectedElement.borderRadius ?? 12" type="number" min="0" max="120" step="1" class="input input-bordered input-sm w-full" @input="selectedElement.borderRadiusTopLeft = Number($event.target.value)" />
+                    </label>
+                    <label class="space-y-2">
+                      <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Superior der.</span>
+                      <input :value="selectedElement.borderRadiusTopRight ?? selectedElement.borderRadius ?? 12" type="range" min="0" max="120" step="1" class="range range-primary" @input="selectedElement.borderRadiusTopRight = Number($event.target.value)" />
+                      <input :value="selectedElement.borderRadiusTopRight ?? selectedElement.borderRadius ?? 12" type="number" min="0" max="120" step="1" class="input input-bordered input-sm w-full" @input="selectedElement.borderRadiusTopRight = Number($event.target.value)" />
+                    </label>
+                    <label class="space-y-2">
+                      <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Inferior der.</span>
+                      <input :value="selectedElement.borderRadiusBottomRight ?? selectedElement.borderRadius ?? 12" type="range" min="0" max="120" step="1" class="range range-primary" @input="selectedElement.borderRadiusBottomRight = Number($event.target.value)" />
+                      <input :value="selectedElement.borderRadiusBottomRight ?? selectedElement.borderRadius ?? 12" type="number" min="0" max="120" step="1" class="input input-bordered input-sm w-full" @input="selectedElement.borderRadiusBottomRight = Number($event.target.value)" />
+                    </label>
+                    <label class="space-y-2">
+                      <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Inferior izq.</span>
+                      <input :value="selectedElement.borderRadiusBottomLeft ?? selectedElement.borderRadius ?? 12" type="range" min="0" max="120" step="1" class="range range-primary" @input="selectedElement.borderRadiusBottomLeft = Number($event.target.value)" />
+                      <input :value="selectedElement.borderRadiusBottomLeft ?? selectedElement.borderRadius ?? 12" type="number" min="0" max="120" step="1" class="input input-bordered input-sm w-full" @input="selectedElement.borderRadiusBottomLeft = Number($event.target.value)" />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <div v-else-if="activePropertyPanel === 'rotate' && (selectedElementType === 'image' || (state.selectedElementId === 'background' && backgroundHasImage))" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4 space-y-4">
                   <div>
@@ -1171,22 +1270,135 @@ const closePanel = () => emit('closePanel');
               </div>
 
               <div v-else-if="activePropertyPanel === 'opacity'" class="card border border-base-300 bg-base-100/80">
-                <div class="card-body p-4">
+                <div class="card-body p-4 space-y-4">
                   <p class="text-sm font-semibold text-base-content">
                     {{ state.selectedElementId === 'background' ? 'Opacidad de la imagen de fondo' : 'Transparencia' }}
                   </p>
                   <p v-if="state.selectedElementId === 'background'" class="mt-1 text-xs text-base-content/60">
                     Ajusta solo la imagen; el color o degradado del fondo se mantiene debajo.
                   </p>
-                  <div class="mt-3 flex flex-wrap gap-2">
-                    <template v-if="state.selectedElementId === 'background'">
-                      <input v-model.number="state.elementLayout.background.backgroundImageOpacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                      <input v-model.number="state.elementLayout.background.backgroundImageOpacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-24" />
-                    </template>
-                    <template v-else>
-                      <input v-model="selectedElement.opacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                      <input v-model="selectedElement.opacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-24" />
-                    </template>
+
+                  <div class="space-y-2">
+                    <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Tipo de transparencia</label>
+                    <select v-model="transparencyTypeModel" class="select select-bordered select-sm w-full">
+                      <option value="flat">Plano</option>
+                      <option value="linear">Lineal</option>
+                      <option value="circle">Circular</option>
+                      <option value="ellipse">Elipse</option>
+                    </select>
+                  </div>
+
+                  <div class="space-y-2">
+                    <div class="flex items-center justify-between gap-3">
+                      <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">
+                        {{ transparencyTypeModel === 'flat' ? 'Opacidad' : 'Opacidad final' }}
+                      </label>
+                      <span class="text-xs font-medium text-base-content/60">
+                        {{ transparencyTypeModel === 'flat' ? flatOpacityModel : fadeOpacityModel }}%
+                      </span>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                      <template v-if="transparencyTypeModel === 'flat'">
+                        <input v-model.number="flatOpacityModel" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                        <input v-model.number="flatOpacityModel" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-24" />
+                      </template>
+                      <template v-else>
+                        <input v-model.number="fadeOpacityModel" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                        <input v-model.number="fadeOpacityModel" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-24" />
+                      </template>
+                    </div>
+                    <p v-if="transparencyTypeModel !== 'flat'" class="text-xs text-base-content/60">
+                      El punto inicial queda al 100% de opacidad y se desvanece hasta este valor.
+                    </p>
+                  </div>
+
+                  <div v-if="transparencyTypeModel !== 'flat'" class="space-y-2">
+                    <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Velocidad de transición</label>
+                    <select v-model="easingModel" class="select select-bordered select-sm w-full">
+                      <option
+                        v-for="option in transparencyEasingOptions"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </div>
+
+                  <div v-if="transparencyTypeModel === 'circle' || transparencyTypeModel === 'ellipse'" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-3">
+                      <label class="space-y-2">
+                        <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Centro X</span>
+                        <input v-model.number="centerXModel" type="range" min="0" max="100" step="1" class="range range-primary" />
+                        <input v-model.number="centerXModel" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-full" />
+                      </label>
+                      <label class="space-y-2">
+                        <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Centro Y</span>
+                        <input v-model.number="centerYModel" type="range" min="0" max="100" step="1" class="range range-primary" />
+                        <input v-model.number="centerYModel" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-full" />
+                      </label>
+                    </div>
+
+                    <div v-if="transparencyTypeModel === 'circle'" class="space-y-2">
+                      <div class="flex items-center justify-between gap-3">
+                        <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Radio</label>
+                        <span class="text-xs font-medium text-base-content/60">{{ radiusModel }}%</span>
+                      </div>
+                      <div class="flex items-center gap-3">
+                        <input v-model.number="radiusModel" type="range" min="1" max="150" step="1" class="range range-primary flex-1" />
+                        <input v-model.number="radiusModel" type="number" min="1" max="150" step="1" class="input input-bordered input-sm w-24" />
+                      </div>
+                    </div>
+
+                    <div v-else class="space-y-4">
+                      <div class="grid grid-cols-2 gap-3">
+                        <label class="space-y-2">
+                          <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Radio X</span>
+                          <input v-model.number="radiusXModel" type="range" min="1" max="150" step="1" class="range range-primary" />
+                          <input v-model.number="radiusXModel" type="number" min="1" max="150" step="1" class="input input-bordered input-sm w-full" />
+                        </label>
+                        <label class="space-y-2">
+                          <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Radio Y</span>
+                          <input v-model.number="radiusYModel" type="range" min="1" max="150" step="1" class="range range-primary" />
+                          <input v-model.number="radiusYModel" type="number" min="1" max="150" step="1" class="input input-bordered input-sm w-full" />
+                        </label>
+                      </div>
+                      <div class="space-y-2">
+                        <div class="flex items-center justify-between gap-3">
+                          <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Rotación</label>
+                          <span class="text-xs font-medium text-base-content/60">{{ rotationModel }}°</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                          <input v-model.number="rotationModel" type="range" min="-180" max="180" step="1" class="range range-primary flex-1" />
+                          <input v-model.number="rotationModel" type="number" min="-180" max="180" step="1" class="input input-bordered input-sm w-24" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-else-if="transparencyTypeModel === 'linear'" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-3">
+                      <label class="space-y-2">
+                        <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Inicio X</span>
+                        <input v-model.number="startXModel" type="range" min="0" max="100" step="1" class="range range-primary" />
+                        <input v-model.number="startXModel" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-full" />
+                      </label>
+                      <label class="space-y-2">
+                        <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Inicio Y</span>
+                        <input v-model.number="startYModel" type="range" min="0" max="100" step="1" class="range range-primary" />
+                        <input v-model.number="startYModel" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-full" />
+                      </label>
+                      <label class="space-y-2">
+                        <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Final X</span>
+                        <input v-model.number="endXModel" type="range" min="0" max="100" step="1" class="range range-primary" />
+                        <input v-model.number="endXModel" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-full" />
+                      </label>
+                      <label class="space-y-2">
+                        <span class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Final Y</span>
+                        <input v-model.number="endYModel" type="range" min="0" max="100" step="1" class="range range-primary" />
+                        <input v-model.number="endYModel" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-full" />
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
