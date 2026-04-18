@@ -266,8 +266,8 @@ const fontOptions = (page.props.fontFamilies ?? []).map(f => ({
 }));
 console.log('fontOptions:', fontOptions);
 const textPropertyTabs = [
-    { id: 'typography', label: 'Fuente' , class: 'order-first'},
-    { id: 'color', label: 'A', labelClass:'border-b-5 border-blue-500 text-xl',class: '' },
+    { id: 'typography', label: 'Tipografía' , class: 'order-first text-xl'},
+    // { id: 'color', label: 'A', labelClass:'text-shadow-xs text-xl border-b-3',class: '' },
     { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
     { id: 'effects', label: 'Efectos', class: 'order-last' },
     { id: 'arrange', label: 'Posición' , class: 'order-last'},

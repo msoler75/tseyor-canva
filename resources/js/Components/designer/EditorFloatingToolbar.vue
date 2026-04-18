@@ -25,6 +25,22 @@ const emit = defineEmits([
   'property-tab-click',
   'start-drag',
 ]);
+
+const getTabLabelStyle = (tab, selectedTextStyle) => {
+   if (tab.id === 'typography') {
+    return {
+      fontFamily: selectedTextStyle.fontFamily || 'inherit',
+    };
+  }
+  return {}
+};
+
+const getLabel = (tab, selectedTextStyle) => {
+  if (tab.id === 'typography') {
+    return selectedTextStyle.fontFamily || 'Tipografía';
+  }
+  return tab.label || '';
+};
 </script>
 
 <template>
@@ -47,13 +63,23 @@ const emit = defineEmits([
               :title="tab.title || tab.label"
               @click="emit('property-tab-click', tab)"
             >
-              <span v-if="tab.label" class="text-sm text-base-100-accent" :class="tab.labelClass">{{ tab.label }}</span>
+              <span
+                v-if="tab.label"
+                class="text-base-100-accent"
+                :class="tab.labelClass"
+                :style="getTabLabelStyle(tab, selectedTextStyle)"
+              >{{ getLabel(tab, selectedTextStyle) }}</span>
               <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl" />
             </button>
             <template v-if="hasTextSelection">
               <input v-model.number="selectedTextStyle.fontSize" type="number" min="8" max="200" step="1" class="input input-bordered join-item w-12 text-center order-first" />
-              <button type="button" class="btn text-lg" :class="selectedTextStyle.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
-              <button type="button" class="btn text-lg italic" :class="selectedTextStyle.italic ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.italic = !selectedTextStyle.italic">I</button>
+              <button type="button" class="btn text-lg flex-col gap-0 px-2" :class="selectedTextStyle.color ? 'btn-primary' : 'btn-outline'" @click="$emit('property-tab-click', { id: 'color' })">
+                A
+                <div class="rounded-full w-6 h-2 border border-base-content/70"
+                :style="{ backgroundColor: selectedTextStyle.color }"></div>
+            </button>
+              <button type="button" class="btn text-xl font-bold" :class="selectedTextStyle.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'">B</button>
+              <button type="button" class="btn text-lg font-thin italic font-serif" :class="selectedTextStyle.italic ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.italic = !selectedTextStyle.italic">I</button>
               <button type="button" class="btn text-lg w-12" :class="selectedTextStyle.uppercase ? 'btn-primary' : 'btn-outline'" @click="selectedTextStyle.uppercase = !selectedTextStyle.uppercase">Aa</button>
               <button type="button" class="btn text-lg btn-outline" @click="emit('cycle-alignment')">
                 <Icon :icon="currentAlignmentIcon" class="scale-150" />

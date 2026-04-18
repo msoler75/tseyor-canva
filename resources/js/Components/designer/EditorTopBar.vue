@@ -104,12 +104,6 @@ const handleZoomInput = (event) => {
               Hacer una copia
             </button>
           </li>
-          <li>
-            <button type="button" @click="emit('renameDesign')">
-              <Icon icon="ph:pencil-simple-bold" class="text-lg" />
-              Cambiar nombre del diseño
-            </button>
-          </li>
           <li v-if="authUser">
             <button type="button" @click="emit('logout')">
               <Icon icon="ph:sign-out-bold" class="text-lg" />
@@ -136,6 +130,12 @@ const handleZoomInput = (event) => {
           Diseño
         </button>
         <ul tabindex="0" class="dropdown-content menu z-60 mt-2 w-72 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
+            <li>
+            <button type="button" @click="emit('renameDesign')">
+              <Icon icon="ph:pencil-simple-bold" class="text-lg" />
+              Cambiar nombre del diseño
+            </button>
+          </li>
           <li>
             <button type="button" @click="emit('openDesignAssistantStep', 'format')">
               <Icon icon="ph:frame-corners-bold" class="text-lg" />
