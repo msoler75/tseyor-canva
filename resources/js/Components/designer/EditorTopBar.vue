@@ -205,7 +205,7 @@ const handleZoomInput = (event) => {
           min="25"
           max="200"
           step="5"
-          class="input input-bordered input-sm w-10 text-md"
+          class="input input-bordered input-sm w-14 text-md"
           @input="handleZoomInput"
         />
         <span class="text-xs text-base-content/60">%</span>

@@ -185,7 +185,6 @@ const assignRichEditorRef = (id, element) => {
         </div>
 
         <slot name="overlay" />
-        <div class="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-cyan-200/30"></div>
       </div>
     </div>
   </div>

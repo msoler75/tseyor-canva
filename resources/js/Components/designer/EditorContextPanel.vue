@@ -1172,10 +1172,21 @@ const closePanel = () => emit('closePanel');
 
               <div v-else-if="activePropertyPanel === 'opacity'" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4">
-                  <p class="text-sm font-semibold text-base-content">Transparencia</p>
+                  <p class="text-sm font-semibold text-base-content">
+                    {{ state.selectedElementId === 'background' ? 'Opacidad de la imagen de fondo' : 'Transparencia' }}
+                  </p>
+                  <p v-if="state.selectedElementId === 'background'" class="mt-1 text-xs text-base-content/60">
+                    Ajusta solo la imagen; el color o degradado del fondo se mantiene debajo.
+                  </p>
                   <div class="mt-3 flex flex-wrap gap-2">
-                    <input v-model="selectedElement.opacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
-                    <input v-model="selectedElement.opacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-24" />
+                    <template v-if="state.selectedElementId === 'background'">
+                      <input v-model.number="state.elementLayout.background.backgroundImageOpacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                      <input v-model.number="state.elementLayout.background.backgroundImageOpacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-24" />
+                    </template>
+                    <template v-else>
+                      <input v-model="selectedElement.opacity" type="range" min="0" max="100" step="1" class="range range-primary flex-1" />
+                      <input v-model="selectedElement.opacity" type="number" min="0" max="100" step="1" class="input input-bordered input-sm w-24" />
+                    </template>
                   </div>
                 </div>
               </div>

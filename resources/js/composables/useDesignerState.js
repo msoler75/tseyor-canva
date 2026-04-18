@@ -226,6 +226,7 @@ function mergeElementLayout(defaultLayout, sessionLayout) {
             merged[key].backgroundImageCropOffsetY = Number(merged[key].backgroundImageCropOffsetY ?? 0);
             merged[key].backgroundImageFlipX = Boolean(merged[key].backgroundImageFlipX);
             merged[key].backgroundImageFlipY = Boolean(merged[key].backgroundImageFlipY);
+            merged[key].backgroundImageOpacity = Number(merged[key].backgroundImageOpacity ?? 100);
         }
 
         if (merged[key]) {

@@ -198,6 +198,7 @@ const canvasBackgroundImageStyle = computed(() => buildCoverImageStyle({
     cropOffsetY: state.elementLayout.background?.backgroundImageCropOffsetY,
     flipX: state.elementLayout.background?.backgroundImageFlipX,
     flipY: state.elementLayout.background?.backgroundImageFlipY,
+    opacity: state.elementLayout.background?.backgroundImageOpacity,
 }));
 
 async function buildRendererOptions(width, height) {

@@ -19,6 +19,7 @@ const props = defineProps({
   onFinish: Function, // callback opcional para cuando termina
   showFooter: { type: Boolean, default: true },
   showClose: { type: Boolean, default: true },
+  showStepNavigation: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(['close', 'finish']);
@@ -83,6 +84,11 @@ const isAssistantComplete = computed(() => Boolean(
   && state.format
   && state.size
 ));
+const canApplyCurrentStep = computed(() => {
+  if (assistantStep.value === 'objective') return Boolean(state.objective);
+  if (assistantStep.value === 'format') return Boolean(state.outputType && state.format && state.size);
+  return true;
+});
 
 function goNext() {
   if (!canGoNext.value || isLastStep.value) return;
@@ -298,34 +304,53 @@ defineExpose({ assistantStep });
       class="sticky bottom-0 left-0 right-0 z-10 border-t border-base-300 bg-base-100 px-6 py-4"
     >
       <template #left>
-        <button type="button" class="btn btn-outline btn-sm rounded-full" :disabled="isFirstStep" @click="goPrevious">Anterior</button>
+        <button
+          v-if="showStepNavigation"
+          type="button"
+          class="btn btn-outline btn-sm rounded-full"
+          :disabled="isFirstStep"
+          @click="goPrevious"
+        >
+          Anterior
+        </button>
       </template>
       <template #right>
         <button
-          v-if="isAssistantComplete"
+          v-if="!showStepNavigation"
           type="button"
-          class="btn btn-outline btn-sm rounded-full"
+          class="btn btn-primary btn-sm rounded-full"
+          :disabled="!canApplyCurrentStep"
           @click="finishAndOpenEditor"
         >
           Aplicar
         </button>
-        <button
-          v-if="!isLastStep"
-          type="button"
-          class="btn btn-primary btn-sm rounded-full"
-          :disabled="!canGoNext"
-          @click="goNext"
-        >
-          Siguiente
-        </button>
-        <button
-          v-else
-          type="button"
-          class="btn btn-primary btn-sm rounded-full"
-          @click="finishAndOpenEditor"
-        >
-          Abrir editor
-        </button>
+        <template v-else>
+          <button
+            v-if="isAssistantComplete"
+            type="button"
+            class="btn btn-outline btn-sm rounded-full"
+            @click="finishAndOpenEditor"
+          >
+            Aplicar
+          </button>
+          <button
+            v-if="!isLastStep"
+            type="button"
+            class="btn btn-primary btn-sm rounded-full"
+            :disabled="!canGoNext"
+            @click="goNext"
+          >
+            Siguiente
+          </button>
+          <button
+            v-else
+            type="button"
+            class="btn btn-primary btn-sm rounded-full"
+            @click="finishAndOpenEditor"
+          >
+            Abrir editor
+          </button>
+        </template>
       </template>
     </StepFooter>
   </section>

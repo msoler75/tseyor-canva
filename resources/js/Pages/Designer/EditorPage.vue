@@ -624,6 +624,7 @@ const selectedBackgroundPropertyTabs = computed(() => {
 
   if (backgroundHasImage.value) {
     tabs.push(
+      { id: 'opacity', icon: 'carbon:opacity', title: 'Opacidad', class: 'order-last' },
       { id: 'crop', icon: 'ph:crop-bold', title: 'Recortar', class: 'order-last' },
       { id: 'rotate', icon: '', label: 'Girar', class: 'order-last' },
       { id: 'detach', icon: 'tabler:background', title: 'Separar imagen del fondo', class: 'order-last' },
@@ -712,6 +713,7 @@ const canvasBackgroundImageStyle = computed(() => buildCoverImageStyle({
   cropOffsetY: state.elementLayout.background?.backgroundImageCropOffsetY,
   flipX: state.elementLayout.background?.backgroundImageFlipX,
   flipY: state.elementLayout.background?.backgroundImageFlipY,
+  opacity: state.elementLayout.background?.backgroundImageOpacity,
 }));
 
 watch([selectedElementType, hasSelection], () => {
@@ -1380,6 +1382,7 @@ const clearBackgroundImage = () => {
     backgroundImageCropOffsetY: 0,
     backgroundImageFlipX: false,
     backgroundImageFlipY: false,
+    backgroundImageOpacity: 100,
   };
 };
 
@@ -1423,6 +1426,7 @@ const setBackgroundImage = async ({
     backgroundImageCropOffsetY: 0,
     backgroundImageFlipX: false,
     backgroundImageFlipY: false,
+    backgroundImageOpacity: 100,
   };
 
   state.selectedElementId = 'background';
@@ -1794,6 +1798,7 @@ const detachBackgroundImage = async () => {
       imageCropOffsetY: backgroundLayout.backgroundImageCropOffsetY ?? 0,
       flipX: Boolean(backgroundLayout.backgroundImageFlipX),
       flipY: Boolean(backgroundLayout.backgroundImageFlipY),
+      opacity: Number(backgroundLayout.backgroundImageOpacity ?? 100),
     },
   });
 };
@@ -1844,6 +1849,7 @@ const promoteSelectedImageToBackground = async () => {
     backgroundImageCropOffsetY: Number(imageLayout.imageCropOffsetY ?? 0),
     backgroundImageFlipX: Boolean(imageLayout.flipX),
     backgroundImageFlipY: Boolean(imageLayout.flipY),
+    backgroundImageOpacity: Number(imageLayout.opacity ?? 100),
   };
 
   if (state.customElements?.[elementId]) {
@@ -3032,6 +3038,7 @@ watch(
           :step="assistantStep"
           :show-footer="true"
           :show-close="true"
+          :show-step-navigation="false"
           @close="closeAssistant"
           @finish="closeAssistant"
         />

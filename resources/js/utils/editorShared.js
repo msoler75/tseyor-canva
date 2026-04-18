@@ -73,10 +73,14 @@ export function buildCoverImageStyle({
   cropOffsetY = 0,
   flipX = false,
   flipY = false,
+  opacity = null,
 } = {}) {
   const normalizedContainerWidth = Number(containerWidth ?? 0);
   const normalizedContainerHeight = Number(containerHeight ?? 0);
   const intrinsicSize = normalizeIntrinsicSize(imageWidth, imageHeight);
+  const opacityStyle = opacity === null || opacity === undefined
+    ? {}
+    : { opacity: `${clamp(Number(opacity ?? 100), 0, 100) / 100}` };
 
   if (!Number.isFinite(normalizedContainerWidth) || !Number.isFinite(normalizedContainerHeight) || normalizedContainerWidth <= 0 || normalizedContainerHeight <= 0 || !intrinsicSize) {
     return {
@@ -85,6 +89,7 @@ export function buildCoverImageStyle({
       objectFit: 'cover',
       transform: `scale(${flipX ? -1 : 1}, ${flipY ? -1 : 1})`,
       transformOrigin: 'center center',
+      ...opacityStyle,
     };
   }
 
@@ -112,6 +117,7 @@ export function buildCoverImageStyle({
     maxHeight: 'none',
     transform: `scale(${flipX ? -1 : 1}, ${flipY ? -1 : 1})`,
     transformOrigin: 'center center',
+    ...opacityStyle,
   };
 }
 
