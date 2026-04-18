@@ -31,6 +31,7 @@ class DesignController extends Controller
                 'surface_height',
                 'template_category',
                 'selected_template_id',
+                'source_template_id',
                 'thumbnail_path',
                 'status',
                 'last_opened_at',

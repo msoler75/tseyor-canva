@@ -10,7 +10,6 @@ use RuntimeException;
 
 final class JwtService
 {
-
     /**
      * Decodifica un JWT usando firebase/php-jwt
      * @param string $token

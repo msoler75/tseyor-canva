@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Design;
+use App\Models\DesignTemplate;
 use App\Models\User;
 use App\Support\DesignerStateRules;
 use App\Support\JwtService;
@@ -188,7 +189,9 @@ class DesignerController extends Controller
                     'designsIndex' => Auth::check() ? route('designer.designs.index') : null,
                     'designsStore' => Auth::check() ? route('designer.designs.store') : null,
                     'assetsIndex' => Auth::check() ? route('designer.assets.index') : null,
+                    'templatesIndex' => route('designer.templates.index'),
                 ],
+                'templates' => $this->publishedTemplates(),
                 'imageUploads' => [
                     'maxWidth' => config('designer.image_uploads.max_width'),
                     'maxHeight' => config('designer.image_uploads.max_height'),
@@ -408,6 +411,7 @@ class DesignerController extends Controller
                 'surface_height' => $design->surface_height,
                 'template_category' => $design->template_category,
                 'selected_template_id' => $design->selected_template_id,
+                'source_template_id' => $design->source_template_id,
                 'state' => $design->state,
                 'status' => 'draft',
                 'last_opened_at' => now(),
@@ -474,6 +478,44 @@ class DesignerController extends Controller
             'path' => $design->thumbnail_path,
             'v' => optional($design->updated_at)->timestamp ?? time(),
         ]);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function publishedTemplates(): array
+    {
+        return DesignTemplate::query()
+            ->with('baseDesign:id,uuid,thumbnail_path,updated_at')
+            ->where('status', 'published')
+            ->orderByDesc('featured')
+            ->orderBy('sort_order')
+            ->orderBy('title')
+            ->get()
+            ->map(fn (DesignTemplate $template): array => [
+                'id' => $template->uuid,
+                'uuid' => $template->uuid,
+                'title' => $template->title,
+                'name' => $template->title,
+                'description' => $template->description,
+                'category_ids' => $template->category_ids ?? [],
+                'objective_ids' => $template->objective_ids ?? [],
+                'category' => ($template->category_ids ?? ['all'])[0] ?? 'all',
+                'adaptation_mode' => $template->adaptation_mode,
+                'field_mappings' => $template->field_mappings ?? [],
+                'status' => $template->status,
+                'featured' => $template->featured,
+                'sort_order' => $template->sort_order,
+                'base_design_uuid' => $template->baseDesign?->uuid,
+                'thumbnail_url' => $template->baseDesign?->thumbnail_path
+                    ? route('designer.uploads.show', [
+                        'path' => $template->baseDesign->thumbnail_path,
+                        'v' => optional($template->baseDesign->updated_at)->timestamp ?? time(),
+                    ])
+                    : null,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

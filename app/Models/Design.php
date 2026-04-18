@@ -26,6 +26,7 @@ class Design extends Model
         'surface_height',
         'template_category',
         'selected_template_id',
+        'source_template_id',
         'thumbnail_path',
         'state',
         'status',
@@ -51,6 +52,11 @@ class Design extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function sourceTemplate(): BelongsTo
+    {
+        return $this->belongsTo(DesignTemplate::class, 'source_template_id');
     }
 
     public function getRouteKeyName(): string

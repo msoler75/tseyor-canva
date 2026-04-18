@@ -1,0 +1,194 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Design;
+use App\Models\DesignTemplate;
+use App\Models\User;
+use App\Services\DesignTemplateGenerator;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+
+class DesignTemplateController extends Controller
+{
+    public function index(Request $request): JsonResponse
+    {
+        $includeDrafts = $this->isAdmin($request->user()) && $request->boolean('includeDrafts');
+
+        $templates = DesignTemplate::query()
+            ->with('baseDesign:id,uuid,thumbnail_path,updated_at')
+            ->when(! $includeDrafts, fn ($query) => $query->where('status', 'published'))
+            ->orderByDesc('featured')
+            ->orderBy('sort_order')
+            ->orderBy('title')
+            ->get()
+            ->map(fn (DesignTemplate $template): array => $this->serializeTemplate($template));
+
+        return response()->json([
+            'templates' => $templates,
+        ]);
+    }
+
+    public function store(Request $request, Design $design): JsonResponse
+    {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($this->isAdmin($user), 403);
+        abort_unless($design->user?->is($user), 404);
+
+        $validated = $this->validateTemplatePayload($request);
+
+        $template = DesignTemplate::query()->updateOrCreate(
+            ['base_design_id' => $design->id],
+            [
+                'uuid' => DesignTemplate::query()->where('base_design_id', $design->id)->value('uuid') ?: (string) Str::uuid(),
+                ...$validated,
+                'adaptation_mode' => 'proportional',
+                'published_at' => ($validated['status'] ?? 'draft') === 'published' ? now() : null,
+            ],
+        );
+
+        return response()->json([
+            'template' => $this->serializeTemplate($template->fresh('baseDesign')),
+        ], 201);
+    }
+
+    public function update(Request $request, DesignTemplate $template): JsonResponse
+    {
+        abort_unless($this->isAdmin($request->user()), 403);
+
+        $validated = $this->validateTemplatePayload($request, partial: true);
+        $nextStatus = $validated['status'] ?? $template->status;
+
+        $template->fill([
+            ...$validated,
+            'adaptation_mode' => 'proportional',
+            'published_at' => $nextStatus === 'published'
+                ? ($template->published_at ?? now())
+                : ($nextStatus === 'draft' ? null : $template->published_at),
+        ])->save();
+
+        return response()->json([
+            'template' => $this->serializeTemplate($template->fresh('baseDesign')),
+        ]);
+    }
+
+    public function generate(Request $request, DesignTemplate $template, DesignTemplateGenerator $generator): JsonResponse
+    {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user, 401);
+        abort_if($template->status !== 'published' && ! $this->isAdmin($user), 404);
+
+        $validated = $request->validate([
+            'content' => ['nullable', 'array'],
+            'content.*' => ['nullable', 'string', 'max:5000'],
+            'objective' => ['nullable', 'string', 'max:120'],
+            'outputType' => ['nullable', 'string', 'max:40'],
+            'format' => ['nullable', 'string', 'max:40'],
+            'size' => ['nullable', 'string', 'max:120'],
+            'designTitle' => ['nullable', 'string', 'max:255'],
+            'designSurface' => ['nullable', 'array'],
+            'designSurface.width' => ['nullable', 'numeric', 'min:1'],
+            'designSurface.height' => ['nullable', 'numeric', 'min:1'],
+        ]);
+
+        $design = $generator->generate(
+            $template->loadMissing('baseDesign'),
+            $user,
+            $validated,
+            $validated['designSurface'] ?? null,
+        );
+
+        return response()->json([
+            'design' => $design->fresh(),
+        ], 201);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateTemplatePayload(Request $request, bool $partial = false): array
+    {
+        $required = $partial ? 'sometimes' : 'required';
+
+        $validated = $request->validate([
+            'title' => [$required, 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:2000'],
+            'category_ids' => [$required, 'array', 'min:1'],
+            'category_ids.*' => ['string', 'max:120'],
+            'objective_ids' => [$required, 'array', 'min:1'],
+            'objective_ids.*' => ['string', 'max:120'],
+            'field_mappings' => ['nullable', 'array'],
+            'field_mappings.*.sourceField' => ['required_with:field_mappings', 'string', 'max:120'],
+            'field_mappings.*.targetField' => ['nullable', 'string', 'max:120'],
+            'field_mappings.*.elementId' => ['nullable', 'string', 'max:120'],
+            'field_mappings.*.property' => ['nullable', 'string', Rule::in(['text', 'src'])],
+            'field_mappings.*.label' => ['nullable', 'string', 'max:255'],
+            'field_mappings.*.fallback' => ['nullable', 'string', 'max:5000'],
+            'status' => ['nullable', 'string', Rule::in(['draft', 'published', 'archived'])],
+            'featured' => ['nullable', 'boolean'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        if (array_key_exists('category_ids', $validated)) {
+            $validated['category_ids'] = array_values(array_unique($validated['category_ids'] ?? []));
+        }
+        if (array_key_exists('objective_ids', $validated)) {
+            $validated['objective_ids'] = array_values(array_unique($validated['objective_ids'] ?? []));
+        }
+        if (! $partial || array_key_exists('field_mappings', $validated)) {
+            $validated['field_mappings'] = $validated['field_mappings'] ?? null;
+        }
+        if (! $partial) {
+            $validated['status'] = $validated['status'] ?? 'published';
+            $validated['featured'] = (bool) ($validated['featured'] ?? false);
+            $validated['sort_order'] = (int) ($validated['sort_order'] ?? 0);
+        } else {
+            if (array_key_exists('featured', $validated)) {
+                $validated['featured'] = (bool) $validated['featured'];
+            }
+            if (array_key_exists('sort_order', $validated)) {
+                $validated['sort_order'] = (int) $validated['sort_order'];
+            }
+        }
+
+        return $validated;
+    }
+
+    private function isAdmin(?User $user): bool
+    {
+        return $user?->name === 'admin';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeTemplate(DesignTemplate $template): array
+    {
+        return [
+            'id' => $template->uuid,
+            'uuid' => $template->uuid,
+            'title' => $template->title,
+            'name' => $template->title,
+            'description' => $template->description,
+            'category_ids' => $template->category_ids ?? [],
+            'objective_ids' => $template->objective_ids ?? [],
+            'category' => ($template->category_ids ?? ['all'])[0] ?? 'all',
+            'adaptation_mode' => $template->adaptation_mode,
+            'field_mappings' => $template->field_mappings ?? [],
+            'status' => $template->status,
+            'featured' => $template->featured,
+            'sort_order' => $template->sort_order,
+            'base_design_uuid' => $template->baseDesign?->uuid,
+            'thumbnail_url' => $template->baseDesign?->thumbnail_path
+                ? route('designer.uploads.show', [
+                    'path' => $template->baseDesign->thumbnail_path,
+                    'v' => optional($template->baseDesign->updated_at)->timestamp ?? time(),
+                ])
+                : null,
+        ];
+    }
+}

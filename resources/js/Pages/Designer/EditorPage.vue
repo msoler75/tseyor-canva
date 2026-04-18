@@ -111,8 +111,10 @@ if (!state.userUploadedImages) {
 }
 const uploadEndpoint = computed(() => page.props.designer?.endpoints?.upload ?? '/designer/uploads');
 const resetEndpoint = computed(() => page.props.designer?.endpoints?.reset ?? '/designer/state');
+const designsStoreEndpoint = computed(() => page.props.designer?.endpoints?.designsStore ?? null);
 const assetsIndexEndpoint = computed(() => page.props.designer?.endpoints?.assetsIndex ?? null);
 const authUser = computed(() => page.props.auth?.user ?? null);
+const persistedTemplates = computed(() => page.props.designer?.templates ?? []);
 const currentDesignDuplicateEndpoint = computed(() => state.currentDesignUuid ? `/designer/designs/${state.currentDesignUuid}/duplicate` : null);
 const currentDesignRenameEndpoint = computed(() => state.currentDesignUuid ? `/designer/designs/${state.currentDesignUuid}/rename` : null);
 const imageUploadProcessingConfig = computed(() => page.props.designer?.imageUploads ?? {
@@ -2840,6 +2842,146 @@ const handleRenameDesign = async () => {
   }
 };
 
+const ensurePersistedDesign = async () => {
+  if (!authUser.value) {
+    throw new Error('Debes iniciar sesión para guardar este diseño.');
+  }
+
+  if (state.currentDesignUuid) {
+    await flushDesignerStatePersistence();
+    return state.currentDesignUuid;
+  }
+
+  if (!designsStoreEndpoint.value) {
+    throw new Error('No hay endpoint disponible para crear diseños.');
+  }
+
+  const response = await axios.post(designsStoreEndpoint.value, {
+    state: JSON.parse(JSON.stringify(state)),
+    name: state.designTitle || 'Diseño sin título',
+  });
+  const uuid = response.data?.design?.uuid;
+  if (!uuid) {
+    throw new Error('No se pudo persistir el diseño actual.');
+  }
+
+  state.currentDesignUuid = uuid;
+  return uuid;
+};
+
+const splitPromptList = (value) => String(value || '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+const parseFieldMappingsPrompt = (value) => {
+  const source = String(value || '').trim();
+  if (!source) return [];
+
+  try {
+    const decoded = JSON.parse(source);
+    return Array.isArray(decoded) ? decoded : [];
+  } catch {
+    return source
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [left, propertyCandidate] = line.split(':').map((part) => part.trim());
+        const [sourceField, target] = left.split('->').map((part) => part.trim());
+        if (!sourceField || !target) return null;
+
+        if (target.startsWith('#')) {
+          return {
+            sourceField,
+            elementId: target.slice(1),
+            property: propertyCandidate === 'src' ? 'src' : 'text',
+          };
+        }
+
+        return {
+          sourceField,
+          targetField: target,
+        };
+      })
+      .filter(Boolean);
+  }
+};
+
+const handlePublishDesignTemplate = async () => {
+  if (authUser.value?.name !== 'admin') return;
+
+  const title = window.prompt('Título público de la plantilla', state.designTitle || 'Nueva plantilla');
+  if (title === null) return;
+
+  const categories = splitPromptList(window.prompt('Categorías separadas por coma', state.templateCategory && state.templateCategory !== 'all' ? state.templateCategory : 'general'));
+  if (!categories.length) return;
+
+  const objectives = splitPromptList(window.prompt('Objetivos compatibles separados por coma', state.objective || 'generic'));
+  if (!objectives.length) return;
+
+  const mappingsInput = window.prompt(
+    'Mapeos opcionales. Una línea por mapeo: datos1 -> contact, datos1 -> #footer-contact:text, image -> #main-image:src. Déjalo vacío si no hace falta.',
+    '',
+  );
+  if (mappingsInput === null) return;
+
+  try {
+    const uuid = await ensurePersistedDesign();
+    const response = await axios.post(`/designer/designs/${uuid}/template`, {
+      title: title.trim() || state.designTitle || 'Nueva plantilla',
+      description: window.prompt('Descripción breve de la plantilla', '') || '',
+      category_ids: categories,
+      objective_ids: objectives,
+      field_mappings: parseFieldMappingsPrompt(mappingsInput),
+      status: 'published',
+      featured: false,
+      sort_order: 0,
+    });
+
+    state.selectedTemplateId = response.data?.template?.uuid ?? response.data?.template?.id ?? state.selectedTemplateId;
+    window.alert('Plantilla publicada correctamente.');
+  } catch (error) {
+    console.error('Failed to publish design template', error);
+    window.alert(error.response?.data?.message || error.message || 'No se pudo publicar la plantilla.');
+  }
+};
+
+const handleAssistantFinish = async ({ selectedTemplate } = {}) => {
+  const persistedTemplate = selectedTemplate?.uuid
+    ? selectedTemplate
+    : persistedTemplates.value.find((template) => template.id === state.selectedTemplateId || template.uuid === state.selectedTemplateId);
+
+  if (!persistedTemplate?.uuid || !authUser.value) {
+    closeAssistant();
+    return;
+  }
+
+  try {
+    const targetSurface = currentCanvasDimensions();
+    const response = await axios.post(`/designer/design-templates/${persistedTemplate.uuid}/generate`, {
+      content: JSON.parse(JSON.stringify(state.content ?? {})),
+      objective: state.objective,
+      outputType: state.outputType,
+      format: state.format,
+      size: state.size,
+      designTitle: state.designTitle,
+      designSurface: targetSurface,
+    });
+    const uuid = response.data?.design?.uuid;
+    if (uuid) {
+      state.currentDesignUuid = uuid;
+      window.location.href = `/designer/editor?design=${uuid}`;
+      return;
+    }
+  } catch (error) {
+    console.error('Failed to generate design from template', error);
+    window.alert(error.response?.data?.message || 'No se pudo generar el diseño desde la plantilla.');
+  }
+
+  closeAssistant();
+};
+
 const handleCanvasClick = (event) => {
   if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
   state.selectedElementId = 'background';
@@ -2926,6 +3068,7 @@ watch(
       @login="handleLogin"
       @logout="handleLogout"
       @rename-design="handleRenameDesign"
+      @publish-design-template="handlePublishDesignTemplate"
       @open-design-assistant-step="openAssistantStep"
       @undo="performUndo"
       @redo="performRedo"
@@ -3114,7 +3257,7 @@ watch(
           :show-close="true"
           :show-step-navigation="false"
           @close="closeAssistant"
-          @finish="closeAssistant"
+          @finish="handleAssistantFinish"
         />
       </div>
     </dialog>

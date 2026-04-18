@@ -15,7 +15,14 @@ defineProps({
             ? 'border-4 border-accent shadow-xl ring-2 ring-accent/30'
             : 'border-base-300 bg-base-100 hover:border-primary/40'"
     >
-        <div class="bg-gradient-to-br p-5" :class="[template.theme, template.text]">
+        <div v-if="template.thumbnail_url" class="relative min-h-64 bg-base-200">
+            <img :src="template.thumbnail_url" :alt="template.name" class="h-64 w-full object-cover" />
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5 text-white">
+                <h4 class="text-2xl font-black leading-none">{{ content.title || template.name }}</h4>
+                <p class="mt-2 text-sm leading-6 opacity-90">{{ content.subtitle || template.description }}</p>
+            </div>
+        </div>
+        <div v-else class="bg-gradient-to-br p-5" :class="[template.theme || 'from-slate-100 via-white to-slate-200', template.text || 'text-slate-950']">
             <h4 class="mt-4 text-3xl font-black leading-none">{{ content.title }}</h4>
             <p class="mt-3 text-sm leading-6 opacity-90">{{ content.subtitle }}</p>
             <div class="mt-8 rounded-[20px]" :class="template.light ? 'bg-white/70 p-3 text-slate-900' : 'bg-white/10 p-3 backdrop-blur-sm'">
@@ -34,12 +41,14 @@ defineProps({
                     </span>
                     <div>
                         <p class="font-semibold text-base-content">{{ template.name }}</p>
-                        <p class="mt-1 text-xs uppercase tracking-[0.2em] text-base-content/55">Tipo y categoría fuera del diseño</p>
+                        <p class="mt-1 text-xs uppercase tracking-[0.2em] text-base-content/55">
+                            {{ template.objective_ids?.length ? 'Plantilla publicada' : 'Tipo y categoría fuera del diseño' }}
+                        </p>
                     </div>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <span class="rounded-full px-3 py-1 text-[11px] font-semibold" :class="template.accent">
-                        {{ template.label }}
+                    <span class="rounded-full px-3 py-1 text-[11px] font-semibold" :class="template.accent || 'bg-primary/10 text-primary'">
+                        {{ template.label || template.category_ids?.[0] || 'Plantilla' }}
                     </span>
                     <span v-if="selected" class="badge badge-accent badge-outline px-3 py-3 text-[11px] font-bold uppercase tracking-[0.18em]">
                         Activa

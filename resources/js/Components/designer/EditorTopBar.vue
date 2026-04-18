@@ -49,6 +49,7 @@ const emit = defineEmits([
   'login',
   'logout',
   'renameDesign',
+  'publishDesignTemplate',
   'openDesignAssistantStep',
   'undo',
   'redo',
@@ -152,6 +153,12 @@ const handleZoomInput = (event) => {
             <button type="button" @click="emit('openDesignAssistantStep', 'templates')">
               <Icon icon="ph:layout-bold" class="text-lg" />
               Cambiar plantilla
+            </button>
+          </li>
+          <li v-if="authUser?.name === 'admin'">
+            <button type="button" @click="emit('publishDesignTemplate')">
+              <Icon icon="ph:seal-check-bold" class="text-lg" />
+              Publicar como plantilla
             </button>
           </li>
         </ul>

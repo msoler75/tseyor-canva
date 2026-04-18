@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import ChoiceCard from './ChoiceCard.vue';
 import SelectionIndicator from './SelectionIndicator.vue';
 import TemplateCard from './TemplateCard.vue';
@@ -24,6 +25,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'finish']);
 const state = useDesignerState();
+const page = usePage();
 const assistantSteps = [
   { id: 'objective', label: 'Objetivo' },
   { id: 'format', label: 'Formato' },
@@ -63,9 +65,26 @@ const fieldPlaceholders = {
   contact: 'Ej. 600 123 123 · hola@tudominio.com',
   extra: 'Ej. Aforo limitado · Reserva previa · Traer material',
 };
-const filteredTemplates = computed(() => (!state.templateCategory || state.templateCategory === 'all')
-  ? templateCatalog
-  : templateCatalog.filter((item) => item.category === state.templateCategory));
+const persistedTemplates = computed(() => page.props.designer?.templates ?? []);
+const availableTemplates = computed(() => persistedTemplates.value.length ? persistedTemplates.value : templateCatalog);
+const availableTemplateFilters = computed(() => {
+  const categories = new Set(templateFilters);
+  availableTemplates.value.forEach((template) => {
+    (template.category_ids ?? (template.category ? [template.category] : [])).forEach((category) => categories.add(category));
+  });
+
+  return Array.from(categories);
+});
+const filteredTemplates = computed(() => availableTemplates.value.filter((item) => {
+  const categoryIds = item.category_ids ?? (item.category ? [item.category] : []);
+  const objectiveIds = item.objective_ids ?? [];
+  const matchesCategory = !state.templateCategory
+    || state.templateCategory === 'all'
+    || categoryIds.includes(state.templateCategory);
+  const matchesObjective = !objectiveIds.length || !state.objective || objectiveIds.includes(state.objective);
+
+  return matchesCategory && matchesObjective;
+}));
 const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
 const venueLine = computed(() => {
   if (state.objective === 'event_virtual') {
@@ -105,7 +124,8 @@ function selectSizeOption(option) {
   }
 }
 function finishAndOpenEditor() {
-  emit('finish');
+  const selectedTemplate = availableTemplates.value.find((template) => template.id === state.selectedTemplateId) ?? null;
+  emit('finish', { selectedTemplate });
   if (props.onFinish) props.onFinish();
 }
 watch(() => props.step, (val) => {
@@ -261,14 +281,14 @@ defineExpose({ assistantStep });
       <section v-else class="space-y-5">
         <div class="flex flex-wrap gap-2">
           <button
-            v-for="filter in templateFilters"
+            v-for="filter in availableTemplateFilters"
             :key="filter"
             type="button"
             class="btn btn-sm rounded-full"
             :class="state.templateCategory === filter ? 'btn-primary' : 'btn-outline'"
             @click="state.templateCategory = filter"
           >
-            {{ filterLabels[filter] }}
+            {{ filterLabels[filter] || filter }}
           </button>
         </div>
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

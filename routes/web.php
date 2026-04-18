@@ -4,6 +4,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DeployController;
 use App\Http\Controllers\DesignAssetController;
 use App\Http\Controllers\DesignController;
+use App\Http\Controllers\DesignTemplateController;
 use App\Http\Controllers\DesignerController;
 use App\Http\Controllers\FontController;
 use Illuminate\Support\Facades\Route;
@@ -35,6 +36,11 @@ Route::prefix('designer')->group(function (): void {
     Route::patch('/designs/{design:uuid}/rename', [DesignController::class, 'rename'])->name('designer.designs.rename');
     Route::post('/designs/{design:uuid}/duplicate', [DesignController::class, 'duplicate'])->name('designer.designs.duplicate');
     Route::delete('/designs/{design:uuid}', [DesignController::class, 'destroy'])->name('designer.designs.destroy');
+
+    Route::get('/design-templates', [DesignTemplateController::class, 'index'])->name('designer.templates.index');
+    Route::post('/designs/{design:uuid}/template', [DesignTemplateController::class, 'store'])->name('designer.templates.store');
+    Route::patch('/design-templates/{template:uuid}', [DesignTemplateController::class, 'update'])->name('designer.templates.update');
+    Route::post('/design-templates/{template:uuid}/generate', [DesignTemplateController::class, 'generate'])->name('designer.templates.generate');
 
     Route::get('/assets', [DesignAssetController::class, 'index'])->name('designer.assets.index');
     Route::post('/assets', [DesignAssetController::class, 'store'])->name('designer.assets.store');
