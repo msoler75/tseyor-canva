@@ -266,9 +266,10 @@ const fontOptions = (page.props.fontFamilies ?? []).map(f => ({
 }));
 console.log('fontOptions:', fontOptions);
 const textPropertyTabs = [
-    { id: 'typography', label: 'Tipografía' , class: 'order-first text-xl'},
+    { id: 'typography', label: 'Tipografía' , class: 'order-first text-xl border-1 border-gray-500'},
     // { id: 'color', label: 'A', labelClass:'text-shadow-xs text-xl border-b-3',class: '' },
-    { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
+    { id: 'spacing', icon: 'mdi:format-line-spacing', title: 'Interlineado y espaciado', class: 'order-last' },
+    { id: 'opacity', icon: 'carbon:opacity', class: 'order-last', iconClass: 'text-3xl' },
     { id: 'effects', label: 'Efectos', class: 'order-last' },
     { id: 'arrange', label: 'Posición' , class: 'order-last'},
 ];

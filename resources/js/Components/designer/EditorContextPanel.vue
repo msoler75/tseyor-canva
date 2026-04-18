@@ -373,15 +373,37 @@ const closePanel = () => emit('closePanel');
                       <span class="block text-xl leading-tight" :style="{ fontFamily: font.family }">{{ font.label }}</span>
                     </button>
                   </div>
-                  <div class="mt-4 space-y-3">
-                    <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interletrado</label>
+                </div>
+              </div>
+
+              <div v-else-if="activePropertyPanel === 'spacing' && hasTextSelection" class="card border border-base-300 bg-base-100/80">
+                <div class="card-body p-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-semibold text-base-content">Interlineado y espaciado</p>
+                      <p class="text-xs text-base-content/60">Ajusta la distancia entre letras y la altura de línea.</p>
+                    </div>
+                    <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                      {{ activeParagraphLabel }}
+                    </span>
+                  </div>
+
+                  <div class="mt-5 space-y-3">
+                    <div class="flex items-center justify-between gap-3">
+                      <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interletrado</label>
+                      <span class="text-xs font-medium text-base-content/60">{{ selectedTextStyle.letterSpacing }} px</span>
+                    </div>
                     <div class="flex items-center gap-3">
                       <input v-model.number="selectedTextStyle.letterSpacing" type="range" min="-5" max="40" step="1" class="range range-primary flex-1" />
                       <input v-model.number="selectedTextStyle.letterSpacing" type="number" min="-5" max="40" step="1" class="input input-bordered input-sm w-20" />
                     </div>
                   </div>
-                  <div class="mt-4 space-y-3">
-                    <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interlineado</label>
+
+                  <div class="mt-5 space-y-3">
+                    <div class="flex items-center justify-between gap-3">
+                      <label class="block text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Interlineado</label>
+                      <span class="text-xs font-medium text-base-content/60">{{ selectedTextStyle.lineHeight }}</span>
+                    </div>
                     <div class="flex items-center gap-3">
                       <input v-model.number="selectedTextStyle.lineHeight" type="range" min="0.6" max="3" step="0.1" class="range range-primary flex-1" />
                       <input v-model.number="selectedTextStyle.lineHeight" type="number" min="0.6" max="3" step="0.1" class="input input-bordered input-sm w-20" />
