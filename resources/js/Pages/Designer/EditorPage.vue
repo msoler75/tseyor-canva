@@ -7,7 +7,7 @@ import EditorTopBar from '../../Components/designer/EditorTopBar.vue';
 import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.vue';
 import EditorCanvasStage from '../../Components/designer/EditorCanvasStage.vue';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { objectiveRecommendations } from '../../data/designer';
+import { filterLabels, objectiveOptions, objectiveRecommendations } from '../../data/designer';
 import { useDesignerState } from '../../composables/useDesignerState';
 import { flushDesignerStatePersistence } from '../../composables/useDesignerState';
 import { resetDesignerState } from '../../composables/useDesignerState';
@@ -24,6 +24,8 @@ const EditorContextPanel = defineAsyncComponent(() => import('../../Components/d
 const EditorFloatingToolbar = defineAsyncComponent(() => import('../../Components/designer/EditorFloatingToolbar.vue'));
 const ExportDialog = defineAsyncComponent(() => import('../../Components/designer/ExportDialog.vue'));
 const SelectionOverlay = defineAsyncComponent(() => import('../../Components/designer/SelectionOverlay.vue'));
+const TemplateFormModal = defineAsyncComponent(() => import('../../Components/designer/TemplateFormModal.vue'));
+const TemplateAdjustmentsPanel = defineAsyncComponent(() => import('../../Components/designer/TemplateAdjustmentsPanel.vue'));
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const page = usePage();
@@ -77,6 +79,21 @@ const state = hydrateDesignerStateFromPage();
 
 // Estado para mostrar el modal de exportación
 const exportDialogOpen = ref(false);
+const templateFormOpen = ref(false);
+const templateFormSaving = ref(false);
+const adminTemplates = ref([]);
+const shouldOpenTemplateForm = new URLSearchParams(window.location.search).has('templateForm');
+const templateForm = reactive({
+  uuid: null,
+  title: '',
+  description: '',
+  categoryIds: [],
+  objectiveIds: [],
+  fieldMappings: [],
+  status: 'published',
+  featured: false,
+  sortOrder: 0,
+});
 
 // Estado y lógica del asistente modal.
 const assistantOpen = ref(false);
@@ -115,8 +132,67 @@ const designsStoreEndpoint = computed(() => page.props.designer?.endpoints?.desi
 const assetsIndexEndpoint = computed(() => page.props.designer?.endpoints?.assetsIndex ?? null);
 const authUser = computed(() => page.props.auth?.user ?? null);
 const persistedTemplates = computed(() => page.props.designer?.templates ?? []);
+const currentDesignUuid = computed(() => state.currentDesignUuid ?? page.props.designer?.currentDesign?.uuid ?? null);
+const currentDesignBaseTemplate = computed(() => (
+  page.props.designer?.currentTemplate
+  ?? page.props.designer?.currentDesign?.baseTemplate
+  ?? null
+));
+const backendTemplateBaseMode = computed(() => Boolean(page.props.designer?.isTemplateBaseEditor));
 const currentDesignDuplicateEndpoint = computed(() => state.currentDesignUuid ? `/designer/designs/${state.currentDesignUuid}/duplicate` : null);
 const currentDesignRenameEndpoint = computed(() => state.currentDesignUuid ? `/designer/designs/${state.currentDesignUuid}/rename` : null);
+const editableTemplates = computed(() => [
+  ...(currentDesignBaseTemplate.value ? [currentDesignBaseTemplate.value] : []),
+  ...adminTemplates.value,
+  ...persistedTemplates.value.filter((template) => (
+    template.uuid !== currentDesignBaseTemplate.value?.uuid
+    && !adminTemplates.value.some((item) => item.uuid === template.uuid)
+  )),
+]);
+const currentDesignTemplate = computed(() => editableTemplates.value.find((template) => (
+  template.base_design_uuid === currentDesignUuid.value
+  || template.uuid === state.selectedTemplateId
+  || template.id === state.selectedTemplateId
+)) ?? null);
+const templateCategoryOptions = computed(() => {
+  const seen = new Set(['general']);
+  const options = [{ id: 'general', label: 'General' }];
+  Object.entries(filterLabels)
+    .filter(([id]) => id !== 'all')
+    .forEach(([id, label]) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      options.push({ id, label });
+    });
+
+  editableTemplates.value.forEach((template) => {
+    (template.category_ids ?? []).forEach((id) => {
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      options.push({ id, label: id });
+    });
+  });
+
+  return options;
+});
+const templateObjectiveOptions = computed(() => {
+  const seen = new Set(['generic']);
+  const options = [{ id: 'generic', title: 'Genérico', description: 'Compatible con cualquier objetivo' }];
+  objectiveOptions.forEach((objective) => {
+    if (seen.has(objective.id)) return;
+    seen.add(objective.id);
+    options.push(objective);
+  });
+  editableTemplates.value.forEach((template) => {
+    (template.objective_ids ?? []).forEach((id) => {
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      options.push({ id, title: id, description: 'Objetivo personalizado' });
+    });
+  });
+
+  return options;
+});
 const imageUploadProcessingConfig = computed(() => page.props.designer?.imageUploads ?? {
   maxWidth: 2400,
   maxHeight: 2400,
@@ -143,6 +219,7 @@ const paragraphSelection = reactive({ start: 0, end: 0, active: false });
 const activePropertyPanel = ref(null);
 const fileDragActive = ref(false);
 const backgroundDropPreview = ref(false);
+const templatePanelHover = ref(false);
 let thumbnailTimer = null;
 const toolbarPosition = reactive({ x: 0, y: 3 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
@@ -506,18 +583,61 @@ const {
 });
 
 const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
+const isTemplateBaseEditor = computed(() => Boolean(
+  backendTemplateBaseMode.value
+  || currentDesignBaseTemplate.value?.base_design_uuid === currentDesignUuid.value
+  || currentDesignTemplate.value?.base_design_uuid === currentDesignUuid.value
+));
+const templateFieldDefinitions = computed(() => (
+  (objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic).fields
+    .map((field) => ({
+      ...field,
+      id: field.id ?? field.key,
+      description: field.description ?? field.helper ?? null,
+    }))
+    .filter((field) => Boolean(field.id))
+));
+const templateFieldLabels = {
+  title: 'Título',
+  subtitle: 'Subtítulo',
+  date: 'Fecha',
+  time: 'Hora',
+  location: 'Lugar',
+  platform: 'URL / acceso',
+  teacher: 'Profesor',
+  price: 'Precio',
+  contact: 'Contacto',
+  extra: 'Texto adicional',
+};
+const templateFieldDefaultTexts = {
+  title: 'Título de prueba',
+  subtitle: 'Subtítulo de prueba',
+  date: 'Fecha de prueba',
+  time: 'Hora de prueba',
+  location: 'Lugar de prueba',
+  platform: 'URL de prueba',
+  teacher: 'Profesor de prueba',
+  price: 'Precio de prueba',
+  contact: 'Contacto de prueba',
+  extra: 'Texto adicional de prueba',
+  meta: 'Fecha de prueba · Hora de prueba',
+};
+const templateFieldUsage = computed(() => Object.fromEntries(
+  templateFieldDefinitions.value.map((field) => [field.id, Boolean(state.elementLayout?.[field.id])]),
+));
 const editorElements = computed(() => {
   const baseTextElements = [
-    { id: 'title', type: 'text', label: 'Titulo', text: state.content.title },
-    { id: 'subtitle', type: 'text', label: 'Subtitulo', text: state.content.subtitle },
-    { id: 'meta', type: 'text', label: 'Fecha / hora', text: metaLine.value },
-    { id: 'contact', type: 'text', label: 'Contacto', text: state.content.contact },
-    { id: 'extra', type: 'text', label: 'Texto adicional', text: state.content.extra },
+    { id: 'title', type: 'text', label: 'Titulo', fieldKey: 'title', text: state.content.title },
+    { id: 'subtitle', type: 'text', label: 'Subtitulo', fieldKey: 'subtitle', text: state.content.subtitle },
+    { id: 'meta', type: 'text', label: 'Fecha / hora', fieldKey: 'meta', text: metaLine.value },
+    { id: 'contact', type: 'text', label: 'Contacto', fieldKey: 'contact', text: state.content.contact },
+    { id: 'extra', type: 'text', label: 'Texto adicional', fieldKey: 'extra', text: state.content.extra },
   ];
   const customElements = Object.entries(state.customElements ?? {}).map(([id, element]) => ({
     id,
     type: element.type,
     label: element.label ?? 'Elemento',
+    fieldKey: element.fieldKey ?? null,
     text: element.type === 'text' ? (element.text ?? '') : '',
     src: element.type === 'image' ? element.src : null,
     shapeKind: element.type === 'shape' ? element.shapeKind : null,
@@ -921,7 +1041,7 @@ const canvasGridStyle = computed(() => ({
   minHeight: `${editorCanvasDimensions.value.height + 96}px`,
 }));
 const editorGridStyle = computed(() => ({
-  gridTemplateColumns: '70px 1fr',
+  gridTemplateColumns: isTemplateBaseEditor.value ? '70px minmax(0,1fr) 320px' : '70px minmax(0,1fr)',
 }));
 const canvasFrameStyle = computed(() => ({
   width: `${editorCanvasDimensions.value.width + 32}px`,
@@ -1127,6 +1247,80 @@ const addTextElement = (presetId) => {
     [id]: layout,
   };
   state.selectedElementId = id;
+};
+
+const addTemplateFieldElement = (fieldKey) => {
+  if (!fieldKey || state.elementLayout?.[fieldKey]) return;
+
+  const preset = fieldKey === 'title'
+    ? textPresets[0]
+    : fieldKey === 'subtitle'
+      ? textPresets[1]
+      : textPresets[2];
+
+  const fallbackFieldLabel = templateFieldDefinitions.value.find((field) => field.id === fieldKey)?.label
+    ?? templateFieldLabels[fieldKey]
+    ?? fieldKey;
+  const currentContentValue = String(state.content?.[fieldKey] ?? '').trim();
+  const fallbackFieldText = templateFieldDefaultTexts[fieldKey] ?? `${fallbackFieldLabel} de prueba`;
+  const defaultText = fieldKey === 'meta'
+    ? (metaLine.value || templateFieldDefaultTexts.meta)
+    : (currentContentValue || fallbackFieldText);
+
+  const id = fieldKey;
+  const width = fieldKey === 'extra' ? 360 : (fieldKey === 'meta' ? 280 : preset.width);
+  const layout = buildDefaultLayout({
+    w: width,
+    fontSize: preset.fontSize,
+    fontWeight: preset.fontWeight,
+    lineHeight: preset.lineHeight,
+    color: '#ffffff',
+    shadow: fieldKey === 'title',
+    x: getInsertX(width),
+    y: 90,
+    paragraphStyles: [{
+      fontSize: preset.fontSize,
+      color: '#ffffff',
+      fontFamily: 'Poppins, sans-serif',
+      fontWeight: preset.fontWeight,
+      italic: false,
+      uppercase: false,
+      textAlign: 'left',
+      letterSpacing: 0,
+      lineHeight: preset.lineHeight,
+    }],
+  });
+
+  placeInsideCanvas(layout);
+  state.customElements = {
+    ...(state.customElements ?? {}),
+    [id]: {
+      id,
+      type: 'text',
+      label: templateFieldLabels[fieldKey] ?? fieldKey,
+      fieldKey,
+      text: defaultText,
+    },
+  };
+  state.elementLayout = {
+    ...(state.elementLayout ?? {}),
+    [id]: layout,
+  };
+  state.selectedElementId = id;
+};
+
+const removeTemplateFieldElement = (fieldKey) => {
+  if (!fieldKey || !state.elementLayout?.[fieldKey]) return;
+  delete state.elementLayout[fieldKey];
+  if (state.customElements?.[fieldKey]) {
+    const next = { ...(state.customElements ?? {}) };
+    delete next[fieldKey];
+    state.customElements = next;
+  }
+  if (state.selectedElementId === fieldKey) {
+    state.selectedElementId = null;
+    activePropertyPanel.value = null;
+  }
 };
 
 const closeImagePanel = () => {
@@ -2631,6 +2825,11 @@ onMounted(() => {
   document.addEventListener('drop', handleCanvasFileDragLeave);
   syncUploadedAssetsLibrary();
   syncPendingUploadsFromPersistedState();
+  loadAdminTemplates();
+  if (shouldOpenTemplateForm && authUser.value?.name === 'admin') {
+    resetTemplateForm(currentDesignTemplate.value);
+    templateFormOpen.value = true;
+  }
   refreshElementObservers();
 });
 
@@ -2874,7 +3073,7 @@ const splitPromptList = (value) => String(value || '')
   .map((item) => item.trim())
   .filter(Boolean);
 
-const parseFieldMappingsPrompt = (value) => {
+const parseFieldMappingsText = (value) => {
   const source = String(value || '').trim();
   if (!source) return [];
 
@@ -2908,42 +3107,164 @@ const parseFieldMappingsPrompt = (value) => {
   }
 };
 
+const stringifyFieldMappings = (mappings = []) => (Array.isArray(mappings) ? mappings : [])
+  .map((mapping) => {
+    if (mapping.elementId) {
+      return `${mapping.sourceField} -> #${mapping.elementId}${mapping.property ? `:${mapping.property}` : ''}`;
+    }
+
+    return `${mapping.sourceField} -> ${mapping.targetField || ''}`;
+  })
+  .join('\n');
+
+const normalizeMappingRows = (mappings = []) => {
+  const rows = Array.isArray(mappings) ? mappings : [];
+  return rows.length
+    ? rows.map((mapping) => ({
+      sourceField: mapping?.sourceField ?? mapping?.fieldName ?? '',
+      mode: mapping?.elementId ? 'element' : 'field',
+      targetField: mapping?.targetField ?? '',
+      elementId: mapping?.elementId ?? '',
+      property: mapping?.property ?? 'text',
+      label: mapping?.label ?? '',
+      fallback: mapping?.fallback ?? '',
+    }))
+    : [{
+      sourceField: '',
+      mode: 'field',
+      targetField: '',
+      elementId: '',
+      property: 'text',
+      label: '',
+      fallback: '',
+    }];
+};
+
+const serializeMappingRows = (rows = []) => rows
+  .map((row) => ({
+    sourceField: String(row.sourceField ?? '').trim(),
+    targetField: row.mode === 'field' ? String(row.targetField ?? '').trim() : '',
+    elementId: row.mode === 'element' ? String(row.elementId ?? '').trim() : '',
+    property: row.mode === 'element' ? (row.property === 'src' ? 'src' : 'text') : undefined,
+    label: String(row.label ?? '').trim(),
+    fallback: String(row.fallback ?? '').trim(),
+  }))
+  .filter((row) => row.sourceField && (row.targetField || row.elementId))
+  .map((row) => Object.fromEntries(Object.entries(row).filter(([, value]) => value !== '' && value !== undefined)));
+
+const toggleArrayValue = (arrayRef, value) => {
+  const index = arrayRef.indexOf(value);
+  if (index >= 0) {
+    arrayRef.splice(index, 1);
+  } else {
+    arrayRef.push(value);
+  }
+};
+
+const removeArrayValue = (arrayRef, value) => {
+  const index = arrayRef.indexOf(value);
+  if (index >= 0) arrayRef.splice(index, 1);
+};
+
+const addMappingRow = () => {
+  templateForm.fieldMappings.push({
+    sourceField: '',
+    mode: 'field',
+    targetField: '',
+    elementId: '',
+    property: 'text',
+    label: '',
+    fallback: '',
+  });
+};
+
+const removeMappingRow = (index) => {
+  templateForm.fieldMappings.splice(index, 1);
+  if (!templateForm.fieldMappings.length) addMappingRow();
+};
+
+const loadAdminTemplates = async () => {
+  if (authUser.value?.name !== 'admin') return;
+
+  try {
+    const response = await axios.get('/designer/design-templates', {
+      params: { includeDrafts: 1 },
+    });
+    adminTemplates.value = response.data?.templates ?? [];
+  } catch (error) {
+    console.error('No se pudieron cargar las plantillas para admin', error);
+  }
+};
+
+const resetTemplateForm = (template = null) => {
+  templateForm.uuid = template?.uuid ?? template?.id ?? null;
+  templateForm.title = template?.title ?? state.designTitle ?? 'Nueva plantilla';
+  templateForm.description = template?.description ?? '';
+  templateForm.categoryIds = [...(template?.category_ids ?? (state.templateCategory && state.templateCategory !== 'all' ? [state.templateCategory] : ['general']))];
+  templateForm.objectiveIds = [...(template?.objective_ids ?? (state.objective ? [state.objective] : ['generic']))];
+  templateForm.fieldMappings = normalizeMappingRows(template?.field_mappings ?? []);
+  templateForm.status = template?.status ?? 'published';
+  templateForm.featured = Boolean(template?.featured ?? false);
+  templateForm.sortOrder = Number(template?.sort_order ?? 0);
+};
+
 const handlePublishDesignTemplate = async () => {
   if (authUser.value?.name !== 'admin') return;
 
-  const title = window.prompt('Título público de la plantilla', state.designTitle || 'Nueva plantilla');
-  if (title === null) return;
+  await loadAdminTemplates();
+  resetTemplateForm(currentDesignTemplate.value);
+  templateFormOpen.value = true;
+};
 
-  const categories = splitPromptList(window.prompt('Categorías separadas por coma', state.templateCategory && state.templateCategory !== 'all' ? state.templateCategory : 'general'));
-  if (!categories.length) return;
+const closeTemplateForm = () => {
+  if (templateFormSaving.value) return;
+  templateFormOpen.value = false;
+};
 
-  const objectives = splitPromptList(window.prompt('Objetivos compatibles separados por coma', state.objective || 'generic'));
-  if (!objectives.length) return;
+const saveTemplateForm = async () => {
+  if (authUser.value?.name !== 'admin' || templateFormSaving.value) return;
 
-  const mappingsInput = window.prompt(
-    'Mapeos opcionales. Una línea por mapeo: datos1 -> contact, datos1 -> #footer-contact:text, image -> #main-image:src. Déjalo vacío si no hace falta.',
-    '',
-  );
-  if (mappingsInput === null) return;
+  const categories = templateForm.categoryIds.map((item) => String(item).trim()).filter(Boolean);
+  const objectives = templateForm.objectiveIds.map((item) => String(item).trim()).filter(Boolean);
+  if (!templateForm.title.trim() || !categories.length || !objectives.length) {
+    window.alert('La plantilla necesita título, al menos una categoría y al menos un objetivo.');
+    return;
+  }
 
+  templateFormSaving.value = true;
   try {
-    const uuid = await ensurePersistedDesign();
-    const response = await axios.post(`/designer/designs/${uuid}/template`, {
-      title: title.trim() || state.designTitle || 'Nueva plantilla',
-      description: window.prompt('Descripción breve de la plantilla', '') || '',
+    const payload = {
+      title: templateForm.title.trim(),
+      description: templateForm.description.trim(),
       category_ids: categories,
       objective_ids: objectives,
-      field_mappings: parseFieldMappingsPrompt(mappingsInput),
-      status: 'published',
-      featured: false,
-      sort_order: 0,
-    });
+      field_mappings: serializeMappingRows(templateForm.fieldMappings),
+      status: templateForm.status,
+      featured: Boolean(templateForm.featured),
+      sort_order: Number(templateForm.sortOrder) || 0,
+    };
+    const response = templateForm.uuid
+      ? await axios.patch(`/designer/design-templates/${templateForm.uuid}`, payload)
+      : await axios.post(`/designer/designs/${await ensurePersistedDesign()}/template`, payload);
+    const savedTemplate = response.data?.template;
 
-    state.selectedTemplateId = response.data?.template?.uuid ?? response.data?.template?.id ?? state.selectedTemplateId;
-    window.alert('Plantilla publicada correctamente.');
+    if (savedTemplate) {
+      state.selectedTemplateId = savedTemplate.uuid ?? savedTemplate.id;
+      const existingIndex = adminTemplates.value.findIndex((template) => template.uuid === savedTemplate.uuid);
+      if (existingIndex >= 0) {
+        adminTemplates.value.splice(existingIndex, 1, savedTemplate);
+      } else {
+        adminTemplates.value.unshift(savedTemplate);
+      }
+      resetTemplateForm(savedTemplate);
+    }
+
+    templateFormOpen.value = false;
   } catch (error) {
-    console.error('Failed to publish design template', error);
-    window.alert(error.response?.data?.message || error.message || 'No se pudo publicar la plantilla.');
+    console.error('Failed to save design template', error);
+    window.alert(error.response?.data?.message || error.message || 'No se pudo guardar la plantilla.');
+  } finally {
+    templateFormSaving.value = false;
   }
 };
 
@@ -3079,6 +3400,195 @@ watch(
       />
     <ExportDialog v-if="exportDialogOpen" :navigation="navigation" @close="exportDialogOpen = false" />
 
+    <TemplateFormModal
+      :open="templateFormOpen"
+      :saving="templateFormSaving"
+      :eyebrow="templateForm.uuid ? 'Editar plantilla' : 'Publicar plantilla'"
+      title="Datos de la plantilla"
+      description="Solo el usuario admin puede publicar y modificar plantillas."
+      :submit-label="templateForm.uuid ? 'Guardar cambios' : 'Publicar plantilla'"
+      @close="closeTemplateForm"
+      @submit="saveTemplateForm"
+    >
+      <div class="grid gap-4 sm:grid-cols-2">
+        <label class="sm:col-span-2">
+          <span class="text-sm font-medium">T??tulo</span>
+          <input v-model="templateForm.title" required maxlength="255" class="input input-bordered mt-2 w-full" />
+        </label>
+
+        <label class="sm:col-span-2">
+          <span class="text-sm font-medium">Descripci??n</span>
+          <textarea v-model="templateForm.description" maxlength="2000" class="textarea textarea-bordered mt-2 min-h-24 w-full"></textarea>
+        </label>
+
+        <div class="sm:col-span-2 grid gap-4 lg:grid-cols-2">
+          <section class="rounded-[24px] border border-base-300 bg-base-100 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold">Categor??as</p>
+                <p class="text-xs text-base-content/60">Puedes seleccionar varias.</p>
+              </div>
+              <span class="badge badge-primary badge-outline">{{ templateForm.categoryIds.length }}</span>
+            </div>
+
+            <div v-if="templateForm.categoryIds.length" class="mt-3 flex flex-wrap gap-2">
+              <button
+                v-for="category in templateForm.categoryIds"
+                :key="`selected-category-${category}`"
+                type="button"
+                class="badge badge-primary gap-2 py-3"
+                @click="removeArrayValue(templateForm.categoryIds, category)"
+              >
+                {{ filterLabels[category] || category }} ??
+              </button>
+            </div>
+
+            <div class="dropdown dropdown-bottom mt-3 w-full">
+              <button type="button" tabindex="0" class="btn btn-outline w-full justify-between rounded-2xl">
+                Elegir categor??as
+                <span>???</span>
+              </button>
+              <div tabindex="0" class="dropdown-content z-[100] mt-2 max-h-80 w-full overflow-y-auto rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
+                <button
+                  v-for="option in templateCategoryOptions"
+                  :key="option.id"
+                  type="button"
+                  class="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-base-200"
+                  @click="toggleArrayValue(templateForm.categoryIds, option.id)"
+                >
+                  <input type="checkbox" class="checkbox checkbox-primary checkbox-sm" :checked="templateForm.categoryIds.includes(option.id)" readonly />
+                  <span class="font-medium">{{ option.label }}</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-[24px] border border-base-300 bg-base-100 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold">Objetivos compatibles</p>
+                <p class="text-xs text-base-content/60">???Gen??rico??? aparece en cualquier objetivo.</p>
+              </div>
+              <span class="badge badge-primary badge-outline">{{ templateForm.objectiveIds.length }}</span>
+            </div>
+
+            <div v-if="templateForm.objectiveIds.length" class="mt-3 flex flex-wrap gap-2">
+              <button
+                v-for="objective in templateForm.objectiveIds"
+                :key="`selected-objective-${objective}`"
+                type="button"
+                class="badge badge-secondary gap-2 py-3"
+                @click="removeArrayValue(templateForm.objectiveIds, objective)"
+              >
+                {{ templateObjectiveOptions.find((item) => item.id === objective)?.title || objective }} ??
+              </button>
+            </div>
+
+            <div class="dropdown dropdown-bottom mt-3 w-full">
+              <button type="button" tabindex="0" class="btn btn-outline w-full justify-between rounded-2xl">
+                Elegir objetivos
+                <span>???</span>
+              </button>
+              <div tabindex="0" class="dropdown-content z-[100] mt-2 max-h-80 w-full overflow-y-auto rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
+                <button
+                  v-for="option in templateObjectiveOptions"
+                  :key="option.id"
+                  type="button"
+                  class="flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left hover:bg-base-200"
+                  @click="toggleArrayValue(templateForm.objectiveIds, option.id)"
+                >
+                  <input type="checkbox" class="checkbox checkbox-primary checkbox-sm mt-1" :checked="templateForm.objectiveIds.includes(option.id)" readonly />
+                  <span>
+                    <span class="block font-medium">{{ option.title }}</span>
+                    <span class="block text-xs text-base-content/60">{{ option.description }}</span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <label>
+          <span class="text-sm font-medium">Estado</span>
+          <select v-model="templateForm.status" class="select select-bordered mt-2 w-full">
+            <option value="draft">Borrador</option>
+            <option value="published">Publicada</option>
+            <option value="archived">Archivada</option>
+          </select>
+        </label>
+
+        <label>
+          <span class="text-sm font-medium">Orden</span>
+          <input v-model.number="templateForm.sortOrder" min="0" type="number" class="input input-bordered mt-2 w-full" />
+        </label>
+
+        <label class="flex items-center gap-3 rounded-2xl border border-base-300 bg-base-100 p-4">
+          <input v-model="templateForm.featured" type="checkbox" class="checkbox checkbox-primary" />
+          <span>
+            <span class="block text-sm font-medium">Destacada</span>
+            <span class="block text-xs text-base-content/60">Aparecer?? antes en el asistente.</span>
+          </span>
+        </label>
+
+        <section class="sm:col-span-2 rounded-[24px] border border-base-300 bg-base-100 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold">Mapeos de campos</p>
+              <p class="text-xs text-base-content/60">
+                ??salos para reinterpretar datos: por ejemplo, <code>datos1</code> como contacto.
+              </p>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm rounded-full" @click="addMappingRow">
+              + A??adir mapeo
+            </button>
+          </div>
+
+          <div class="mt-4 space-y-3">
+            <article
+              v-for="(mapping, index) in templateForm.fieldMappings"
+              :key="`mapping-${index}`"
+              class="grid gap-3 rounded-2xl border border-base-300 bg-base-200/40 p-3 lg:grid-cols-[1fr,140px,1fr,110px,auto]"
+            >
+              <label>
+                <span class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">Campo origen</span>
+                <input v-model="mapping.sourceField" class="input input-bordered input-sm mt-1 w-full" placeholder="datos1" />
+              </label>
+
+              <label>
+                <span class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">Destino</span>
+                <select v-model="mapping.mode" class="select select-bordered select-sm mt-1 w-full">
+                  <option value="field">Campo</option>
+                  <option value="element">Elemento</option>
+                </select>
+              </label>
+
+              <label v-if="mapping.mode === 'field'">
+                <span class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">Campo destino</span>
+                <input v-model="mapping.targetField" class="input input-bordered input-sm mt-1 w-full" placeholder="contact" />
+              </label>
+              <label v-else>
+                <span class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">ID elemento</span>
+                <input v-model="mapping.elementId" class="input input-bordered input-sm mt-1 w-full" placeholder="footer-contact" />
+              </label>
+
+              <label>
+                <span class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">Propiedad</span>
+                <select v-model="mapping.property" class="select select-bordered select-sm mt-1 w-full" :disabled="mapping.mode === 'field'">
+                  <option value="text">Texto</option>
+                  <option value="src">Imagen</option>
+                </select>
+              </label>
+
+              <button type="button" class="btn btn-ghost btn-sm self-end rounded-full text-error" @click="removeMappingRow(index)">
+                Quitar
+              </button>
+            </article>
+          </div>
+        </section>
+      </div>
+    </TemplateFormModal>
+
+
     <section class="relative min-h-0 flex-1 overflow-hidden">
       <div class="h-full overflow-hidden border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <EditorFloatingToolbar
@@ -3117,6 +3627,11 @@ watch(
             :has-text-selection="hasTextSelection"
             :active-property-panel="activePropertyPanel"
             :active-property-title="activePropertyTitle"
+            :template-mode="isTemplateBaseEditor"
+            :template-fields="templateFieldDefinitions"
+            :template-field-usage="Object.fromEntries(templateFieldDefinitions.map((field) => [field.id, Boolean(state.elementLayout?.[field.id])]))"
+            :on-add-template-field="addTemplateFieldElement"
+            :on-remove-template-field="removeTemplateFieldElement"
             :text-panel-open="textPanelOpen"
             :image-panel-open="imagePanelOpen"
             :shape-panel-open="shapePanelOpen"
@@ -3174,6 +3689,14 @@ watch(
             @update-shape-category-filter="shapeCategoryFilter = $event"
           />
 
+          <TemplateAdjustmentsPanel
+            v-if="isTemplateBaseEditor"
+            :template-fields="templateFieldDefinitions"
+            :template-field-usage="templateFieldUsage"
+            @add-field="addTemplateFieldElement"
+            @hover-change="templatePanelHover = $event"
+          />
+
           <EditorCanvasStage
             :canvas-grid-style="canvasGridStyle"
             :canvas-frame-style="canvasFrameStyle"
@@ -3182,6 +3705,9 @@ watch(
             :canvas-background-style="canvasBackgroundStyle"
             :canvas-background-image-src="state.elementLayout.background?.backgroundImageSrc"
             :canvas-background-image-style="canvasBackgroundImageStyle"
+            :template-mode="isTemplateBaseEditor"
+            template-watermark="PLANTILLA"
+            :show-field-labels="templatePanelHover"
             :canvas-element-style="canvasElementStyle"
             :editor-elements="editorElements"
             :drag="drag"

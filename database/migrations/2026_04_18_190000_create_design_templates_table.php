@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('design_templates', function (Blueprint $table) {
             $table->id();
             $table->uuid('uuid')->unique();
-            $table->foreignId('base_design_id')->constrained('designs')->cascadeOnDelete();
+            $table->foreignId('base_design_id')->unique()->constrained('designs')->cascadeOnDelete();
             $table->string('title', 255);
             $table->text('description')->nullable();
             $table->json('category_ids');
@@ -26,22 +26,10 @@ return new class extends Migration
 
             $table->index(['status', 'sort_order']);
         });
-
-        Schema::table('designs', function (Blueprint $table) {
-            $table->foreignId('source_template_id')
-                ->nullable()
-                ->after('selected_template_id')
-                ->constrained('design_templates')
-                ->nullOnDelete();
-        });
     }
 
     public function down(): void
     {
-        Schema::table('designs', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('source_template_id');
-        });
-
         Schema::dropIfExists('design_templates');
     }
 };

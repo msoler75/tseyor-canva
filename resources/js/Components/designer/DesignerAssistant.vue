@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import axios from 'axios';
+import { ref, computed, onMounted, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import ChoiceCard from './ChoiceCard.vue';
 import SelectionIndicator from './SelectionIndicator.vue';
@@ -26,6 +27,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'finish']);
 const state = useDesignerState();
 const page = usePage();
+const remoteTemplates = ref([]);
 const assistantSteps = [
   { id: 'objective', label: 'Objetivo' },
   { id: 'format', label: 'Formato' },
@@ -66,7 +68,11 @@ const fieldPlaceholders = {
   extra: 'Ej. Aforo limitado · Reserva previa · Traer material',
 };
 const persistedTemplates = computed(() => page.props.designer?.templates ?? []);
-const availableTemplates = computed(() => persistedTemplates.value.length ? persistedTemplates.value : templateCatalog);
+const availableTemplates = computed(() => {
+  if (remoteTemplates.value.length) return remoteTemplates.value;
+  if (persistedTemplates.value.length) return persistedTemplates.value;
+  return templateCatalog;
+});
 const availableTemplateFilters = computed(() => {
   const categories = new Set(templateFilters);
   availableTemplates.value.forEach((template) => {
@@ -81,7 +87,10 @@ const filteredTemplates = computed(() => availableTemplates.value.filter((item) 
   const matchesCategory = !state.templateCategory
     || state.templateCategory === 'all'
     || categoryIds.includes(state.templateCategory);
-  const matchesObjective = !objectiveIds.length || !state.objective || objectiveIds.includes(state.objective);
+  const matchesObjective = !objectiveIds.length
+    || objectiveIds.includes('generic')
+    || !state.objective
+    || objectiveIds.includes(state.objective);
 
   return matchesCategory && matchesObjective;
 }));
@@ -130,6 +139,15 @@ function finishAndOpenEditor() {
 }
 watch(() => props.step, (val) => {
   if (val && assistantSteps.some(s => s.id === val)) assistantStep.value = val;
+});
+
+onMounted(async () => {
+  try {
+    const response = await axios.get('/designer/design-templates');
+    remoteTemplates.value = response.data?.templates ?? [];
+  } catch (error) {
+    console.error('No se pudieron cargar las plantillas publicadas', error);
+  }
 });
 
 // Permite exponer el step actual para el padre
@@ -311,6 +329,15 @@ defineExpose({ assistantStep });
             <h4 class="mt-5 text-lg font-semibold text-base-content">Plantilla vacía</h4>
             <p class="mt-2 max-w-xs text-sm leading-6 text-base-content/70">
               Empieza desde cero, manteniendo objetivo, formato y datos.
+            </p>
+          </article>
+          <article
+            v-if="!filteredTemplates.length"
+            class="md:col-span-2 xl:col-span-3 rounded-[28px] border border-dashed border-base-300 bg-base-100/80 p-6 text-center"
+          >
+            <h4 class="text-lg font-semibold text-base-content">No hay plantillas para este filtro</h4>
+            <p class="mt-2 text-sm text-base-content/70">
+              Prueba con “Todas” o publica una plantilla con objetivo <strong>generic</strong> para que aparezca en cualquier objetivo.
             </p>
           </article>
         </div>

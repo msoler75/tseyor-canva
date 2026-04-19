@@ -102,6 +102,7 @@ class DesignerController extends Controller
         // Diseños públicos de la comunidad
         $communityDesigns = Design::query()
             ->where('public', true)
+            ->whereDoesntHave('baseTemplate')
             ->latest('updated_at')
             ->limit(12)
             ->get([
@@ -124,6 +125,10 @@ class DesignerController extends Controller
                 'created_at' => $design->created_at,
             ]);
 
+        $adminTemplates = $user?->name === 'admin'
+            ? $this->publishedTemplates()
+            : [];
+
         return Inertia::render('Home', [
             'currentStep' => null,
             'steps' => [],
@@ -133,6 +138,7 @@ class DesignerController extends Controller
             ],
             'designs' => $user
                 ? $user->designs()
+                    ->whereDoesntHave('baseTemplate')
                     ->latest('updated_at')
                     ->get([
                         'uuid',
@@ -155,6 +161,7 @@ class DesignerController extends Controller
                     ])
                 : [],
             'communityDesigns' => $communityDesigns,
+            'adminTemplates' => $adminTemplates,
         ]);
     }
 
@@ -163,6 +170,8 @@ class DesignerController extends Controller
         $request = request();
 
         $activeDesign = $this->resolveRequestedDesign($request);
+        $activeDesign?->loadMissing('baseTemplate');
+        $activeBaseTemplate = $activeDesign?->baseTemplate;
         $fontFamilies = $this->fontFamilies();
 
         return Inertia::render('Designer/EditorPage', [
@@ -180,7 +189,14 @@ class DesignerController extends Controller
                         'uuid' => $activeDesign->uuid,
                         'name' => $activeDesign->name,
                         'updated_at' => $activeDesign->updated_at,
+                        'baseTemplate' => $activeBaseTemplate
+                            ? $this->serializeTemplate($activeBaseTemplate)
+                            : null,
                     ]
+                    : null,
+                'isTemplateBaseEditor' => (bool) $activeBaseTemplate,
+                'currentTemplate' => $activeBaseTemplate
+                    ? $this->serializeTemplate($activeBaseTemplate)
                     : null,
                 'endpoints' => [
                     'save' => route('designer.state.save'),
@@ -385,6 +401,26 @@ class DesignerController extends Controller
         }
 
         $user = $request->user();
+        $design->loadMissing('baseTemplate');
+
+        // Un diseño base de plantilla solo puede abrirse/editarse como tal por admin.
+        // Usuarios no admin (incluyendo invitados) reciben 403 y no se genera copia.
+        if (($design->baseTemplate !== null) && (($user?->name ?? null) !== 'admin')) {
+            abort(403);
+        }
+
+        // Los dise?os base de plantilla se editan como la base original.
+        // No deben copiarse para admin, porque al copiarlos se pierde la relaci?n
+        // design_templates.base_design_id -> designs.id que activa el modo plantilla.
+        if ($user?->name === 'admin' && $design->baseTemplate) {
+            $state = $design->state ?? [];
+            $state['currentDesignUuid'] = $design->uuid;
+            $state['designTitle'] = $design->name;
+            $state['designTitleManual'] = (bool) $design->name_manual;
+            $design->state = $state;
+
+            return $design;
+        }
 
         // Si hay usuario autenticado y el diseño es suyo, devolverlo tal cual
         if ($user && $design->user_id === $user->id) {
@@ -411,7 +447,6 @@ class DesignerController extends Controller
                 'surface_height' => $design->surface_height,
                 'template_category' => $design->template_category,
                 'selected_template_id' => $design->selected_template_id,
-                'source_template_id' => $design->source_template_id,
                 'state' => $design->state,
                 'status' => 'draft',
                 'last_opened_at' => now(),
@@ -492,30 +527,40 @@ class DesignerController extends Controller
             ->orderBy('sort_order')
             ->orderBy('title')
             ->get()
-            ->map(fn (DesignTemplate $template): array => [
-                'id' => $template->uuid,
-                'uuid' => $template->uuid,
-                'title' => $template->title,
-                'name' => $template->title,
-                'description' => $template->description,
-                'category_ids' => $template->category_ids ?? [],
-                'objective_ids' => $template->objective_ids ?? [],
-                'category' => ($template->category_ids ?? ['all'])[0] ?? 'all',
-                'adaptation_mode' => $template->adaptation_mode,
-                'field_mappings' => $template->field_mappings ?? [],
-                'status' => $template->status,
-                'featured' => $template->featured,
-                'sort_order' => $template->sort_order,
-                'base_design_uuid' => $template->baseDesign?->uuid,
-                'thumbnail_url' => $template->baseDesign?->thumbnail_path
-                    ? route('designer.uploads.show', [
-                        'path' => $template->baseDesign->thumbnail_path,
-                        'v' => optional($template->baseDesign->updated_at)->timestamp ?? time(),
-                    ])
-                    : null,
-            ])
+            ->map(fn (DesignTemplate $template): array => $this->serializeTemplate($template))
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeTemplate(DesignTemplate $template): array
+    {
+        $template->loadMissing('baseDesign:id,uuid,thumbnail_path,updated_at');
+
+        return [
+            'id' => $template->uuid,
+            'uuid' => $template->uuid,
+            'title' => $template->title,
+            'name' => $template->title,
+            'description' => $template->description,
+            'category_ids' => $template->category_ids ?? [],
+            'objective_ids' => $template->objective_ids ?? [],
+            'category' => ($template->category_ids ?? ['all'])[0] ?? 'all',
+            'adaptation_mode' => $template->adaptation_mode,
+            'field_mappings' => $template->field_mappings ?? [],
+            'status' => $template->status,
+            'featured' => $template->featured,
+            'sort_order' => $template->sort_order,
+            'base_design_uuid' => $template->baseDesign?->uuid,
+            'thumbnail_url' => $template->baseDesign?->thumbnail_path
+                ? route('designer.uploads.show', [
+                    'path' => $template->baseDesign->thumbnail_path,
+                    'v' => optional($template->baseDesign->updated_at)->timestamp ?? time(),
+                ])
+                : null,
+        ];
     }
 
     /**

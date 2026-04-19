@@ -12,6 +12,23 @@ class DesignTemplateGenerator
 {
     private const BASE_TEXT_ELEMENT_IDS = ['title', 'subtitle', 'meta', 'contact', 'extra'];
 
+    private const FIELD_ALIASES = [
+        'title' => ['title', 'titulo', 'título', 'main-title', 'headline', 'encabezado', 'nombre'],
+        'subtitle' => ['subtitle', 'subtitulo', 'subtítulo', 'claim', 'entradilla', 'descripcion', 'descripción'],
+        'date' => ['date', 'fecha'],
+        'time' => ['time', 'hora'],
+        'location' => ['location', 'ubicacion', 'ubicación', 'lugar', 'venue'],
+        'platform' => ['platform', 'plataforma', 'url', 'enlace'],
+        'teacher' => ['teacher', 'profesor', 'profesora', 'ponente', 'facilitador'],
+        'price' => ['price', 'precio', 'importe'],
+        'contact' => ['contact', 'contacto', 'contact-info', 'datos-contacto', 'datos de contacto'],
+        'extra' => ['extra', 'notas', 'texto-adicional', 'texto adicional', 'descripcion-larga', 'descripción larga'],
+        'datos1' => ['datos1', 'dato1', 'datos-1'],
+        'datos2' => ['datos2', 'dato2', 'datos-2'],
+        'image' => ['image', 'imagen', 'main-image', 'imagen-principal', 'hero-image'],
+        'mainImage' => ['mainimage', 'main-image', 'imagen-principal', 'hero-image', 'image', 'imagen'],
+    ];
+
     /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>|null  $targetSurface
@@ -34,7 +51,6 @@ class DesignTemplateGenerator
         $uuid = (string) Str::uuid();
         $state['currentDesignUuid'] = $uuid;
         $state['selectedTemplateId'] = $template->uuid;
-        $state['sourceTemplateId'] = $template->uuid;
         $state['designSurface'] = $targetSurface ?? ($state['designSurface'] ?? null);
         $state['objective'] = $data['objective'] ?? ($state['objective'] ?? null);
         $state['outputType'] = $data['outputType'] ?? ($state['outputType'] ?? null);
@@ -60,7 +76,6 @@ class DesignTemplateGenerator
             'surface_height' => $targetSurface['height'] ?? null,
             'template_category' => $state['templateCategory'] ?? null,
             'selected_template_id' => $template->uuid,
-            'source_template_id' => $template->id,
             'state' => $state,
             'status' => 'draft',
             'last_opened_at' => now(),
@@ -216,7 +231,162 @@ class DesignTemplateGenerator
             }
         }
 
+        $state = $this->applyContentToMatchingElements($state, $state['content'] ?? $incomingContent);
+
         return $state;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @param  array<string, mixed>  $incomingContent
+     * @return array<string, mixed>
+     */
+    private function applyContentToMatchingElements(array $state, array $incomingContent): array
+    {
+        foreach ($incomingContent as $field => $value) {
+            if ($value === null || (! is_scalar($value))) {
+                continue;
+            }
+
+            $value = (string) $value;
+            if ($value === '') {
+                continue;
+            }
+
+            $normalizedField = $this->normalizeFieldName((string) $field);
+            $aliases = $this->aliasesForField((string) $field);
+
+            if (in_array($normalizedField, ['title', 'subtitle', 'contact', 'extra'], true)) {
+                $state['content'][$normalizedField] = $value;
+            }
+
+            if (in_array($normalizedField, ['date', 'time'], true)) {
+                $state['content'][$normalizedField] = $value;
+            }
+
+            foreach (($state['customElements'] ?? []) as $elementId => $element) {
+                if (! is_array($element)) {
+                    continue;
+                }
+
+                $elementField = $this->resolveElementField((string) $elementId, $element);
+                if (! $this->fieldMatches($elementField, $aliases)) {
+                    continue;
+                }
+
+                if (($element['type'] ?? null) === 'text') {
+                    $state['customElements'][$elementId]['text'] = $value;
+                } elseif (($element['type'] ?? null) === 'image' && $this->looksLikeImageField((string) $field)) {
+                    $state['customElements'][$elementId]['src'] = $value;
+                }
+            }
+        }
+
+        $state = $this->deriveCommonCompositeFields($state);
+
+        return $state;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @return array<string, mixed>
+     */
+    private function deriveCommonCompositeFields(array $state): array
+    {
+        $content = $state['content'] ?? [];
+
+        foreach (($state['customElements'] ?? []) as $elementId => $element) {
+            if (! is_array($element) || ($element['type'] ?? null) !== 'text') {
+                continue;
+            }
+
+            $elementField = $this->resolveElementField((string) $elementId, $element);
+            if ($this->fieldMatches($elementField, ['meta', 'fecha-hora', 'fecha-y-hora', 'date-time'])) {
+                $state['customElements'][$elementId]['text'] = implode(' · ', array_filter([
+                    $content['date'] ?? '',
+                    $content['time'] ?? '',
+                ]));
+            }
+
+            if ($this->fieldMatches($elementField, ['venue', 'lugar-contacto', 'ubicacion-contacto'])) {
+                $state['customElements'][$elementId]['text'] = trim((string) (($content['location'] ?? '') ?: ($content['platform'] ?? '') ?: ($content['contact'] ?? '')));
+            }
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param  array<string, mixed>  $element
+     */
+    private function resolveElementField(string $elementId, array $element): string
+    {
+        $candidates = [
+            $element['dataField'] ?? null,
+            $element['fieldName'] ?? null,
+            $element['contentField'] ?? null,
+            $element['label'] ?? null,
+            $element['name'] ?? null,
+            $elementId,
+        ];
+
+        return implode(' ', array_map(
+            fn ($candidate) => $this->normalizeFieldName((string) $candidate),
+            array_filter($candidates, fn ($candidate) => is_scalar($candidate) && (string) $candidate !== ''),
+        ));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function aliasesForField(string $field): array
+    {
+        $normalized = $this->normalizeFieldName($field);
+        $aliases = self::FIELD_ALIASES[$field] ?? self::FIELD_ALIASES[$normalized] ?? [];
+
+        return array_values(array_unique([
+            $normalized,
+            ...array_map(fn ($alias) => $this->normalizeFieldName($alias), $aliases),
+        ]));
+    }
+
+    /**
+     * @param  array<int, string>  $aliases
+     */
+    private function fieldMatches(string $elementField, array $aliases): bool
+    {
+        $normalizedElementField = $this->normalizeFieldName($elementField);
+
+        foreach ($aliases as $alias) {
+            $normalizedAlias = $this->normalizeFieldName($alias);
+            if ($normalizedAlias !== '' && (
+                $normalizedElementField === $normalizedAlias
+                || str_contains($normalizedElementField, $normalizedAlias)
+                || str_contains($normalizedAlias, $normalizedElementField)
+            )) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normalizeFieldName(string $value): string
+    {
+        $value = Str::of($value)
+            ->lower()
+            ->ascii()
+            ->replaceMatches('/[^a-z0-9]+/', ' ')
+            ->squish()
+            ->replace(' ', '-')
+            ->toString();
+
+        return $value;
+    }
+
+    private function looksLikeImageField(string $field): bool
+    {
+        return in_array($this->normalizeFieldName($field), ['image', 'imagen', 'main-image', 'mainimage', 'hero-image', 'imagen-principal'], true);
     }
 
     /**
@@ -368,4 +538,3 @@ class DesignTemplateGenerator
         return min(max($value, $min), $max);
     }
 }
-

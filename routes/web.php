@@ -37,6 +37,7 @@ Route::prefix('designer')->group(function (): void {
     Route::post('/designs/{design:uuid}/duplicate', [DesignController::class, 'duplicate'])->name('designer.designs.duplicate');
     Route::delete('/designs/{design:uuid}', [DesignController::class, 'destroy'])->name('designer.designs.destroy');
 
+    Route::get('/template-inventory', [DesignTemplateController::class, 'inventory'])->name('designer.templates.inventory');
     Route::get('/design-templates', [DesignTemplateController::class, 'index'])->name('designer.templates.index');
     Route::post('/designs/{design:uuid}/template', [DesignTemplateController::class, 'store'])->name('designer.templates.store');
     Route::patch('/design-templates/{template:uuid}', [DesignTemplateController::class, 'update'])->name('designer.templates.update');

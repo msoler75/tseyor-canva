@@ -31,6 +31,9 @@ const props = defineProps({
   shapeRenderModel: Function,
   canvasBackgroundImageSrc: String,
   canvasBackgroundImageStyle: [Object, Array],
+  templateMode: Boolean,
+  templateWatermark: String,
+  showFieldLabels: Boolean,
   canvasRefSetter: Function,
   richEditorRefSetter: Function,
 });
@@ -59,8 +62,20 @@ const assignRichEditorRef = (id, element) => {
 </script>
 
 <template>
-  <div class="canvas-grid h-full overflow-auto bg-slate-100 px-6 pt-12 pb-6 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10" :style="canvasGridStyle">
-    <div class="mx-auto bg-white p-4 shadow-2xl dark:bg-slate-900" :style="[canvasFrameStyle, canvasZoomStyle]" :class="isBackgroundSelected ? 'ring-2 ring-primary' : ''">
+  <div class="canvas-grid relative h-full overflow-auto bg-slate-100 px-6 pt-12 pb-6 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10" :style="canvasGridStyle">
+    <div v-if="templateMode" class="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+      <div class="absolute inset-0 bg-[repeating-linear-gradient(-28deg,transparent_0,transparent_118px,rgba(15,23,42,0.055)_118px,rgba(15,23,42,0.055)_121px)] dark:bg-[repeating-linear-gradient(-28deg,transparent_0,transparent_118px,rgba(255,255,255,0.06)_118px,rgba(255,255,255,0.06)_121px)]"></div>
+      <div class="grid h-full min-h-[900px] grid-cols-3 content-start gap-x-20 gap-y-28 px-12 py-16">
+        <span
+          v-for="index in 18"
+          :key="`template-grid-watermark-${index}`"
+          class="select-none whitespace-nowrap text-[clamp(1.4rem,4vw,4.5rem)] font-black uppercase tracking-[0.34em] text-slate-900/10 dark:text-white/10 [transform:rotate(-28deg)]"
+        >
+          {{ templateWatermark || 'PLANTILLA' }}
+        </span>
+      </div>
+    </div>
+    <div class="relative z-10 mx-auto bg-white p-4 shadow-2xl dark:bg-slate-900" :style="[canvasFrameStyle, canvasZoomStyle]" :class="isBackgroundSelected ? 'ring-2 ring-primary' : ''">
       <div
         :ref="canvasRefSetter"
         data-editor-canvas="true"
@@ -98,7 +113,7 @@ const assignRichEditorRef = (id, element) => {
           :key="item.id"
           data-editor-element="true"
           :data-editor-id="item.id"
-          class="absolute p-0 text-left"
+          class="group absolute p-0 text-left"
           :style="elementBoxStyle(item.id)"
           :class="isElementSelected(item.id)
             ? (editingElementId === item.id
@@ -112,6 +127,15 @@ const assignRichEditorRef = (id, element) => {
           @pointerdown="emit('elementPointerDown', { event: $event, id: item.id })"
         >
           <div class="relative" :class="item.type === 'text' ? '' : 'h-full w-full'" :style="elementContentStyle(item.id)">
+            <div
+              v-if="item.fieldKey"
+              class="pointer-events-none absolute -top-3 left-0 z-20 transition group-hover:opacity-100"
+              :class="showFieldLabels ? 'opacity-100' : 'opacity-0'"
+            >
+              <span class="badge badge-xs badge-accent shadow-md">
+                {{ item.label }}
+              </span>
+            </div>
             <template v-if="item.type === 'text'">
               <RichTextEditor
                 :ref="(el) => assignRichEditorRef(item.id, el)"

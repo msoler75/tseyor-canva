@@ -314,6 +314,10 @@ async function persistStateSnapshot(saveEndpoint, snapshot) {
         return;
     }
 
+    if (!snapshot.currentDesignUuid && currentHydratedDesignUuid) {
+        snapshot.currentDesignUuid = currentHydratedDesignUuid;
+    }
+
     if (currentRequestIsAuthenticated && !snapshot.currentDesignUuid) {
         return;
     }

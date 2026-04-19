@@ -511,7 +511,7 @@ El diseño generado:
 - pertenece al usuario;
 - es editable;
 - no es una plantilla automáticamente;
-- puede guardar una referencia a la plantilla de origen.
+- puede guardar una referencia a la plantilla aplicada mediante `selectedTemplateId`.
 
 Ejemplo:
 
@@ -521,7 +521,7 @@ type Design = {
   name: string;
   ownerId: string;
 
-  sourceTemplateId?: string;
+  selectedTemplateId?: string; // plantilla aplicada al dise?o, si procede
 
   // resto del modelo actual de diseño
 };
@@ -550,6 +550,32 @@ Flujo básico:
 6. Define objetivos compatibles.
 7. Añade mappings de campos si son necesarios.
 8. Publica la plantilla.
+
+### Plantillas base de prueba
+
+Para arrancar pruebas sin crear plantillas manualmente, existe un comando Artisan idempotente que crea o actualiza 3 plantillas genéricas con sus diseños base asociados:
+
+```bash
+php artisan designer:create-demo-templates
+```
+
+Opciones disponibles:
+
+```bash
+php artisan designer:create-demo-templates \
+  --admin-email=admin@example.com \
+  --admin-name=admin \
+  --password=password \
+  --status=published
+```
+
+Notas:
+
+- crea/actualiza 3 diseños base y 3 `DesignTemplate`;
+- genera miniaturas SVG en el disco `public`;
+- asigna el propietario admin indicado por `--admin-email`;
+- `--status` acepta `draft`, `published` o `archived`;
+- puede ejecutarse repetidamente sin duplicar plantillas.
 
 ---
 

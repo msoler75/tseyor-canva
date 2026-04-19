@@ -105,6 +105,13 @@ watch(() => props.darkMode, syncTheme);
                                 <div tabindex="0" class="dropdown-content z-[70] mt-2 w-64 rounded-2xl border border-base-300 bg-base-100 p-4 shadow-xl">
                                     <p class="font-bold text-base-content">{{ authUser.name }}</p>
                                     <p class="mt-1 text-xs text-base-content/60">{{ authUser.email }}</p>
+                                    <Link
+                                        v-if="authUser.name === 'admin'"
+                                        href="/designer/template-inventory"
+                                        class="btn btn-ghost btn-sm mt-3 justify-start rounded-xl"
+                                    >
+                                        Inventario de plantillas
+                                    </Link>
                                     <button type="button" class="btn btn-ghost btn-sm mt-4 justify-start rounded-xl" @click="handleLogout">
                                         Cerrar sesión
                                     </button>

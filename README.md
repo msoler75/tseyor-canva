@@ -162,6 +162,24 @@ Build frontend:
 npm run build
 ```
 
+Crear o actualizar 3 plantillas base genéricas para pruebas:
+
+```bash
+php artisan designer:create-demo-templates
+```
+
+Opciones útiles:
+
+```bash
+php artisan designer:create-demo-templates \
+  --admin-email=admin@example.com \
+  --admin-name=admin \
+  --password=password \
+  --status=published
+```
+
+El comando es idempotente: si se ejecuta varias veces, actualiza las mismas 3 plantillas y sus diseños base sin duplicarlos. `--status` acepta `draft`, `published` o `archived`.
+
 ## Estructura relevante
 
 ```text

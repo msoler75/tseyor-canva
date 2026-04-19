@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\DeployHelper;
+use App\Services\DemoTemplateFactory;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 
@@ -61,3 +62,33 @@ Artisan::command('deploy:build {--endpoint=} {--token=} {--insecure : No verific
         }
     }
 })->purpose('Comprime public/build y lo despliega en un endpoint remoto');
+
+Artisan::command('designer:create-demo-templates {--admin-email=admin@example.com} {--admin-name=admin} {--password=password} {--status=published}', function (DemoTemplateFactory $factory): int {
+    $status = (string) $this->option('status');
+    if (! in_array($status, ['draft', 'published', 'archived'], true)) {
+        $this->error('Estado no válido. Usa draft, published o archived.');
+
+        return 1;
+    }
+
+    $result = $factory->create(
+        adminEmail: (string) $this->option('admin-email'),
+        adminName: (string) $this->option('admin-name'),
+        password: (string) $this->option('password'),
+        status: $status,
+    );
+
+    $this->info('Plantillas base de prueba creadas/actualizadas.');
+    $this->line('Usuario propietario: '.$result['user']->email);
+
+    foreach ($result['templates'] as $template) {
+        $this->line(sprintf(
+            '- %s (%s) -> diseño base %s',
+            $template->title,
+            $template->uuid,
+            $template->baseDesign?->uuid ?? 'sin diseño',
+        ));
+    }
+
+    return 0;
+})->purpose('Crea o actualiza 3 plantillas base genéricas con sus diseños de prueba');

@@ -6,6 +6,7 @@ import DesignerAssistant from './../Components/designer/DesignerAssistant.vue';
 import DesignerLayout from './../Layouts/DesignerLayout.vue';
 import TimeAgo from '../Components/TimeAgo.vue';
 import { flushDesignerStatePersistence, resetDesignerState, useDesignerState } from '../composables/useDesignerState';
+import { applyFormatToDimensions, parseSizeDetail } from '../utils/editorShared';
 
 const props = defineProps({
     currentStep: String,
@@ -16,6 +17,11 @@ const props = defineProps({
         default: () => [],
     },
     communityDesigns: {
+        type: Array,
+        default: () => [],
+    }
+    ,
+    adminTemplates: {
         type: Array,
         default: () => [],
     }
@@ -31,6 +37,7 @@ const authUser = computed(() => page.props.auth?.user ?? null);
 const recentProjects = computed(() => props.designs ?? []);
 
 const communityDesigns = computed(() => props.communityDesigns ?? []);
+const adminTemplates = computed(() => props.adminTemplates ?? []);
 
 const openAssistant = () => {
     resetDesignerState();
@@ -70,7 +77,23 @@ const resolveInitialDesignName = (snapshot) => {
     return name || 'Diseño sin título';
 };
 
-const finishAndOpenEditor = async () => {
+const resolveTargetSurface = (snapshot) => {
+    const parsed = parseSizeDetail(snapshot.size || '1080 × 1080 px');
+    const adjusted = applyFormatToDimensions(parsed, snapshot.format);
+
+    if (adjusted?.width > 0 && adjusted?.height > 0) {
+        return {
+            width: adjusted.width,
+            height: adjusted.height,
+        };
+    }
+
+    return snapshot.format === 'horizontal'
+        ? { width: 620, height: 368 }
+        : (snapshot.format === 'square' ? { width: 500, height: 500 } : { width: 368, height: 620 });
+};
+
+const finishAndOpenEditor = async ({ selectedTemplate } = {}) => {
     if (!authUser.value) {
         window.alert('Debes iniciar sesión para crear y guardar diseños.');
         return;
@@ -86,10 +109,20 @@ const finishAndOpenEditor = async () => {
     snapshot.designTitle = resolveInitialDesignName(snapshot);
 
     try {
-        const response = await axios.post('/designer/designs', {
-            name: snapshot.designTitle,
-            state: snapshot,
-        });
+        const response = selectedTemplate?.uuid
+            ? await axios.post(`/designer/design-templates/${selectedTemplate.uuid}/generate`, {
+                content: snapshot.content ?? {},
+                objective: snapshot.objective,
+                outputType: snapshot.outputType,
+                format: snapshot.format,
+                size: snapshot.size,
+                designTitle: snapshot.designTitle,
+                designSurface: resolveTargetSurface(snapshot),
+            })
+            : await axios.post('/designer/designs', {
+                name: snapshot.designTitle,
+                state: snapshot,
+            });
 
         const designUuid = response.data?.design?.uuid;
         if (designUuid) {
@@ -133,13 +166,28 @@ const formatProjectUpdatedAt = (value) => {
 };
 
 const logoutFromApp = async () => {
-try {
-    await axios.post('/auth/logout');
-    router.visit('/');
-  } catch (error) {
-    console.error('Failed to logout from editor app', error);
+    try {
+        await axios.post('/auth/logout');
+        router.visit('/');
+    } catch (error) {
+        console.error('Failed to logout from editor app', error);
+    }
 };
-}
+
+const openTemplateBase = async (template) => {
+    if (!template?.base_design_uuid) {
+        console.error('La plantilla no tiene diseño base asociado', template);
+        return;
+    }
+
+    try {
+        await flushDesignerStatePersistence();
+    } catch (error) {
+        console.error('Failed to flush state before opening template base design', error);
+    }
+
+    router.visit(`/designer/designs/${template.base_design_uuid}/edit`);
+};
 
 
 const duplicateDesign = async (design) => {
@@ -305,6 +353,37 @@ const deleteDesign = async (design) => {
 
                         <p class="mt-2 text-xs font-medium text-primary">Clonar y editar</p>
                     </button>
+                </div>
+            </div>
+        </section>
+
+        <section v-if="authUser?.name === 'admin'" class="mt-6 card border border-base-300/70 bg-base-100/90 shadow-sm">
+            <div class="card-body p-6">
+                <div class="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                        <h3 class="text-lg font-semibold">Últimas plantillas</h3>
+                        <p class="text-sm text-base-content/65">Pulsa una plantilla para editar directamente su diseño base.</p>
+                    </div>
+                </div>
+
+                <div v-if="adminTemplates.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+                    <button
+                        v-for="template in adminTemplates.slice(0, 6)"
+                        :key="template.uuid"
+                        type="button"
+                        class="rounded-2xl border border-base-300 bg-linear-to-br from-base-100 to-base-200 p-4 text-left hover:border-primary/60"
+                        @click="openTemplateBase(template)"
+                    >
+                        <div class="h-36 rounded-xl opacity-90 flex items-center justify-center bg-base-200/80 mb-2">
+                            <img v-if="template.thumbnail_url" :src="template.thumbnail_url" :alt="template.name" class="h-full w-full object-contain rounded-xl bg-transparent" />
+                            <span v-else class="text-xs font-medium text-base-content/65">Sin miniatura</span>
+                        </div>
+                        <p class="font-semibold">{{ template.name }}</p>
+                        <p v-if="template.description" class="mt-1 line-clamp-2 text-xs text-base-content/65">{{ template.description }}</p>
+                    </button>
+                </div>
+                <div v-else class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-5 text-sm text-base-content/65">
+                    Todavía no hay plantillas publicadas.
                 </div>
             </div>
         </section>

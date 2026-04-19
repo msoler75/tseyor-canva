@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Design;
+use App\Models\DesignTemplate;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -370,6 +371,263 @@ class DesignerSessionStateTest extends TestCase
         $this->get($response->json('url'))
             ->assertOk()
             ->assertHeader('content-type', 'image/png');
+    }
+
+    public function test_home_hides_designs_used_as_template_bases(): void
+    {
+        $user = User::factory()->create();
+
+        Design::query()->create([
+            'user_id' => $user->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Diseño normal',
+            'state' => $this->validDesignerState([
+                'currentDesignUuid' => (string) Str::uuid(),
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        $base = Design::query()->create([
+            'user_id' => $user->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Base plantilla',
+            'state' => $this->validDesignerState([
+                'currentDesignUuid' => (string) Str::uuid(),
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        DesignTemplate::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $base->id,
+            'title' => 'Plantilla desde base',
+            'description' => null,
+            'category_ids' => ['general'],
+            'objective_ids' => ['generic'],
+            'adaptation_mode' => 'proportional',
+            'field_mappings' => null,
+            'status' => 'published',
+            'featured' => false,
+            'sort_order' => 0,
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get('/')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Home')
+                ->has('designs', 1)
+                ->where('designs.0.name', 'Diseño normal')
+            );
+    }
+
+    public function test_home_shows_latest_templates_only_for_admin(): void
+    {
+        $admin = User::factory()->create(['name' => 'admin']);
+        $base = Design::query()->create([
+            'user_id' => $admin->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Base admin',
+            'state' => $this->validDesignerState([
+                'currentDesignUuid' => (string) Str::uuid(),
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        DesignTemplate::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $base->id,
+            'title' => 'Plantilla admin',
+            'description' => null,
+            'category_ids' => ['general'],
+            'objective_ids' => ['generic'],
+            'adaptation_mode' => 'proportional',
+            'field_mappings' => null,
+            'status' => 'published',
+            'featured' => false,
+            'sort_order' => 0,
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->get('/')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Home')
+                ->has('adminTemplates', 1)
+                ->where('adminTemplates.0.name', 'Plantilla admin')
+            );
+
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get('/')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Home')
+                ->where('adminTemplates', [])
+            );
+    }
+
+    public function test_editor_marks_opened_template_base_design(): void
+    {
+        $admin = User::factory()->create(['name' => 'admin']);
+        $base = Design::query()->create([
+            'user_id' => $admin->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Base editable',
+            'state' => $this->validDesignerState([
+                'currentDesignUuid' => null,
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        $template = DesignTemplate::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $base->id,
+            'title' => 'Plantilla editable',
+            'description' => null,
+            'category_ids' => ['general'],
+            'objective_ids' => ['generic'],
+            'adaptation_mode' => 'proportional',
+            'field_mappings' => null,
+            'status' => 'published',
+            'featured' => false,
+            'sort_order' => 0,
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->get("/designer/designs/{$base->uuid}/edit")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Designer/EditorPage')
+                ->where('designer.currentDesign.uuid', $base->uuid)
+                ->where('designer.state.currentDesignUuid', $base->uuid)
+                ->where('designer.isTemplateBaseEditor', true)
+                ->where('designer.currentTemplate.uuid', $template->uuid)
+                ->where('designer.currentDesign.baseTemplate.uuid', $template->uuid)
+                ->where('designer.currentDesign.baseTemplate.base_design_uuid', $base->uuid)
+            );
+    }
+
+    public function test_admin_opens_foreign_template_base_without_creating_copy(): void
+    {
+        $owner = User::factory()->create(['name' => 'template-owner']);
+        $admin = User::factory()->create(['name' => 'admin']);
+        $base = Design::query()->create([
+            'user_id' => $owner->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Base de otro propietario',
+            'state' => $this->validDesignerState([
+                'currentDesignUuid' => null,
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        $template = DesignTemplate::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $base->id,
+            'title' => 'Plantilla de otro propietario',
+            'description' => null,
+            'category_ids' => ['general'],
+            'objective_ids' => ['generic'],
+            'adaptation_mode' => 'proportional',
+            'field_mappings' => null,
+            'status' => 'published',
+            'featured' => false,
+            'sort_order' => 0,
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->get("/designer/designs/{$base->uuid}/edit")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Designer/EditorPage')
+                ->where('designer.currentDesign.uuid', $base->uuid)
+                ->where('designer.isTemplateBaseEditor', true)
+                ->where('designer.currentTemplate.uuid', $template->uuid)
+            );
+
+        $this->assertDatabaseCount('designs', 1);
+    }
+
+    public function test_non_admin_owner_cannot_open_template_base_design(): void
+    {
+        $owner = User::factory()->create(['name' => 'editor']);
+        $base = Design::query()->create([
+            'user_id' => $owner->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Base restringida',
+            'state' => $this->validDesignerState([
+                'currentDesignUuid' => null,
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        DesignTemplate::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $base->id,
+            'title' => 'Plantilla restringida',
+            'description' => null,
+            'category_ids' => ['general'],
+            'objective_ids' => ['generic'],
+            'adaptation_mode' => 'proportional',
+            'field_mappings' => null,
+            'status' => 'published',
+            'featured' => false,
+            'sort_order' => 0,
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($owner)
+            ->get("/designer/designs/{$base->uuid}/edit")
+            ->assertForbidden();
+    }
+
+    public function test_non_admin_foreign_user_cannot_open_or_copy_template_base_design(): void
+    {
+        $owner = User::factory()->create(['name' => 'template-owner']);
+        $viewer = User::factory()->create(['name' => 'viewer']);
+        $base = Design::query()->create([
+            'user_id' => $owner->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Base bloqueada',
+            'state' => $this->validDesignerState([
+                'currentDesignUuid' => null,
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        DesignTemplate::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $base->id,
+            'title' => 'Plantilla bloqueada',
+            'description' => null,
+            'category_ids' => ['general'],
+            'objective_ids' => ['generic'],
+            'adaptation_mode' => 'proportional',
+            'field_mappings' => null,
+            'status' => 'published',
+            'featured' => false,
+            'sort_order' => 0,
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($viewer)
+            ->get("/designer/designs/{$base->uuid}/edit")
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('designs', 1);
     }
 
     /**

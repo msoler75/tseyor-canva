@@ -10,9 +10,29 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class DesignTemplateController extends Controller
 {
+    public function inventory(Request $request): Response
+    {
+        $user = $request->user();
+        abort_unless($this->isAdmin($user), 403);
+
+        $templates = DesignTemplate::query()
+            ->with('baseDesign:id,uuid,thumbnail_path,updated_at,name')
+            ->orderByDesc('featured')
+            ->orderBy('sort_order')
+            ->orderBy('title')
+            ->get()
+            ->map(fn (DesignTemplate $template): array => $this->serializeTemplate($template));
+
+        return Inertia::render('Designer/Templates/Index', [
+            'templates' => $templates,
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $includeDrafts = $this->isAdmin($request->user()) && $request->boolean('includeDrafts');
