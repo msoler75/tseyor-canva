@@ -237,12 +237,13 @@ const endPanelCloseDrag = () => {
 <template>
 <aside
   data-editor-keep-selection="true"
-  class="fixed inset-x-0 bottom-24 top-auto z-50 max-h-[calc(70vh-6rem)] w-full overflow-y-auto rounded-t-[28px] border-t border-base-300 bg-base-100 shadow-2xl transition-transform md:static md:inset-auto md:z-40 md:h-full md:max-h-none md:w-80 md:rounded-none md:border-r md:border-t-0 md:shadow-none"
+  class="fixed inset-x-0 bottom-20 top-auto z-50 max-h-[calc(70vh-6rem)] w-full overflow-y-auto rounded-t-[28px] border-t border-base-300 bg-base-100 shadow-2xl transition-transform md:static md:inset-auto md:z-40 md:h-full md:max-h-none md:w-80 md:rounded-none md:border-r md:border-t-0 md:shadow-none"
   :style="panelDragStyle"
 >
             <div class="md:space-y-5">
-                <div
-                  class="flex touch-none justify-center pt-3 md:hidden"
+                <div class="sticky top-0 z-10 border-b border-base-300/70 bg-base-100 p-2 px-5 md:p-5">
+                    <div
+                  class="flex top-0 z-10 touch-none justify-center pt-1 md:hidden"
                   @pointerdown="startPanelCloseDrag"
                   @pointermove="movePanelCloseDrag"
                   @pointerup="endPanelCloseDrag"
@@ -250,7 +251,7 @@ const endPanelCloseDrag = () => {
                 >
                   <span class="h-1 w-12 rounded-full bg-base-content/25"></span>
                 </div>
-                <div class="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-base-300/70 bg-base-100 p-2 px-5 md:p-5">
+                <div class="flex items-start justify-between gap-3">
                   <div>
                     <h3 class="mt-2 my-0! text-xl font-semibold text-base-content">{{ hasSelection && activePropertyPanel ? activePropertyTitle : 'Elementos' }}</h3>
                   </div>
@@ -263,6 +264,7 @@ const endPanelCloseDrag = () => {
                     >
                       <Icon icon="mdi:close" class="text-lg" />
                     </button>
+                  </div>
                   </div>
                 </div>
 
