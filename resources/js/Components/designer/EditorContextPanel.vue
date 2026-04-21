@@ -1,6 +1,6 @@
 <script setup>
 
-import { onMounted, watch, computed, toRefs } from 'vue';
+import { computed, ref, toRefs } from 'vue';
 import { Icon } from '@iconify/vue';
 import ColorPaletteSection from './ColorPaletteSection.vue';
 import ColorValueField from './ColorValueField.vue';
@@ -135,8 +135,6 @@ const {
 
 
 const safeFontOptions = computed(() => props.fontOptions ?? []);
-console.log('safeFontOptions:', safeFontOptions.value);
-console.log('activePropertyPanel:', props.activePropertyPanel, 'hasTextSelection:', props.hasTextSelection);
 
 
 // Ya no es necesario cargar fuentes dinámicamente, todo está en fonts.css global
@@ -202,15 +200,59 @@ const transparencyEasingOptions = [
 ];
 
 const closePanel = () => emit('closePanel');
+
+const dragStartY = ref(null);
+const panelTranslateY = ref(0);
+
+const panelDragStyle = computed(() => (
+  panelTranslateY.value > 0
+    ? { transform: `translateY(${panelTranslateY.value}px)` }
+    : null
+));
+
+const startPanelCloseDrag = (event) => {
+  dragStartY.value = event.clientY;
+  panelTranslateY.value = 0;
+  event.currentTarget?.setPointerCapture?.(event.pointerId);
+};
+
+const movePanelCloseDrag = (event) => {
+  if (dragStartY.value === null) return;
+  panelTranslateY.value = Math.max(0, event.clientY - dragStartY.value);
+};
+
+const endPanelCloseDrag = () => {
+  if (dragStartY.value === null) return;
+
+  const shouldClose = panelTranslateY.value > 90;
+  dragStartY.value = null;
+  panelTranslateY.value = 0;
+
+  if (shouldClose) {
+    closePanel();
+  }
+};
 </script>
 
 <template>
-<aside data-editor-keep-selection="true" class="absolute z-40 h-full w-80 border-r border-base-300 bg-base-100 overflow-y-auto">
-            <div class="space-y-5">
-                <div class="w-76 fixed z-10 bg-base-100 flex items-start justify-between gap-3 p-5">
+<aside
+  data-editor-keep-selection="true"
+  class="fixed inset-x-0 bottom-24 top-auto z-50 max-h-[calc(70vh-6rem)] w-full overflow-y-auto rounded-t-[28px] border-t border-base-300 bg-base-100 shadow-2xl transition-transform md:static md:inset-auto md:z-40 md:h-full md:max-h-none md:w-80 md:rounded-none md:border-r md:border-t-0 md:shadow-none"
+  :style="panelDragStyle"
+>
+            <div class="md:space-y-5">
+                <div
+                  class="flex touch-none justify-center pt-3 md:hidden"
+                  @pointerdown="startPanelCloseDrag"
+                  @pointermove="movePanelCloseDrag"
+                  @pointerup="endPanelCloseDrag"
+                  @pointercancel="endPanelCloseDrag"
+                >
+                  <span class="h-1 w-12 rounded-full bg-base-content/25"></span>
+                </div>
+                <div class="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-base-300/70 bg-base-100 p-2 px-5 md:p-5">
                   <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Panel contextual</p>
-                    <h3 class="mt-2 text-xl font-semibold text-base-content">{{ hasSelection && activePropertyPanel ? activePropertyTitle : 'Elementos' }}</h3>
+                    <h3 class="mt-2 my-0! text-xl font-semibold text-base-content">{{ hasSelection && activePropertyPanel ? activePropertyTitle : 'Elementos' }}</h3>
                   </div>
                   <div class="flex gap-2">
                     <button
@@ -223,8 +265,6 @@ const closePanel = () => emit('closePanel');
                     </button>
                   </div>
                 </div>
-
-                <div class="h-20"></div>
 
               <!-- Panel de inserción (siempre visible cuando no hay selección) -->
               <div v-if="!hasSelection || !activePropertyPanel" class="space-y-3">
@@ -301,7 +341,7 @@ const closePanel = () => emit('closePanel');
                       <div v-if="state.userUploadedImages.length" class="grid grid-cols-2 gap-2">
                         <button
                           v-for="image in state.userUploadedImages"
-                          :key="image.id"
+                          :key="image.assetId ?? image.id"
                           type="button"
                           class="group relative overflow-hidden rounded-xl border border-base-300/70 bg-base-100/70 text-left"
                           @click="addUploadedImage(image)"
@@ -427,6 +467,76 @@ const closePanel = () => emit('closePanel');
                     >
                       <span class="block text-xl leading-tight" :style="{ fontFamily: font.family }">{{ font.label }}</span>
                     </button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="activePropertyPanel === 'format' && hasTextSelection" class="card border border-base-300 bg-base-100/80">
+                <div class="card-body p-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-semibold text-base-content">Formato de texto</p>
+                      <p class="text-xs text-base-content/60">Negrita, cursiva, subrayado y alineación del párrafo.</p>
+                    </div>
+                    <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
+                      {{ activeParagraphLabel }}
+                    </span>
+                  </div>
+
+                  <div class="mt-5 space-y-4">
+                    <section>
+                      <p class="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Estilo</p>
+                      <div class="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          class="btn min-h-14 flex-col gap-1 rounded-2xl"
+                          :class="selectedTextStyle.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline'"
+                          @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'"
+                        >
+                          <span class="text-xl font-black leading-none">B</span>
+                          <span class="text-[10px] leading-none">Negrita</span>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn min-h-14 flex-col gap-1 rounded-2xl"
+                          :class="selectedTextStyle.italic ? 'btn-primary' : 'btn-outline'"
+                          @click="selectedTextStyle.italic = !selectedTextStyle.italic"
+                        >
+                          <span class="font-serif text-xl italic leading-none">I</span>
+                          <span class="text-[10px] leading-none">Cursiva</span>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn min-h-14 flex-col gap-1 rounded-2xl"
+                          :class="selectedTextStyle.underline ? 'btn-primary' : 'btn-outline'"
+                          @click="selectedTextStyle.underline = !selectedTextStyle.underline"
+                        >
+                          <span class="text-xl leading-none underline">U</span>
+                          <span class="text-[10px] leading-none">Subrayado</span>
+                        </button>
+                      </div>
+                    </section>
+
+                    <section>
+                      <p class="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Alineación</p>
+                      <div class="grid grid-cols-3 gap-2">
+                        <button
+                          v-for="alignment in [
+                            { id: 'left', label: 'Izquierda', icon: 'mdi:format-align-left' },
+                            { id: 'center', label: 'Centro', icon: 'mdi:format-align-center' },
+                            { id: 'right', label: 'Derecha', icon: 'mdi:format-align-right' },
+                          ]"
+                          :key="alignment.id"
+                          type="button"
+                          class="btn min-h-14 flex-col gap-1 rounded-2xl"
+                          :class="selectedTextStyle.textAlign === alignment.id ? 'btn-primary' : 'btn-outline'"
+                          @click="selectedTextStyle.textAlign = alignment.id"
+                        >
+                          <Icon :icon="alignment.icon" class="text-2xl" />
+                          <span class="text-[10px] leading-none">{{ alignment.label }}</span>
+                        </button>
+                      </div>
+                    </section>
                   </div>
                 </div>
               </div>

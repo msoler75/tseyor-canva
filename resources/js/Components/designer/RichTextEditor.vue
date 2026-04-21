@@ -5,7 +5,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Node } from '@tiptap/core';
 
-const STYLE_ATTRS = ['fontSize', 'color', 'fontFamily', 'fontWeight', 'italic', 'uppercase', 'textAlign', 'letterSpacing', 'lineHeight'];
+const STYLE_ATTRS = ['fontSize', 'color', 'fontFamily', 'fontWeight', 'italic', 'underline', 'uppercase', 'textAlign', 'letterSpacing', 'lineHeight'];
 
 const attrsToStyle = (attrs) => {
     const parts = [];
@@ -14,6 +14,7 @@ const attrsToStyle = (attrs) => {
     if (attrs.fontFamily  != null) parts.push(`font-family:${attrs.fontFamily}`);
     if (attrs.fontWeight  != null) parts.push(`font-weight:${attrs.fontWeight === 'bold' ? 700 : 500}`);
     if (attrs.italic)              parts.push('font-style:italic');
+    if (attrs.underline)           parts.push('text-decoration:underline');
     if (attrs.uppercase)           parts.push('text-transform:uppercase');
     if (attrs.letterSpacing != null) parts.push(`letter-spacing:${attrs.letterSpacing}px`);
     if (attrs.lineHeight    != null) parts.push(`line-height:${attrs.lineHeight}`);
@@ -67,6 +68,7 @@ const buildDoc = (text, styles) => {
                     fontFamily:    s.fontFamily    ?? null,
                     fontWeight:    s.fontWeight    ?? null,
                     italic:        s.italic        ?? null,
+                    underline:     s.underline     ?? null,
                     uppercase:     s.uppercase     ?? null,
                     letterSpacing: s.letterSpacing ?? null,
                     lineHeight:    s.lineHeight    ?? null,
@@ -95,6 +97,7 @@ const extractFromDoc = (doc) => {
             fontFamily:    a.fontFamily    ?? 'Inter, sans-serif',
             fontWeight:    a.fontWeight    ?? 'regular',
             italic:        a.italic        ?? false,
+            underline:     a.underline     ?? false,
             uppercase:     a.uppercase     ?? false,
             textAlign:     a.textAlign     ?? 'left',
             letterSpacing: a.letterSpacing ?? 0,

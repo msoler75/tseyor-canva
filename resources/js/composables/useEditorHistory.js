@@ -238,7 +238,7 @@ export const useEditorHistory = ({
     });
   };
 
-  const replaceImageAssetSource = ({ assetId = null, previousSrc = null, nextSrc, storagePath = null }) => {
+  const replaceImageAssetSource = ({ assetId = null, nextAssetId = null, previousSrc = null, nextSrc, storagePath = null }) => {
     if (!nextSrc) return;
 
     historyStack.value = historyStack.value.map((snapshot) => {
@@ -256,6 +256,7 @@ export const useEditorHistory = ({
 
         nextSnapshot.customElements[id] = {
           ...element,
+          assetId: nextAssetId ?? element.assetId,
           src: nextSrc,
           pendingDataUrl: null,
           storagePath,

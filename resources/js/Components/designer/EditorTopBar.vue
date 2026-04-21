@@ -69,7 +69,7 @@ const handleZoomInput = (event) => {
 
 <template>
   <nav class="flex flex-wrap items-center justify-between border-b border-base-300 bg-base-100 px-4 py-1 shadow-sm">
-    <div class="flex flex-wrap items-center gap-4">
+    <div class="flex flex-wrap items-center gap-3 sm:gap-4">
       <button
         type="button"
         class="btn btn-ghost btn-circle"
@@ -80,7 +80,7 @@ const handleZoomInput = (event) => {
         <Icon icon="ph:house-bold" class="text-xl" />
       </button>
 
-      <div class="dropdown dropdown-start">
+      <div class="hidden sm:flex dropdown dropdown-start">
         <button
           tabindex="0"
           type="button"
@@ -128,11 +128,12 @@ const handleZoomInput = (event) => {
         <button
           tabindex="0"
           type="button"
-          class="btn rounded-full"
+          class="flex sm:btn rounded-full"
           title="Diseño"
           aria-label="Diseño"
         >
-          Diseño
+          <span class="hidden sm:inline">Diseño</span>
+          <Icon class="sm:hidden text-2xl" icon="material-symbols:settings-outline-rounded" />
         </button>
         <ul tabindex="0" class="dropdown-content menu z-60 mt-2 w-72 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
             <li>
@@ -168,7 +169,7 @@ const handleZoomInput = (event) => {
         </ul>
       </div>
 
-      <div class="flex items-center gap-3 rounded-2xl p-1 shadow-sm">
+      <div class="flex items-center gap-2 md:gap-3 rounded-2xl">
         <button
           type="button"
           class="btn btn-ghost btn-circle"
@@ -194,12 +195,14 @@ const handleZoomInput = (event) => {
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-4">
+    <div class="flex flex-wrap items-center gap-3 sm:gap-4">
 
-        <span class="max-w-[22ch] truncate text-sm font-semibold text-base-content">{{ designTitle || 'Diseño sin título' }}</span>
-      <span class="mr-8 text-sm text-base-content/65">{{ size || 'Tamaño no definido' }}</span>
+        <div class="hidden xl:flex gap-3 sm:gap-4 mr-8">
+            <span class="max-w-[22ch] truncate text-sm font-semibold text-base-content">{{ designTitle || 'Diseño sin título' }}</span>
+            <span class="text-sm text-base-content/65">{{ size || 'Tamaño no definido' }}</span>
+        </div>
 
-      <div class="flex items-center gap-2 rounded-xl border border-base-300 px-3 py-2">
+      <div class="hidden lg:flex items-center gap-2 rounded-xl border border-base-300 px-3 py-2">
         <span class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">Zoom</span>
         <input
           :value="zoomLevel"
@@ -266,9 +269,9 @@ const handleZoomInput = (event) => {
         <span>Iniciar sesión</span>
       </button>
 
-      <button type="button" class="btn btn-primary rounded-full" @click="emit('exportNavigate', $event)">
-        <Icon icon="ph:export-bold" class="text-lg" />
-        Exportar</button>
+      <button type="button" class="btn btn-primary px-3 rounded-full" @click="emit('exportNavigate', $event)">
+        <Icon icon="ph:export-bold" class="text-xl" />
+        <span class="hidden md:inline">Exportar</span></button>
     </div>
   </nav>
 </template>

@@ -1,11 +1,16 @@
 <script setup>
+import { computed } from 'vue';
 import { Icon } from '@iconify/vue';
 
-defineProps({
+const props = defineProps({
   activeElementLabel: String,
   activePropertyPanel: String,
   currentAlignmentIcon: String,
   hasTextSelection: Boolean,
+  mobileMode: {
+    type: Boolean,
+    default: false,
+  },
   selectedPropertyTabs: {
     type: Array,
     default: () => [],
@@ -26,6 +31,18 @@ const emit = defineEmits([
   'start-drag',
 ]);
 
+const toolbarShellStyle = computed(() => (
+  props.mobileMode
+    ? {}
+    : { left: '70px', right: '0', top: `${props.toolbarPosition.y}px` }
+));
+
+const toolbarOffsetStyle = computed(() => (
+  props.mobileMode
+    ? {}
+    : { transform: `translateX(${props.toolbarPosition.x}px)` }
+));
+
 const getTabLabelStyle = (tab, selectedTextStyle) => {
   if (tab.id === 'color' && tab.label === 'A' && selectedTextStyle?.color) {
     return { color: selectedTextStyle.color };
@@ -40,9 +57,9 @@ const getTabLabelStyle = (tab, selectedTextStyle) => {
   return {};
 };
 
-const getLabel = (tab, selectedTextStyle) => {
+const getLabel = (tab) => {
   if (tab.id === 'typography') {
-    return selectedTextStyle.fontFamily || 'Tipografía';
+    return 'Fuente';
   }
   return tab.label || '';
 };
@@ -75,16 +92,16 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
 <template>
   <div
     data-editor-keep-selection="true"
-    class="pointer-events-none absolute z-50 flex justify-center"
-    :style="{ left: '70px', right: '0', top: `${toolbarPosition.y}px` }"
+    class="pointer-events-none fixed inset-x-2 bottom-2 z-[70] flex justify-center md:absolute md:inset-x-auto md:bottom-auto md:z-50"
+    :style="toolbarShellStyle"
   >
-    <div :style="{ transform: `translateX(${toolbarPosition.x}px)` }" class="pointer-events-none">
-      <div data-editor-keep-selection="true" class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/90">
+    <div :style="toolbarOffsetStyle" class="pointer-events-none max-w-full">
+      <div data-editor-keep-selection="true" class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/95">
         <div class="card-body p-1.5">
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="flex max-w-[calc(100vw-1rem)] flex-nowrap items-center gap-2 overflow-hidden overflow-x-auto md:flex-wrap md:overflow-visible min-w-[calc(100vw-1rem)] md:min-w-auto">
             <button
               type="button"
-              class="tooltip tooltip-bottom order-first btn btn-ghost text-lg cursor-grab active:cursor-grabbing"
+              class="tooltip tooltip-bottom order-first hidden btn btn-ghost cursor-grab text-lg active:cursor-grabbing md:inline-flex"
               data-tip="Mover barra"
               @pointerdown="emit('start-drag', $event)"
             >⋮⋮</button>
@@ -93,16 +110,16 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
               v-for="tab in selectedPropertyTabs"
               :key="tab.id"
               type="button"
-              class="tooltip tooltip-bottom btn py-1 px-2"
+              class="md:tooltip tooltip-bottom btn h-16 min-w-20 flex-col gap-1 px-2 py-1 md:h-auto md:min-w-0 md:flex-row"
               :class="[getTabButtonClasses(tab, activePropertyPanel),
-                tab.label?'':'w-10'
+                tab.label?'':'w-20 md:w-10'
               ]"
               :data-tip="getTabTooltip(tab)"
               @click="emit('property-tab-click', tab)"
             >
               <span
                 v-if="tab.label"
-                class="text-base-100-accent"
+                class="text-base-100-accent text-[11px] leading-none md:text-sm"
                 :class="tab.labelClass"
                 :style="getTabLabelStyle(tab, selectedTextStyle)"
               >{{ getLabel(tab, selectedTextStyle) }}</span>
@@ -117,13 +134,13 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
                   min="8"
                   max="200"
                   step="1"
-                  class="input input-bordered join-item w-12 border-gray-500 [--input-color:var(--color-gray-500)] text-center"
+                  class="input input-bordered join-item w-16 border-gray-500 text-center [--input-color:var(--color-gray-500)]"
                 />
               </div>
 
               <button
                 type="button"
-                class="tooltip tooltip-bottom btn border-0 text-lg flex-col gap-0 px-2"
+                class="tooltip tooltip-bottom btn h-16 min-w-20 flex-col gap-0 border-0 px-2 text-lg md:h-auto md:min-w-0"
                 data-tip="Color"
                 :class="[getTabButtonClasses({ id: 'color'}, activePropertyPanel)]"
                 @click="$emit('property-tab-click', { id: 'color' })"
@@ -137,7 +154,7 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
 
               <button
                 type="button"
-                class="tooltip tooltip-bottom btn border-0 text-xl font-bold"
+                class="tooltip tooltip-bottom hidden btn border-0 text-xl font-bold md:inline-flex"
                 data-tip="Negrita"
                 :class="selectedTextStyle.fontWeight === 'bold' ? 'btn-accent' : 'btn-outline'"
                 @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'"
@@ -145,7 +162,7 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
 
               <button
                 type="button"
-                class="tooltip tooltip-bottom btn border-0 text-lg font-thin italic font-serif"
+                class="tooltip tooltip-bottom hidden btn border-0 text-lg font-thin italic font-serif md:inline-flex"
                 data-tip="Cursiva"
                 :class="selectedTextStyle.italic ? 'btn-accent' : 'btn-outline'"
                 @click="selectedTextStyle.italic = !selectedTextStyle.italic"
@@ -153,7 +170,7 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
 
               <button
                 type="button"
-                class="tooltip tooltip-bottom btn border-0 text-lg w-10"
+                class="tooltip tooltip-bottom hidden btn w-10 border-0 text-lg md:inline-flex"
                 data-tip="Mayúsculas"
                 :class="selectedTextStyle.uppercase ? 'btn-accent' : 'btn-outline'"
                 @click="selectedTextStyle.uppercase = !selectedTextStyle.uppercase"
@@ -161,7 +178,7 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
 
               <button
                 type="button"
-                class="tooltip tooltip-bottom btn border-0 text-lg btn-outline w-10 p-0"
+                class="tooltip tooltip-bottom hidden btn w-10 border-0 p-0 text-lg md:inline-flex"
                 data-tip="Alineación"
                 @click="emit('cycle-alignment')"
               >

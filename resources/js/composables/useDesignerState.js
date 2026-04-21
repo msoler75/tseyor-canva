@@ -212,6 +212,8 @@ function normalizeUserUploadedImages(userUploadedImages) {
         return [];
     }
 
+    const seen = new Set();
+
     return userUploadedImages
         .filter((image) => image && typeof image === 'object')
         .map((image, index) => ({
@@ -226,7 +228,16 @@ function normalizeUserUploadedImages(userUploadedImages) {
             errorMessage: image.errorMessage == null ? null : String(image.errorMessage),
             intrinsicWidth: Number(image.intrinsicWidth ?? 0) || null,
             intrinsicHeight: Number(image.intrinsicHeight ?? 0) || null,
-        }));
+        }))
+        .filter((image) => {
+            const key = image.storagePath || image.src || image.assetId || image.id;
+            if (!key || seen.has(key)) {
+                return false;
+            }
+
+            seen.add(key);
+            return true;
+        });
 }
 
 function normalizeContentStrings(content) {

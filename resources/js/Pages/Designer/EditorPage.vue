@@ -35,6 +35,14 @@ const page = usePage();
 // Siempre reset y rehidratar al montar
 resetDesignerState();
 const state = hydrateDesignerStateFromPage();
+const isMobileEditor = ref(false);
+let editorViewportQuery = null;
+
+const syncEditorViewport = () => {
+  isMobileEditor.value = typeof window !== 'undefined'
+    ? window.matchMedia('(max-width: 767px)').matches
+    : false;
+};
 
 // Estado para mostrar el modal de exportación
 const exportDialogOpen = ref(false);
@@ -297,15 +305,14 @@ const normalizeHexCandidate = (value) => {
   }
   return null;
 };
-console.log('fontFamilies prop:', page.props.fontFamilies);
 const fontOptions = (page.props.fontFamilies ?? []).map(f => ({
   label: f,
   family: f,
 }));
-console.log('fontOptions:', fontOptions);
 const textPropertyTabs = [
     { id: 'typography', label: 'Tipografía' , class: 'order-first text-xl border-1 border-gray-500'},
     // { id: 'color', label: 'A', labelClass:'text-shadow-xs text-xl border-b-3',class: '' },
+    { id: 'format', icon: 'mdi:format-text', label: 'Formato', title: 'Formato', class: 'order-last md:hidden' },
     { id: 'spacing', icon: 'mdi:format-line-spacing', title: 'Interlineado y espaciado', class: 'order-last' },
     { id: 'opacity', icon: 'carbon:opacity', class: 'order-last', iconClass: 'text-3xl' },
     { id: 'effects', label: 'Efectos', class: 'order-last' },
@@ -871,6 +878,7 @@ const paragraphStyleFields = new Set([
     'fontFamily',
     'fontWeight',
     'italic',
+    'underline',
     'uppercase',
     'textAlign',
     'letterSpacing',
@@ -885,6 +893,7 @@ const buildParagraphStyle = (layout, fallback = {}) => ({
     fontFamily: fallback.fontFamily ?? layout.fontFamily ?? 'Inter, sans-serif',
     fontWeight: fallback.fontWeight ?? layout.fontWeight ?? 'regular',
     italic: fallback.italic ?? layout.italic ?? false,
+    underline: fallback.underline ?? layout.underline ?? false,
     uppercase: fallback.uppercase ?? layout.uppercase ?? false,
     textAlign: fallback.textAlign ?? layout.textAlign ?? 'left',
     letterSpacing: fallback.letterSpacing ?? layout.letterSpacing ?? 0,
@@ -1046,9 +1055,15 @@ const editorCanvasDimensions = computed(() => {
 const canvasGridStyle = computed(() => ({
   minHeight: `${editorCanvasDimensions.value.height + 96}px`,
 }));
-const editorGridStyle = computed(() => ({
-  gridTemplateColumns: isTemplateBaseEditor.value ? '70px minmax(0,1fr) 320px' : '70px minmax(0,1fr)',
-}));
+const editorGridStyle = computed(() => {
+  if (isMobileEditor.value) {
+    return { gridTemplateColumns: 'minmax(0,1fr)' };
+  }
+
+  return {
+    gridTemplateColumns: `${isOptionsPanelVisible.value ? '70px 320px' : '70px'} minmax(0,1fr)${isTemplateBaseEditor.value ? ' 320px' : ''}`,
+  };
+});
 const canvasFrameStyle = computed(() => ({
   width: `${editorCanvasDimensions.value.width}px`,
   maxWidth: '100%',
@@ -1105,6 +1120,7 @@ const buildDefaultLayout = (overrides = {}) => ({
   opacity: 100,
   fontWeight: 'regular',
   italic: false,
+  underline: false,
   uppercase: false,
   textAlign: 'left',
   letterSpacing: 0,
@@ -1272,6 +1288,7 @@ const addTextElement = (presetId) => {
       fontFamily: 'Poppins, sans-serif',
       fontWeight: preset.fontWeight,
       italic: false,
+      underline: false,
       uppercase: false,
       textAlign: 'left',
       letterSpacing: 0,
@@ -1339,6 +1356,7 @@ const addTemplateFieldElement = (fieldKey) => {
       fontFamily: 'Poppins, sans-serif',
       fontWeight: preset.fontWeight,
       italic: false,
+      underline: false,
       uppercase: false,
       textAlign: 'left',
       letterSpacing: 0,
@@ -1433,7 +1451,7 @@ const scheduleThumbnailCapture = () => {
 };
 
 const getUploadedImageIndexByAssetId = (assetId) => state.userUploadedImages.findIndex(
-  (image) => image?.assetId === assetId || image?.id === assetId
+  (image) => String(image?.assetId ?? '') === String(assetId ?? '') || String(image?.id ?? '') === String(assetId ?? '')
 );
 
 const getUploadedImageByAssetId = (assetId) => {
@@ -1459,12 +1477,16 @@ const upsertUploadedImage = (entry) => {
   };
 
   const existingIndex = getUploadedImageIndexByAssetId(entry.assetId);
-  if (existingIndex >= 0) {
-    state.userUploadedImages.splice(existingIndex, 1, {
-      ...state.userUploadedImages[existingIndex],
+  const duplicateSourceIndex = existingIndex >= 0 ? existingIndex : state.userUploadedImages.findIndex((image) => (
+    (normalizedEntry.storagePath && image?.storagePath === normalizedEntry.storagePath)
+    || (normalizedEntry.src && image?.src === normalizedEntry.src)
+  ));
+  if (duplicateSourceIndex >= 0) {
+    state.userUploadedImages.splice(duplicateSourceIndex, 1, {
+      ...state.userUploadedImages[duplicateSourceIndex],
       ...normalizedEntry,
     });
-    return state.userUploadedImages[existingIndex];
+    return state.userUploadedImages[duplicateSourceIndex];
   }
 
   state.userUploadedImages.unshift(normalizedEntry);
@@ -1750,19 +1772,37 @@ const setBackgroundImage = async ({
   }
 };
 
-const replaceUploadedImageSourceEverywhere = async ({ assetId, finalUrl, storagePath = null }) => {
+const replaceUploadedImageSourceEverywhere = async ({ assetId, finalUrl, storagePath = null, canonicalAssetId = null }) => {
+  const nextAssetId = canonicalAssetId ? String(canonicalAssetId) : assetId;
   const uploadedImage = getUploadedImageByAssetId(assetId);
   const previousSrc = uploadedImage?.pendingDataUrl || uploadedImage?.src || null;
 
   await mutateWithoutHistory(() => {
-    updateUploadedImage(assetId, {
+    const previousIndex = getUploadedImageIndexByAssetId(assetId);
+    const canonicalIndex = nextAssetId !== assetId ? getUploadedImageIndexByAssetId(nextAssetId) : previousIndex;
+    const mergedImage = {
+      ...(canonicalIndex >= 0 ? state.userUploadedImages[canonicalIndex] : {}),
+      ...(previousIndex >= 0 ? state.userUploadedImages[previousIndex] : {}),
+      id: nextAssetId,
+      assetId: nextAssetId,
       src: finalUrl,
       pendingDataUrl: null,
       storagePath,
       uploadStatus: 'done',
       needsUpload: false,
       errorMessage: null,
-    });
+    };
+
+    if (canonicalIndex >= 0) {
+      state.userUploadedImages.splice(canonicalIndex, 1, mergedImage);
+      if (previousIndex >= 0 && previousIndex !== canonicalIndex) {
+        state.userUploadedImages.splice(previousIndex > canonicalIndex ? previousIndex - 1 : previousIndex, 1);
+      }
+    } else if (previousIndex >= 0) {
+      state.userUploadedImages.splice(previousIndex, 1, mergedImage);
+    } else {
+      upsertUploadedImage(mergedImage);
+    }
 
     Object.entries(state.customElements ?? {}).forEach(([id, element]) => {
       if (!element || element.type !== 'image') return;
@@ -1770,6 +1810,7 @@ const replaceUploadedImageSourceEverywhere = async ({ assetId, finalUrl, storage
 
       state.customElements[id] = {
         ...element,
+        assetId: nextAssetId,
         src: finalUrl,
         pendingDataUrl: null,
         storagePath,
@@ -1780,6 +1821,7 @@ const replaceUploadedImageSourceEverywhere = async ({ assetId, finalUrl, storage
     if (state.elementLayout.background?.backgroundImageAssetId === assetId) {
       state.elementLayout.background = {
         ...state.elementLayout.background,
+        backgroundImageAssetId: nextAssetId,
         backgroundImageSrc: finalUrl,
         backgroundImagePendingDataUrl: null,
         backgroundImageStoragePath: storagePath,
@@ -1788,6 +1830,7 @@ const replaceUploadedImageSourceEverywhere = async ({ assetId, finalUrl, storage
 
     replaceImageAssetSource({
       assetId,
+      nextAssetId,
       previousSrc,
       nextSrc: finalUrl,
       storagePath,
@@ -1831,13 +1874,14 @@ const uploadImageAsset = async ({ assetId, file, label, dataUrl }) => {
 
     const finalUrl = response.data?.url;
     const storagePath = response.data?.path ?? null;
+    const canonicalAssetId = response.data?.assetId ?? null;
 
     if (!finalUrl) {
       throw new Error('La respuesta del servidor no incluyó la URL de la imagen.');
     }
 
     uploadProgressByAssetId[assetId] = 100;
-    await replaceUploadedImageSourceEverywhere({ assetId, finalUrl, storagePath });
+    await replaceUploadedImageSourceEverywhere({ assetId, finalUrl, storagePath, canonicalAssetId });
   } catch (error) {
     console.error('No se pudo subir la imagen del usuario', error);
     uploadProgressByAssetId[assetId] = 0;
@@ -2863,6 +2907,9 @@ const cancelTextEdit = () => {
 
 onMounted(() => {
   // Ya se hizo resetDesignerState y rehidratación arriba
+  syncEditorViewport();
+  editorViewportQuery = window.matchMedia('(max-width: 767px)');
+  editorViewportQuery.addEventListener?.('change', syncEditorViewport);
   const nextSurface = currentCanvasDimensions();
   if (state.designSurface?.width && state.designSurface?.height) {
     rescaleDesignSurface(state.designSurface, nextSurface);
@@ -2905,6 +2952,8 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  editorViewportQuery?.removeEventListener?.('change', syncEditorViewport);
+  editorViewportQuery = null;
   document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
   document.removeEventListener('pointermove', moveDrag);
   document.removeEventListener('pointerup', endDrag);
@@ -3661,15 +3710,16 @@ watch(
 
     <section class="relative min-h-0 flex-1 overflow-hidden">
       <div class="h-full overflow-hidden border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        <EditorFloatingToolbar
-          v-if="hasSelection && !hasMultiSelection && !isGroupSelection"
+          <EditorFloatingToolbar
+            v-if="hasSelection && !hasMultiSelection && !isGroupSelection"
           :active-element-label="activeElementLabel"
           :active-property-panel="activePropertyPanel"
           :current-alignment-icon="currentAlignmentIcon"
           :has-text-selection="hasTextSelection"
-          :selected-property-tabs="selectedPropertyTabs"
-          :selected-text-style="selectedTextStyle"
-          :toolbar-position="toolbarPosition"
+            :selected-property-tabs="selectedPropertyTabs"
+            :selected-text-style="selectedTextStyle"
+            :toolbar-position="toolbarPosition"
+            :mobile-mode="isMobileEditor"
           @cycle-alignment="cycleAlignment"
           @property-tab-click="handlePropertyTabClick"
           @start-drag="startToolbarDrag"
@@ -3678,6 +3728,8 @@ watch(
         <div class="relative grid h-full min-h-0 gap-0" :style="editorGridStyle">
           <!-- Panel de CreaciÃ³n (vertical, siempre visible) -->
           <EditorInsertSidebar
+            class="fixed inset-x-0 bottom-0 z-[60] md:static md:z-auto"
+            :class="hasSelection && !hasMultiSelection && !isGroupSelection ? 'max-md:hidden' : ''"
             :text-panel-open="textPanelOpen"
             :image-panel-open="imagePanelOpen"
             :shape-panel-open="shapePanelOpen"
@@ -3691,7 +3743,6 @@ watch(
           <!-- Panel de Opciones (condicionalmente visible) -->
           <EditorContextPanel
             v-if="isOptionsPanelVisible"
-            class="absolute inset-y-0 left-[70px] z-40 shadow-2xl"
             :state="state"
             :has-selection="hasSelection"
             :has-text-selection="hasTextSelection"
