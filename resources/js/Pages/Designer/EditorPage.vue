@@ -190,6 +190,14 @@ const templatePanelHover = ref(false);
 let thumbnailTimer = null;
 const toolbarPosition = reactive({ x: 0, y: 3 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
+const pinchPointers = new Map();
+const pinchZoom = reactive({
+  active: false,
+  startDistance: 0,
+  startZoom: 100,
+  focusX: 0,
+  focusY: 0,
+});
 const uploadProgressByAssetId = reactive({});
 const activeUploadAssetIds = new Set();
 const drag = reactive({
@@ -1085,6 +1093,124 @@ const setZoomLevel = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return;
   zoomLevel.value = Math.round(clamp(parsed, 25, 200));
+};
+
+const getCanvasScrollContainer = () => canvasRef.value?.closest?.('.canvas-grid') ?? null;
+const getPinchTouchPoints = () => [...pinchPointers.values()].slice(0, 2);
+const getPinchDistance = ([first, second]) => Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+const getPinchCenter = ([first, second]) => ({
+  clientX: (first.clientX + second.clientX) / 2,
+  clientY: (first.clientY + second.clientY) / 2,
+});
+
+const resetActivePointerGesturesForPinch = () => {
+  selectionMarquee.active = false;
+  selectionMarquee.pointerId = null;
+  marqueePreviewIds.value = [];
+  drag.active = false;
+  drag.pointerId = null;
+  drag.elementId = null;
+  drag.groupId = null;
+  dragIntent.active = false;
+  dragIntent.pointerId = null;
+  touchIntent.pointerId = null;
+  toolbarDrag.active = false;
+  toolbarDrag.pointerId = null;
+};
+
+const beginPinchZoom = (event) => {
+  const scrollElement = getCanvasScrollContainer();
+  const points = getPinchTouchPoints();
+  if (!scrollElement || points.length < 2) return false;
+
+  const distance = getPinchDistance(points);
+  if (distance < 12) return false;
+
+  const center = getPinchCenter(points);
+  const scrollRect = scrollElement.getBoundingClientRect();
+
+  resetActivePointerGesturesForPinch();
+  pinchZoom.active = true;
+  pinchZoom.startDistance = distance;
+  pinchZoom.startZoom = zoomLevel.value;
+  pinchZoom.focusX = scrollElement.scrollLeft + center.clientX - scrollRect.left;
+  pinchZoom.focusY = scrollElement.scrollTop + center.clientY - scrollRect.top;
+  setDragDocumentState(true);
+
+  if (event?.cancelable) event.preventDefault();
+  return true;
+};
+
+const applyPinchZoom = (nextZoom, center) => {
+  const scrollElement = getCanvasScrollContainer();
+  if (!scrollElement) return;
+
+  const scrollRect = scrollElement.getBoundingClientRect();
+  const centerX = center.clientX - scrollRect.left;
+  const centerY = center.clientY - scrollRect.top;
+  const ratio = nextZoom / Math.max(1, pinchZoom.startZoom);
+
+  setZoomLevel(nextZoom);
+
+  nextTick(() => {
+    scrollElement.scrollLeft = Math.max(0, pinchZoom.focusX * ratio - centerX);
+    scrollElement.scrollTop = Math.max(0, pinchZoom.focusY * ratio - centerY);
+  });
+};
+
+const handleCanvasPointerDownWithPinch = (event) => {
+  if (event.pointerType === 'touch') {
+    pinchPointers.set(event.pointerId, {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
+
+    if (pinchPointers.size >= 2 && beginPinchZoom(event)) {
+      return;
+    }
+  }
+
+  handleCanvasPointerDown(event);
+};
+
+const handlePinchPointerMove = (event) => {
+  if (!pinchPointers.has(event.pointerId)) return;
+
+  pinchPointers.set(event.pointerId, {
+    pointerId: event.pointerId,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  });
+
+  if (!pinchZoom.active && pinchPointers.size >= 2) {
+    beginPinchZoom(event);
+  }
+
+  if (!pinchZoom.active) return;
+
+  const points = getPinchTouchPoints();
+  if (points.length < 2 || pinchZoom.startDistance <= 0) return;
+
+  const distance = getPinchDistance(points);
+  const center = getPinchCenter(points);
+  const nextZoom = clamp(pinchZoom.startZoom * (distance / pinchZoom.startDistance), 25, 200);
+
+  applyPinchZoom(nextZoom, center);
+  if (event.cancelable) event.preventDefault();
+};
+
+const handlePinchPointerEnd = (event) => {
+  if (!pinchPointers.has(event.pointerId)) return;
+
+  pinchPointers.delete(event.pointerId);
+
+  if (!pinchZoom.active || pinchPointers.size >= 2) return;
+
+  pinchZoom.active = false;
+  pinchZoom.startDistance = 0;
+  pinchZoom.startZoom = zoomLevel.value;
+  setDragDocumentState(false);
 };
 const currentCanvasDimensions = () => ({
   width: editorCanvasDimensions.value.width,
@@ -2918,9 +3044,12 @@ onMounted(() => {
   }
   pushHistorySnapshot({ force: true });
   document.addEventListener('pointerdown', handleGlobalPointerDown, true);
+  document.addEventListener('pointermove', handlePinchPointerMove, { passive: false });
   document.addEventListener('pointermove', moveDrag, { passive: false });
   document.addEventListener('pointerup', endDrag);
+  document.addEventListener('pointerup', handlePinchPointerEnd);
   document.addEventListener('pointercancel', endDrag);
+  document.addEventListener('pointercancel', handlePinchPointerEnd);
   document.addEventListener('keydown', handleGlobalKeydown);
   document.addEventListener('paste', handleDocumentPaste);
   document.addEventListener('dragover', handleCanvasFileDragOver);
@@ -2955,9 +3084,12 @@ onBeforeUnmount(() => {
   editorViewportQuery?.removeEventListener?.('change', syncEditorViewport);
   editorViewportQuery = null;
   document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+  document.removeEventListener('pointermove', handlePinchPointerMove);
   document.removeEventListener('pointermove', moveDrag);
   document.removeEventListener('pointerup', endDrag);
+  document.removeEventListener('pointerup', handlePinchPointerEnd);
   document.removeEventListener('pointercancel', endDrag);
+  document.removeEventListener('pointercancel', handlePinchPointerEnd);
   document.removeEventListener('keydown', handleGlobalKeydown);
   document.removeEventListener('paste', handleDocumentPaste);
   document.removeEventListener('dragover', handleCanvasFileDragOver);
@@ -3013,6 +3145,12 @@ const selectBackgroundWithoutOpeningPanel = () => {
   state.selectedElementId = 'background';
   closeOptionsPanel();
 };
+
+const endSelection = () => {
+    state.selectedElementId = null;
+    multiSelectionIds.value = [];
+    selectedGroupId.value = null;
+}
 
 const openTextInsertPanel = () => {
   textPanelOpen.value = true;
@@ -3719,6 +3857,7 @@ watch(
           @cycle-alignment="cycleAlignment"
           @property-tab-click="handlePropertyTabClick"
           @start-drag="startToolbarDrag"
+          @close-bar="endSelection"
         />
 
         <div class="relative grid h-full min-h-0 gap-0" :style="editorGridStyle">
@@ -3845,7 +3984,7 @@ watch(
             :shape-render-model="shapeRenderModel"
             :canvas-ref-setter="setCanvasRef"
             :rich-editor-ref-setter="setRichEditorRef"
-            @canvas-pointer-down="handleCanvasPointerDown"
+            @canvas-pointer-down="handleCanvasPointerDownWithPinch"
             @canvas-click="handleCanvasClick"
             @canvas-file-drag-enter="handleCanvasFileDragEnter"
             @canvas-file-drag-over="handleCanvasFileDragOver"

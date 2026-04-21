@@ -62,7 +62,7 @@ const assignRichEditorRef = (id, element) => {
 </script>
 
 <template>
-  <div class="canvas-grid relative h-full overflow-auto bg-slate-100 px-4 pt-6 pb-28 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10 md:px-10 md:pt-16 md:pb-10" :style="canvasGridStyle" @pointerdown="emit('canvasPointerDown', $event)">
+  <div class="canvas-grid relative h-full overflow-auto bg-slate-100 px-4 pt-6 pb-28 [touch-action:pan-x_pan-y] dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10 md:px-10 md:pt-16 md:pb-10" :style="canvasGridStyle" @pointerdown="emit('canvasPointerDown', $event)">
     <div v-if="templateMode" class="pointer-events-none absolute inset-0 z-0 overflow-hidden">
       <div class="absolute inset-0 bg-[repeating-linear-gradient(-28deg,transparent_0,transparent_118px,rgba(15,23,42,0.055)_118px,rgba(15,23,42,0.055)_121px)] dark:bg-[repeating-linear-gradient(-28deg,transparent_0,transparent_118px,rgba(255,255,255,0.06)_118px,rgba(255,255,255,0.06)_121px)]"></div>
       <div class="grid min-h-full min-w-full content-start gap-x-24 gap-y-32 px-12 py-16 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">

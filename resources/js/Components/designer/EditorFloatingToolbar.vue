@@ -29,6 +29,7 @@ const emit = defineEmits([
   'cycle-alignment',
   'property-tab-click',
   'start-drag',
+  'close-bar'
 ]);
 
 const toolbarShellStyle = computed(() => (
@@ -98,13 +99,18 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
     <div :style="toolbarOffsetStyle" class="pointer-events-none max-w-full">
       <div data-editor-keep-selection="true" class="pointer-events-auto card glass soft-shadow border border-base-300/70 bg-base-100/95">
         <div class="card-body p-1.5">
-          <div class="flex max-w-[calc(100vw-1rem)] flex-nowrap items-center gap-2 overflow-hidden overflow-x-auto md:flex-wrap md:overflow-visible min-w-[calc(100vw-1rem)] md:min-w-auto">
+          <div class="flex max-w-[calc(100vw-1rem)] flex-nowrap items-center gap-2 overflow-hidden overflow-x-auto md:flex-wrap md:overflow-visible min-w-[calc(100vw-1rem)] md:min-w-auto pr-20 md:pr-1">
             <button
               type="button"
               class="tooltip tooltip-bottom order-first hidden btn btn-ghost cursor-grab text-lg active:cursor-grabbing md:inline-flex"
               data-tip="Mover barra"
               @pointerdown="emit('start-drag', $event)"
             >⋮⋮</button>
+
+            <button class="md:hidden absolute right-2 z-10 btn btn-neutral rounded-full w-14 h-14 border border-gray-500 shadow-sm"
+            @click="emit('close-bar', $event)">
+                <Icon icon="ph:check-bold" class="text-2xl" />
+            </button>
 
             <button
               v-for="tab in selectedPropertyTabs"
