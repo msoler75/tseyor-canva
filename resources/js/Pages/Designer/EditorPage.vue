@@ -320,6 +320,7 @@ const fontOptions = (page.props.fontFamilies ?? []).map(f => ({
 const textPropertyTabs = [
     { id: 'typography', label: 'Tipografía' , class: 'order-first text-xl border-1 border-gray-500'},
     // { id: 'color', label: 'A', labelClass:'text-shadow-xs text-xl border-b-3',class: '' },
+    { id: 'fontSize', icon: 'radix-icons:font-size', label: 'Tamaño', title: 'Tamaño', class: 'order-first md:hidden' },
     { id: 'format', icon: 'mdi:format-text', label: 'Formato', title: 'Formato', class: 'order-last md:hidden' },
     { id: 'spacing', icon: 'mdi:format-line-spacing', title: 'Interlineado y espaciado', class: 'order-last' },
     { id: 'opacity', icon: 'carbon:opacity', class: 'order-last', iconClass: 'text-3xl' },

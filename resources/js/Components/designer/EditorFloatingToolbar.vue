@@ -133,7 +133,7 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
             </button>
 
             <template v-if="hasTextSelection">
-              <div class="tooltip tooltip-bottom order-first" data-tip="Tamaño de fuente">
+              <div class="hidden md:flex tooltip tooltip-bottom order-first" data-tip="Tamaño de fuente">
                 <input
                   v-model.number="selectedTextStyle.fontSize"
                   type="number"

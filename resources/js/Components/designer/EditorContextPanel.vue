@@ -1164,6 +1164,24 @@ const endPanelCloseDrag = () => {
                 </div>
               </div>
 
+              <div v-else-if="activePropertyPanel === 'fontSize' && selectedElementType === 'text'" class="card border border-base-300 bg-base-100/80">
+                    <div class="card-body p-4 space-y-4">
+                        <div class="flex flex-start items-center gap-4">
+
+<input type="range" min="8" max="200" class="range" v-model="selectedTextStyle.fontSize"/>
+<input
+                  v-model.number="selectedTextStyle.fontSize"
+                  type="number"
+                  min="8"
+                  max="200"
+                  step="1"
+                  class="input input-bordered join-item w-16 border-gray-500 text-center [--input-color:var(--color-gray-500)]"
+                />
+                    </div>
+
+              </div>
+              </div>
+
               <div v-else-if="activePropertyPanel === 'border' && (selectedElementType === 'shape' || selectedElementType === 'image')" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4 space-y-4">
                   <div class="flex items-center justify-between gap-3">
