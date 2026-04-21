@@ -3008,6 +3008,12 @@ const closeOptionsPanel = () => {
   imagePanelOpen.value = false;
   shapePanelOpen.value = false;
 };
+
+const selectBackgroundWithoutOpeningPanel = () => {
+  state.selectedElementId = 'background';
+  closeOptionsPanel();
+};
+
 const openTextInsertPanel = () => {
   textPanelOpen.value = true;
   imagePanelOpen.value = false;
@@ -3027,12 +3033,7 @@ const openShapeInsertPanel = () => {
   optionsPanelOpen.value = true;
 };
 const openBackgroundPanel = () => {
-  state.selectedElementId = 'background';
-  activePropertyPanel.value = 'color';
-  textPanelOpen.value = false;
-  imagePanelOpen.value = false;
-  shapePanelOpen.value = false;
-  optionsPanelOpen.value = true;
+  selectBackgroundWithoutOpeningPanel();
 };
 const setImageInputRef = (element) => {
   imageInputRef.value = element;
@@ -3423,12 +3424,7 @@ const handleAssistantFinish = async ({ selectedTemplate } = {}) => {
 
 const handleCanvasClick = (event) => {
   if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
-  state.selectedElementId = 'background';
-  activePropertyPanel.value = 'color';
-  optionsPanelOpen.value = true;
-  textPanelOpen.value = false;
-  imagePanelOpen.value = false;
-  shapePanelOpen.value = false;
+  selectBackgroundWithoutOpeningPanel();
 };
 
 const normalizeDesignTitleCandidate = (value) => String(value ?? '')

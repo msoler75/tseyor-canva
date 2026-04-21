@@ -823,7 +823,7 @@ export const useEditorInteractions = ({
       selectedGroupId.value = null;
       multiSelectionIds.value = [];
       state.selectedElementId = 'background';
-      activePropertyPanel.value = 'color';
+      activePropertyPanel.value = null;
       return;
     }
 
