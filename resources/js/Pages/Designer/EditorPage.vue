@@ -8,10 +8,13 @@ import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.v
 import EditorCanvasStage from '../../Components/designer/EditorCanvasStage.vue';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { filterLabels, objectiveOptions, objectiveRecommendations } from '../../data/designer';
-import { useDesignerState } from '../../composables/useDesignerState';
-import { flushDesignerStatePersistence } from '../../composables/useDesignerState';
-import { resetDesignerState } from '../../composables/useDesignerState';
-import { setDesignerThumbnailDataUrl } from '../../composables/useDesignerState';
+import {
+  flushDesignerStatePersistence,
+  hydrateDesignerStateFromPage,
+  resetDesignerState,
+  setDesignerThumbnailDataUrl,
+  toggleDesignerDarkMode,
+} from '../../composables/useDesignerState';
 import { useEditorHistory } from '../../composables/useEditorHistory';
 import { useEditorStyles } from '../../composables/useEditorStyles';
 import { useEditorSelection } from '../../composables/useEditorSelection';
@@ -29,50 +32,6 @@ const TemplateAdjustmentsPanel = defineAsyncComponent(() => import('../../Compon
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const page = usePage();
-// Función para hidratar el estado tras reset
-function hydrateDesignerStateFromPage() {
-  const sessionState = page.props.designer?.state ?? null;
-  const designUuid = page.props.designer?.currentDesign?.uuid ?? null;
-  const state = useDesignerState();
-
-  if (!sessionState) {
-    if (designUuid) {
-      state.currentDesignUuid = designUuid;
-    }
-    return state;
-  }
-
-  const mergedElementLayout = { ...(state.elementLayout ?? {}) };
-  Object.entries(sessionState.elementLayout ?? {}).forEach(([key, value]) => {
-    mergedElementLayout[key] = {
-      ...(mergedElementLayout[key] ?? {}),
-      ...(value ?? {}),
-    };
-  });
-
-  const fresh = {
-    ...state,
-    ...sessionState,
-    content: {
-      ...(state.content ?? {}),
-      ...(sessionState.content ?? {}),
-    },
-    elementLayout: mergedElementLayout,
-    customElements: sessionState.customElements ?? state.customElements ?? {},
-    userUploadedImages: sessionState.userUploadedImages ?? state.userUploadedImages ?? [],
-  };
-
-  if (designUuid) {
-    fresh.currentDesignUuid = designUuid;
-  }
-
-  Object.keys(state).forEach((key) => {
-    delete state[key];
-  });
-  Object.assign(state, fresh);
-  return state;
-}
-
 // Siempre reset y rehidratar al montar
 resetDesignerState();
 const state = hydrateDesignerStateFromPage();
@@ -3478,7 +3437,7 @@ watch(
     :show-header="false"
     :full-height="true"
     :dark-mode="state.darkMode"
-    @toggle-dark="state.darkMode = !state.darkMode"
+    @toggle-dark="toggleDesignerDarkMode"
   >
     <div class="flex h-full min-h-0 flex-col overflow-hidden bg-base-100">
 
@@ -3505,7 +3464,7 @@ watch(
       @undo="performUndo"
       @redo="performRedo"
       @update-zoom-level="setZoomLevel"
-      @toggle-dark-mode="state.darkMode = !state.darkMode"
+      @toggle-dark-mode="toggleDesignerDarkMode"
       @export-navigate="handleExportNavigation"
 
       />

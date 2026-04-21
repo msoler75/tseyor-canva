@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, watch } from 'vue';
 import Avatar from '@/Components/Avatar.vue';
+import { setThemePreference } from '../composables/useThemePreference';
 
 const props = defineProps({
     title: String,
@@ -49,8 +50,7 @@ const handleLogout = async () => {
 }
 
 const syncTheme = () => {
-    document.documentElement.classList.toggle('dark', props.darkMode);
-    document.documentElement.setAttribute('data-theme', props.darkMode ? 'dark' : 'light');
+    setThemePreference(props.darkMode, { persist: false });
 };
 
 onMounted(syncTheme);

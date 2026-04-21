@@ -2,6 +2,7 @@ import { reactive, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { initialDesignerState } from '../data/designer';
+import { readThemePreference, setThemePreference } from './useThemePreference';
 
 const BASE_LAYOUT_KEYS = new Set(['background', 'title', 'subtitle', 'meta', 'contact', 'extra']);
 
@@ -68,6 +69,34 @@ export function useDesignerState() {
     return designerState;
 }
 
+export function hydrateDesignerStateFromPage() {
+    const page = usePage();
+    const state = useDesignerState();
+    const designUuid = page.props.designer?.currentDesign?.uuid ?? null;
+    const savedTheme = readThemePreference();
+
+    if (designUuid) {
+        state.currentDesignUuid = designUuid;
+        currentHydratedDesignUuid = designUuid;
+    }
+
+    if (savedTheme !== null) {
+        state.darkMode = savedTheme;
+    }
+
+    return state;
+}
+
+export function toggleDesignerDarkMode() {
+    if (!designerState) {
+        useDesignerState();
+    }
+
+    designerState.darkMode = !designerState.darkMode;
+
+    return designerState.darkMode;
+}
+
 export function resetDesignerState() {
     const fresh = buildInitialState(null);
     currentHydratedDesignUuid = null;
@@ -87,7 +116,7 @@ export function resetDesignerState() {
 }
 
 function buildInitialState(sessionState) {
-    const savedTheme = localStorage.getItem('tseyor-theme');
+    const savedTheme = readThemePreference();
     const base = {
         ...initialDesignerState,
         content: { ...initialDesignerState.content },
@@ -95,7 +124,7 @@ function buildInitialState(sessionState) {
     };
 
     if (!sessionState) {
-        base.darkMode = savedTheme === 'dark';
+        base.darkMode = savedTheme ?? false;
         return base;
     }
 
@@ -104,7 +133,7 @@ function buildInitialState(sessionState) {
     return {
         ...base,
         ...sessionState,
-        darkMode: typeof sessionState.darkMode === 'boolean' ? sessionState.darkMode : savedTheme === 'dark',
+        darkMode: savedTheme ?? (typeof sessionState.darkMode === 'boolean' ? sessionState.darkMode : false),
         designTitleManual: Boolean(sessionState.designTitleManual),
         content: {
             ...base.content,
@@ -274,10 +303,16 @@ function mergeElementLayout(defaultLayout, sessionLayout) {
 
 function bootstrapPersistence(saveEndpoint) {
     watch(
+        () => designerState.darkMode,
+        (darkMode) => {
+            setThemePreference(darkMode);
+        },
+        { flush: 'sync' }
+    );
+
+    watch(
         designerState,
         () => {
-            localStorage.setItem('tseyor-theme', designerState.darkMode ? 'dark' : 'light');
-
             clearTimeout(saveTimer);
             saveTimer = setTimeout(async () => {
                 try {

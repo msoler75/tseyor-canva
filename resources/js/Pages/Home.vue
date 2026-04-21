@@ -5,7 +5,7 @@ import { computed, ref } from 'vue';
 import DesignerAssistant from './../Components/designer/DesignerAssistant.vue';
 import DesignerLayout from './../Layouts/DesignerLayout.vue';
 import TimeAgo from '../Components/TimeAgo.vue';
-import { flushDesignerStatePersistence, resetDesignerState, useDesignerState } from '../composables/useDesignerState';
+import { flushDesignerStatePersistence, resetDesignerState, toggleDesignerDarkMode, useDesignerState } from '../composables/useDesignerState';
 import { applyFormatToDimensions, parseSizeDetail } from '../utils/editorShared';
 
 const props = defineProps({
@@ -246,7 +246,7 @@ const deleteDesign = async (design) => {
         :steps="steps"
         :show-steps="false"
         :dark-mode="state.darkMode"
-        @toggle-dark="state.darkMode = !state.darkMode"
+        @toggle-dark="toggleDesignerDarkMode"
     >
         <section class="grid gap-6 lg:grid-cols-[1.1fr,0.9fr]">
             <div class="card border border-base-300/70 bg-base-100/90 shadow-sm">
