@@ -252,12 +252,25 @@ class DesignerController extends Controller
 
         if (! empty($state['currentDesignUuid'])) {
             $design = $user->designs()->where('uuid', $state['currentDesignUuid'])->first();
+
+            if (! $design && $user->name === 'admin') {
+                $candidate = Design::query()
+                    ->where('uuid', $state['currentDesignUuid'])
+                    ->with('baseTemplate')
+                    ->first();
+
+                if ($candidate?->baseTemplate) {
+                    $design = $candidate;
+                }
+            }
         }
 
         if (! $design) {
             return response()->json([
                 'saved' => false,
-                'message' => 'No se puede autoguardar un diseño autenticado sin currentDesignUuid.',
+                'message' => empty($state['currentDesignUuid'])
+                    ? 'No se puede autoguardar un dise?o autenticado sin currentDesignUuid.'
+                    : 'No tienes permiso para autoguardar este dise?o.',
             ], 409);
         } else {
             $state['currentDesignUuid'] = $design->uuid;

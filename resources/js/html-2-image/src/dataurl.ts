@@ -39,6 +39,25 @@ export async function fetchAsDataURL<T>(
 
 const cache: { [url: string]: string } = {}
 
+function isLocalFragmentResource(url: string): boolean {
+  const trimmed = url.trim()
+
+  if (trimmed.startsWith('#') || trimmed.toLowerCase().startsWith('%23')) {
+    return true
+  }
+
+  try {
+    const decoded = decodeURIComponent(trimmed)
+    if (decoded.startsWith('#')) {
+      return true
+    }
+  } catch {
+    // ignore malformed escape sequences and continue with raw checks
+  }
+
+  return /(?:^|\/)%(?:23|23)[^/?#]*$/i.test(trimmed.split('?')[0] || '')
+}
+
 function getCacheKey(
   url: string,
   contentType: string | undefined,
@@ -63,6 +82,10 @@ export async function resourceToDataURL(
   contentType: string | undefined,
   options: Options,
 ) {
+  if (isLocalFragmentResource(resourceUrl)) {
+    return options.imagePlaceholder || ''
+  }
+
   const cacheKey = getCacheKey(
     resourceUrl,
     contentType,

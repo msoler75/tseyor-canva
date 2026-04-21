@@ -6,6 +6,10 @@ defineProps({
   showMarquee: Boolean,
   showGroupButton: Boolean,
   showEditTextButton: Boolean,
+  showCloneButton: {
+    type: Boolean,
+    default: true,
+  },
   overlayControlTargetId: String,
   isGroupSelection: Boolean,
   hasMultiSelection: Boolean,
@@ -61,6 +65,7 @@ const emit = defineEmits([
             <Icon icon="ph:pencil-simple-bold" class="text-base" />
           </button>
           <button
+            v-if="showCloneButton"
             data-editor-control="true"
             type="button"
             class="btn btn-ghost btn-sm"

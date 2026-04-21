@@ -113,13 +113,23 @@ class DesignTemplateController extends Controller
             'designSurface' => ['nullable', 'array'],
             'designSurface.width' => ['nullable', 'numeric', 'min:1'],
             'designSurface.height' => ['nullable', 'numeric', 'min:1'],
+            'targetDesignUuid' => ['nullable', 'string', 'max:36'],
         ]);
+
+        $targetDesign = null;
+        if (! empty($validated['targetDesignUuid'])) {
+            $targetDesign = $user->designs()
+                ->where('uuid', $validated['targetDesignUuid'])
+                ->whereDoesntHave('baseTemplate')
+                ->firstOrFail();
+        }
 
         $design = $generator->generate(
             $template->loadMissing('baseDesign'),
             $user,
             $validated,
             $validated['designSurface'] ?? null,
+            $targetDesign,
         );
 
         return response()->json([

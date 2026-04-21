@@ -367,9 +367,8 @@ export const useEditorInteractions = ({
   const moveDrag = (event) => {
     if (selectionMarquee.active && selectionMarquee.pointerId === event.pointerId && canvasRef.value) {
       const rect = canvasRef.value.getBoundingClientRect();
-      const logicalBounds = getCanvasBounds();
-      selectionMarquee.currentX = clamp(event.clientX - rect.left, 0, rect.width);
-      selectionMarquee.currentY = clamp(event.clientY - rect.top, 0, rect.height);
+      selectionMarquee.currentX = event.clientX - rect.left;
+      selectionMarquee.currentY = event.clientY - rect.top;
       updateSelectionMarqueePreview();
       if (event.cancelable) event.preventDefault();
       return;
@@ -816,13 +815,11 @@ export const useEditorInteractions = ({
   const handleCanvasPointerDown = (event) => {
     if (drag.active || selectionMarquee.active) return;
     if (event.button !== undefined && event.button !== 0) return;
-    if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
 
-    if (state.selectedElementId === 'background') {
-      return;
-    }
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('[data-editor-element="true"]') || target?.closest('[data-editor-control="true"]')) return;
 
-    if (event.detail === 2) {
+    if (event.detail === 2 && target?.closest('[data-editor-canvas="true"]')) {
       selectedGroupId.value = null;
       multiSelectionIds.value = [];
       state.selectedElementId = 'background';

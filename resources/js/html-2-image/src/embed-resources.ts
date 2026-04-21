@@ -13,6 +13,27 @@ function toRegex(url: string): RegExp {
   return new RegExp(`(url\\(['"]?)(${escaped})(['"]?\\))`, 'g')
 }
 
+function isLocalFragmentUrl(url: string): boolean {
+  const trimmed = url.trim()
+
+  if (trimmed.startsWith('#') || trimmed.toLowerCase().startsWith('%23')) {
+    return true
+  }
+
+  try {
+    const decoded = decodeURIComponent(trimmed)
+    if (decoded.startsWith('#')) {
+      return true
+    }
+  } catch {
+    // ignore malformed escape sequences and continue with raw checks
+  }
+
+  // Some browsers serialize url(#id) from computed styles as an absolute
+  // URL ending in /%23id, which must not be fetched as an external asset.
+  return /(?:^|\/)%(?:23|23)[^/?#]*$/i.test(trimmed.split('?')[0] || '')
+}
+
 export function parseURLs(cssText: string): string[] {
   const urls: string[] = []
 
@@ -21,7 +42,7 @@ export function parseURLs(cssText: string): string[] {
     return raw
   })
 
-  return urls.filter((url) => !isDataUrl(url))
+  return urls.filter((url) => !isDataUrl(url) && !isLocalFragmentUrl(url))
 }
 
 export async function embed(

@@ -62,20 +62,20 @@ const assignRichEditorRef = (id, element) => {
 </script>
 
 <template>
-  <div class="canvas-grid relative h-full overflow-auto bg-slate-100 px-6 pt-12 pb-6 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10" :style="canvasGridStyle">
+  <div class="canvas-grid relative h-full overflow-auto bg-slate-100 px-6 pt-12 pb-6 dark:bg-slate-950 sm:px-10 sm:pt-16 sm:pb-10" :style="canvasGridStyle" @pointerdown="emit('canvasPointerDown', $event)">
     <div v-if="templateMode" class="pointer-events-none absolute inset-0 z-0 overflow-hidden">
       <div class="absolute inset-0 bg-[repeating-linear-gradient(-28deg,transparent_0,transparent_118px,rgba(15,23,42,0.055)_118px,rgba(15,23,42,0.055)_121px)] dark:bg-[repeating-linear-gradient(-28deg,transparent_0,transparent_118px,rgba(255,255,255,0.06)_118px,rgba(255,255,255,0.06)_121px)]"></div>
-      <div class="grid h-full min-h-[900px] grid-cols-3 content-start gap-x-20 gap-y-28 px-12 py-16">
+      <div class="grid min-h-full min-w-full content-start gap-x-24 gap-y-32 px-12 py-16 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
         <span
-          v-for="index in 18"
+          v-for="index in 28"
           :key="`template-grid-watermark-${index}`"
-          class="select-none whitespace-nowrap text-[clamp(1.4rem,4vw,4.5rem)] font-black uppercase tracking-[0.34em] text-slate-900/10 dark:text-white/10 [transform:rotate(-28deg)]"
+          class="block select-none whitespace-nowrap text-center text-[clamp(1.1rem,2.7vw,2.9rem)] font-black uppercase tracking-[0.32em] leading-none text-slate-900/10 dark:text-white/10 [transform:rotate(-28deg)] [transform-origin:center]"
         >
           {{ templateWatermark || 'PLANTILLA' }}
         </span>
       </div>
     </div>
-    <div class="relative z-10 mx-auto bg-white p-4 shadow-2xl dark:bg-slate-900" :style="[canvasFrameStyle, canvasZoomStyle]" :class="isBackgroundSelected ? 'ring-2 ring-primary' : ''">
+    <div class="relative z-10 mx-auto shadow-2xl" :style="[canvasFrameStyle, canvasZoomStyle]" :class="isBackgroundSelected ? 'ring-2 ring-primary' : ''">
       <div
         :ref="canvasRefSetter"
         data-editor-canvas="true"
@@ -121,7 +121,9 @@ const assignRichEditorRef = (id, element) => {
                 : (drag.active && drag.elementId === item.id
                     ? 'border-2 border-dashed border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'
                     : 'border-2 border-dashed border-cyan-300 bg-white/8 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'))
-            : 'z-10 border border-transparent hover:border-white/20'"
+            : (showFieldLabels && item.fieldKey
+                ? 'z-10 border-2 border-dashed border-accent bg-accent/10 shadow-[0_0_0_3px_rgba(251,191,36,.20)]'
+                : 'z-10 border border-transparent hover:border-white/20')"
           @click="emit('elementClick', { event: $event, id: item.id })"
           @dblclick="emit('beginTextEdit', item.id)"
           @pointerdown="emit('elementPointerDown', { event: $event, id: item.id })"
@@ -129,7 +131,7 @@ const assignRichEditorRef = (id, element) => {
           <div class="relative" :class="item.type === 'text' ? '' : 'h-full w-full'" :style="elementContentStyle(item.id)">
             <div
               v-if="item.fieldKey"
-              class="pointer-events-none absolute -top-3 left-0 z-20 transition group-hover:opacity-100"
+              class="pointer-events-none absolute -top-6 left-0 z-20 transition group-hover:opacity-100"
               :class="showFieldLabels ? 'opacity-100' : 'opacity-0'"
             >
               <span class="badge badge-xs badge-accent shadow-md">

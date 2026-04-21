@@ -17,12 +17,18 @@ use RuntimeException;
 
 class AuthController extends Controller
 {
+    private const RECOVER_DESIGN_AFTER_LOGIN_KEY = 'auth.recover_design_after_login';
+
     public function __construct(
         private readonly JwtService $jwtService,
     ) {
     }
 
     public function login(Request $request) {
+        if ($request->boolean('recover_design')) {
+            $request->session()->put(self::RECOVER_DESIGN_AFTER_LOGIN_KEY, true);
+        }
+
         if ($request->filled('token')) {
             Log::info('Auth login received token on GET; forwarding to portal callback');
 
@@ -160,14 +166,22 @@ class AuthController extends Controller
             'updated_fields' => array_keys($updates),
         ]);
 
-        // Si hay diseño temporal en sesión, recuperarlo y redirigir a su edición
-        $sessionState = $request->session()->get(\App\Http\Controllers\DesignerController::sessionKey());
-        if ($sessionState) {
-            $response = \App\Http\Controllers\DesignerController::recoverSessionDesign($request);
-            $data = $response->getData(true);
-            if (!empty($data['recovered']) && !empty($data['designUuid'])) {
-                return redirect()->route('designer.designs.edit', ['design' => $data['designUuid']]);
+        // Recover a temporary design only when login explicitly started from the editor.
+        // From home or shared layout login, authenticate and return to the project list.
+        $sessionKey = \App\Http\Controllers\DesignerController::sessionKey();
+        $recoverDesignAfterLogin = (bool) $request->session()->pull(self::RECOVER_DESIGN_AFTER_LOGIN_KEY, false);
+
+        if ($recoverDesignAfterLogin) {
+            $sessionState = $request->session()->get($sessionKey);
+            if ($sessionState) {
+                $response = \App\Http\Controllers\DesignerController::recoverSessionDesign($request);
+                $data = $response->getData(true);
+                if (!empty($data['recovered']) && !empty($data['designUuid'])) {
+                    return redirect()->route('designer.designs.edit', ['design' => $data['designUuid']]);
+                }
             }
+        } else {
+            $request->session()->forget($sessionKey);
         }
 
         return redirect()->route('designer.welcome');

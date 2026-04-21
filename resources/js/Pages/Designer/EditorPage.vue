@@ -588,18 +588,10 @@ const isTemplateBaseEditor = computed(() => Boolean(
   || currentDesignBaseTemplate.value?.base_design_uuid === currentDesignUuid.value
   || currentDesignTemplate.value?.base_design_uuid === currentDesignUuid.value
 ));
-const templateFieldDefinitions = computed(() => (
-  (objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic).fields
-    .map((field) => ({
-      ...field,
-      id: field.id ?? field.key,
-      description: field.description ?? field.helper ?? null,
-    }))
-    .filter((field) => Boolean(field.id))
-));
 const templateFieldLabels = {
   title: 'Título',
   subtitle: 'Subtítulo',
+  meta: 'Fecha / hora',
   date: 'Fecha',
   time: 'Hora',
   location: 'Lugar',
@@ -609,6 +601,43 @@ const templateFieldLabels = {
   contact: 'Contacto',
   extra: 'Texto adicional',
 };
+const coreTemplateFieldDefinitions = [
+  { id: 'title', key: 'title', label: 'Título', type: 'text', description: 'Campo principal del diseño.' },
+  { id: 'subtitle', key: 'subtitle', label: 'Subtítulo', type: 'text', description: 'Texto secundario o claim.' },
+  { id: 'meta', key: 'meta', label: 'Fecha / hora', type: 'text', description: 'Campo combinado de fecha y hora del diseño.' },
+  { id: 'contact', key: 'contact', label: 'Contacto', type: 'text', description: 'Información de contacto o inscripción.' },
+  { id: 'extra', key: 'extra', label: 'Texto adicional', type: 'textarea', description: 'Notas, requisitos o información complementaria.' },
+];
+const normalizeTemplateFieldDefinition = (field) => {
+  const id = field?.id ?? field?.key;
+  if (!id) return null;
+
+  return {
+    ...field,
+    id,
+    key: field.key ?? id,
+    label: field.label ?? templateFieldLabels[id] ?? id,
+    description: field.description ?? field.helper ?? null,
+  };
+};
+const templateFieldDefinitions = computed(() => {
+  const currentFields = (objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic).fields ?? [];
+  const allRecommendedFields = Object.values(objectiveRecommendations)
+    .flatMap((recommendation) => recommendation.fields ?? []);
+  const merged = new Map();
+
+  [
+    ...coreTemplateFieldDefinitions,
+    ...currentFields,
+    ...allRecommendedFields,
+  ].forEach((field) => {
+    const normalized = normalizeTemplateFieldDefinition(field);
+    if (!normalized || merged.has(normalized.id)) return;
+    merged.set(normalized.id, normalized);
+  });
+
+  return Array.from(merged.values());
+});
 const templateFieldDefaultTexts = {
   title: 'Título de prueba',
   subtitle: 'Subtítulo de prueba',
@@ -622,6 +651,14 @@ const templateFieldDefaultTexts = {
   extra: 'Texto adicional de prueba',
   meta: 'Fecha de prueba · Hora de prueba',
 };
+const templateContentFieldIds = new Set(['title', 'subtitle', 'contact', 'extra']);
+const normalizePlainTextValue = (value) => String(value ?? '')
+  .replace(/<[^>]*>/g, '')
+  .replace(/&nbsp;/gi, ' ')
+  .replace(/ /g, ' ')
+  .trim();
+const hasMeaningfulText = (value) => normalizePlainTextValue(value).length > 0;
+
 const templateFieldUsage = computed(() => Object.fromEntries(
   templateFieldDefinitions.value.map((field) => [field.id, Boolean(state.elementLayout?.[field.id])]),
 ));
@@ -647,6 +684,16 @@ const editorElements = computed(() => {
     .filter((item) => state.elementLayout[item.id])
     .sort((a, b) => (state.elementLayout[a.id]?.zIndex ?? 0) - (state.elementLayout[b.id]?.zIndex ?? 0));
 });
+const isTemplateFieldElement = (id) => Boolean(
+  isTemplateBaseEditor.value
+  && id
+  && editorElements.value.find((item) => item.id === id)?.fieldKey
+);
+const canCloneCurrentSelection = computed(() => {
+  if (!isTemplateBaseEditor.value) return true;
+  return activeSelectionIds.value.every((id) => !isTemplateFieldElement(id));
+});
+
 const designColorOptions = computed(() => {
   const seen = new Set();
   const collected = [];
@@ -1044,7 +1091,7 @@ const editorGridStyle = computed(() => ({
   gridTemplateColumns: isTemplateBaseEditor.value ? '70px minmax(0,1fr) 320px' : '70px minmax(0,1fr)',
 }));
 const canvasFrameStyle = computed(() => ({
-  width: `${editorCanvasDimensions.value.width + 32}px`,
+  width: `${editorCanvasDimensions.value.width}px`,
   maxWidth: '100%',
 }));
 const canvasZoomStyle = computed(() => ({
@@ -1161,6 +1208,46 @@ const placeInsideCanvas = (layout) => {
   layout.y = Math.round(clamp(layout.y ?? 0, 18, Math.max(18, bounds.height - height - 8)));
 };
 
+const normalizeColorKey = (value) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed || trimmed === 'transparent') return null;
+  return trimmed;
+};
+const getDominantTextColor = () => {
+  const counts = new Map();
+  const firstSeen = new Map();
+  let order = 0;
+
+  editorElements.value.forEach((item) => {
+    if (item.type !== 'text') return;
+    const layout = state.elementLayout?.[item.id];
+    if (!layout) return;
+
+    const colors = [
+      layout.color,
+      ...(Array.isArray(layout.paragraphStyles)
+        ? layout.paragraphStyles.map((style) => style?.color)
+        : []),
+    ];
+
+    colors.forEach((color) => {
+      const key = normalizeColorKey(color);
+      if (!key) return;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (!firstSeen.has(key)) {
+        firstSeen.set(key, order);
+        order += 1;
+      }
+    });
+  });
+
+  if (!counts.size) return '#1f2937';
+
+  return Array.from(counts.entries())
+    .sort((a, b) => (b[1] - a[1]) || ((firstSeen.get(a[0]) ?? 0) - (firstSeen.get(b[0]) ?? 0)))[0][0];
+};
+
 const scaleNumericField = (layout, field, factor, minimum = 0) => {
   if (!Number.isFinite(Number(layout?.[field]))) return;
   layout[field] = Math.max(minimum, Number(layout[field]) * factor);
@@ -1199,7 +1286,8 @@ const rescaleDesignSurface = (previousSurface, nextSurface) => {
       }));
     }
 
-    placeInsideCanvas(layout);
+    // Do not clamp persisted layouts during editor hydration/rescaling.
+    // Users may intentionally place text flush with, or partially beyond, an edge.
   });
 
   state.designSurface = nextSurface;
@@ -1261,26 +1349,34 @@ const addTemplateFieldElement = (fieldKey) => {
   const fallbackFieldLabel = templateFieldDefinitions.value.find((field) => field.id === fieldKey)?.label
     ?? templateFieldLabels[fieldKey]
     ?? fieldKey;
-  const currentContentValue = String(state.content?.[fieldKey] ?? '').trim();
+  const currentContentValue = String(state.content?.[fieldKey] ?? '');
   const fallbackFieldText = templateFieldDefaultTexts[fieldKey] ?? `${fallbackFieldLabel} de prueba`;
   const defaultText = fieldKey === 'meta'
-    ? (metaLine.value || templateFieldDefaultTexts.meta)
-    : (currentContentValue || fallbackFieldText);
+    ? (hasMeaningfulText(metaLine.value) ? metaLine.value : templateFieldDefaultTexts.meta)
+    : (hasMeaningfulText(currentContentValue) ? currentContentValue : fallbackFieldText);
+
+  if (fieldKey === 'meta' && !hasMeaningfulText(metaLine.value)) {
+    state.content.date = hasMeaningfulText(state.content.date) ? state.content.date : templateFieldDefaultTexts.date;
+    state.content.time = hasMeaningfulText(state.content.time) ? state.content.time : templateFieldDefaultTexts.time;
+  } else if (templateContentFieldIds.has(fieldKey) && !hasMeaningfulText(state.content?.[fieldKey])) {
+    state.content[fieldKey] = fallbackFieldText;
+  }
 
   const id = fieldKey;
   const width = fieldKey === 'extra' ? 360 : (fieldKey === 'meta' ? 280 : preset.width);
+  const defaultTextColor = getDominantTextColor();
   const layout = buildDefaultLayout({
     w: width,
     fontSize: preset.fontSize,
     fontWeight: preset.fontWeight,
     lineHeight: preset.lineHeight,
-    color: '#ffffff',
+    color: defaultTextColor,
     shadow: fieldKey === 'title',
     x: getInsertX(width),
     y: 90,
     paragraphStyles: [{
       fontSize: preset.fontSize,
-      color: '#ffffff',
+      color: defaultTextColor,
       fontFamily: 'Poppins, sans-serif',
       fontWeight: preset.fontWeight,
       italic: false,
@@ -2349,7 +2445,7 @@ const updateElementMeasurement = (id, node) => {
 
   const cloneSelectedElement = () => {
     const sourceId = state.selectedElementId;
-    if (!sourceId || sourceId === 'background') return;
+    if (!sourceId || sourceId === 'background' || isTemplateFieldElement(sourceId)) return;
 
     if (editingElementId.value) {
       commitTextEdit();
@@ -2440,7 +2536,7 @@ const updateElementMeasurement = (id, node) => {
     ids.forEach((sourceId) => {
       const sourceLayout = state.elementLayout[sourceId];
       const sourceElement = editorElements.value.find((item) => item.id === sourceId);
-      if (!sourceLayout || !sourceElement) return;
+      if (!sourceLayout || !sourceElement || isTemplateFieldElement(sourceId)) return;
 
       const cloneId = createElementId(sourceElement.type || 'element');
       const cloneLayout = {
@@ -2831,6 +2927,11 @@ onMounted(() => {
     templateFormOpen.value = true;
   }
   refreshElementObservers();
+
+  if (isTemplateBaseEditor.value) {
+    scheduleThumbnailCapture();
+    requestImmediateStateFlush();
+  }
 });
 
 // Watcher para rehidratar si cambia el diseño (uuid)
@@ -2976,7 +3077,7 @@ const handleLogin = async () => {
     console.error('Failed to flush designer state before login', error);
   }
 
-  router.visit('/auth/login');
+  router.visit('/auth/login?recover_design=1');
 };
 
 const handleCreateNewDesign = async () => {
@@ -3216,6 +3317,14 @@ const handlePublishDesignTemplate = async () => {
   templateFormOpen.value = true;
 };
 
+const handleTemplateSettingsOpen = async () => {
+  if (authUser.value?.name !== 'admin') return;
+
+  await loadAdminTemplates();
+  resetTemplateForm(currentDesignTemplate.value);
+  templateFormOpen.value = true;
+};
+
 const closeTemplateForm = () => {
   if (templateFormSaving.value) return;
   templateFormOpen.value = false;
@@ -3288,6 +3397,7 @@ const handleAssistantFinish = async ({ selectedTemplate } = {}) => {
       size: state.size,
       designTitle: state.designTitle,
       designSurface: targetSurface,
+      targetDesignUuid: isTemplateBaseEditor.value ? null : currentDesignUuid.value,
     });
     const uuid = response.data?.design?.uuid;
     if (uuid) {
@@ -3382,6 +3492,7 @@ watch(
       :redo-action-label="redoActionLabel"
       :zoom-level="zoomLevel"
       :dark-mode="state.darkMode"
+      :template-mode="isTemplateBaseEditor"
       @go-home="handleHomeNavigation"
       @create-new-design="handleCreateNewDesign"
       @download-design="handleExportNavigation"
@@ -3695,6 +3806,7 @@ watch(
             :template-field-usage="templateFieldUsage"
             @add-field="addTemplateFieldElement"
             @hover-change="templatePanelHover = $event"
+            @open-settings="handleTemplateSettingsOpen"
           />
 
           <EditorCanvasStage
@@ -3750,6 +3862,7 @@ watch(
                 :show-marquee="selectionMarquee.active"
                 :show-group-button="multiSelectionIds.length > 1"
                 :show-edit-text-button="selectedElementType === 'text'"
+                :show-clone-button="canCloneCurrentSelection"
                 :overlay-control-target-id="overlayControlTargetId"
                 :is-group-selection="isGroupSelection"
                 :has-multi-selection="hasMultiSelection"
@@ -3782,6 +3895,7 @@ watch(
           :show-footer="true"
           :show-close="true"
           :show-step-navigation="false"
+          :hide-templates-step="isTemplateBaseEditor"
           @close="closeAssistant"
           @finish="handleAssistantFinish"
         />

@@ -39,6 +39,10 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  templateMode: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits([
@@ -149,13 +153,13 @@ const handleZoomInput = (event) => {
               Editar campos/datos
             </button>
           </li>
-          <li>
+          <li v-if="!templateMode">
             <button type="button" @click="emit('openDesignAssistantStep', 'templates')">
               <Icon icon="ph:layout-bold" class="text-lg" />
               Cambiar plantilla
             </button>
           </li>
-          <li v-if="authUser?.name === 'admin'">
+          <li v-if="authUser?.name === 'admin' && !templateMode">
             <button type="button" @click="emit('publishDesignTemplate')">
               <Icon icon="ph:seal-check-bold" class="text-lg" />
               Publicar como plantilla

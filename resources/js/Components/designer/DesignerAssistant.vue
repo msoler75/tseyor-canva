@@ -22,22 +22,26 @@ const props = defineProps({
   showFooter: { type: Boolean, default: true },
   showClose: { type: Boolean, default: true },
   showStepNavigation: { type: Boolean, default: true },
+  hideTemplatesStep: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['close', 'finish']);
 const state = useDesignerState();
 const page = usePage();
 const remoteTemplates = ref([]);
-const assistantSteps = [
+const allAssistantSteps = [
   { id: 'objective', label: 'Objetivo' },
   { id: 'format', label: 'Formato' },
   { id: 'content', label: 'Datos' },
   { id: 'templates', label: 'Plantillas' },
 ];
+const assistantSteps = computed(() => props.hideTemplatesStep
+  ? allAssistantSteps.filter((step) => step.id !== 'templates')
+  : allAssistantSteps);
 const assistantStep = ref(props.step);
-const assistantIndex = computed(() => assistantSteps.findIndex((step) => step.id === assistantStep.value));
+const assistantIndex = computed(() => assistantSteps.value.findIndex((step) => step.id === assistantStep.value));
 const isFirstStep = computed(() => assistantIndex.value <= 0);
-const isLastStep = computed(() => assistantIndex.value === assistantSteps.length - 1);
+const isLastStep = computed(() => assistantIndex.value === assistantSteps.value.length - 1);
 
 const objectiveTitle = computed(() => objectiveOptions.find((item) => item.id === state.objective)?.title ?? 'Sin objetivo');
 const sizes = computed(() => {
@@ -120,11 +124,11 @@ const canApplyCurrentStep = computed(() => {
 
 function goNext() {
   if (!canGoNext.value || isLastStep.value) return;
-  assistantStep.value = assistantSteps[assistantIndex.value + 1].id;
+  assistantStep.value = assistantSteps.value[assistantIndex.value + 1].id;
 }
 function goPrevious() {
   if (isFirstStep.value) return;
-  assistantStep.value = assistantSteps[assistantIndex.value - 1].id;
+  assistantStep.value = assistantSteps.value[assistantIndex.value - 1].id;
 }
 function selectSizeOption(option) {
   state.size = option.label;
@@ -138,8 +142,13 @@ function finishAndOpenEditor() {
   if (props.onFinish) props.onFinish();
 }
 watch(() => props.step, (val) => {
-  if (val && assistantSteps.some(s => s.id === val)) assistantStep.value = val;
+  if (val && assistantSteps.value.some(s => s.id === val)) assistantStep.value = val;
 });
+watch(assistantSteps, (steps) => {
+  if (!steps.some((step) => step.id === assistantStep.value)) {
+    assistantStep.value = steps[0]?.id ?? 'objective';
+  }
+}, { immediate: true });
 
 onMounted(async () => {
   try {

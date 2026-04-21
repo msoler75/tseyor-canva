@@ -12,7 +12,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['addField', 'hoverChange']);
+const emit = defineEmits(['addField', 'hoverChange', 'openSettings']);
 
 const availableFields = computed(() => props.templateFields.filter((field) => !props.templateFieldUsage?.[field.id]));
 const addedFields = computed(() => props.templateFields.filter((field) => props.templateFieldUsage?.[field.id]));
@@ -33,6 +33,13 @@ const addedFields = computed(() => props.templateFields.filter((field) => props.
           <p class="mt-2 text-sm text-base-content/65">
             Pulsa un campo disponible para colocarlo en el diseño base.
           </p>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm mt-4 w-full rounded-full"
+            @click="emit('openSettings')"
+          >
+            Ajustes de la plantilla
+          </button>
         </div>
       </div>
 

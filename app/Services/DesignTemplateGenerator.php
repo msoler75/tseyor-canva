@@ -33,7 +33,7 @@ class DesignTemplateGenerator
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>|null  $targetSurface
      */
-    public function generate(DesignTemplate $template, User $user, array $data = [], ?array $targetSurface = null): Design
+    public function generate(DesignTemplate $template, User $user, array $data = [], ?array $targetSurface = null, ?Design $targetDesign = null): Design
     {
         /** @var Design $baseDesign */
         $baseDesign = $template->baseDesign;
@@ -48,7 +48,7 @@ class DesignTemplateGenerator
 
         $state = $this->applyData($state, $data, $template->field_mappings ?? []);
 
-        $uuid = (string) Str::uuid();
+        $uuid = $targetDesign?->uuid ?? (string) Str::uuid();
         $state['currentDesignUuid'] = $uuid;
         $state['selectedTemplateId'] = $template->uuid;
         $state['designSurface'] = $targetSurface ?? ($state['designSurface'] ?? null);
@@ -64,8 +64,7 @@ class DesignTemplateGenerator
         $state['designTitle'] = $name;
         $state['designTitleManual'] = false;
 
-        return $user->designs()->create([
-            'uuid' => $uuid,
+        $attributes = [
             'name' => $name,
             'name_manual' => false,
             'objective' => $state['objective'] ?? null,
@@ -80,6 +79,17 @@ class DesignTemplateGenerator
             'status' => 'draft',
             'last_opened_at' => now(),
             'public' => false,
+        ];
+
+        if ($targetDesign) {
+            $targetDesign->forceFill($attributes)->save();
+
+            return $targetDesign;
+        }
+
+        return $user->designs()->create([
+            'uuid' => $uuid,
+            ...$attributes,
         ]);
     }
 
