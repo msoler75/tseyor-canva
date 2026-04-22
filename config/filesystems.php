@@ -60,6 +60,24 @@ return [
             'report' => false,
         ],
 
+
+        'thumbnails' => [
+            'driver' => 'local',
+            'root' => storage_path('app/thumbnails'),
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage/thumbnails',
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'users' => [
+            'driver' => 'local',
+            'root' => storage_path('app/users'),
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage/users',
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
     ],
 
     /*
@@ -75,6 +93,8 @@ return [
 
     'links' => [
         public_path('storage') => storage_path('app/public'),
+        public_path('storage/thumbnails') => storage_path('app/thumbnails'),
+        public_path('storage/users') => storage_path('app/users'),
     ],
 
 ];

@@ -27,6 +27,7 @@ class DesignerController extends Controller
             return response()->json(['recovered' => false, 'reason' => 'No autenticado'], 401);
         }
 
+
         $sessionState = $request->session()->get(self::SESSION_KEY);
         if (! $sessionState) {
             return response()->json(['recovered' => false, 'reason' => 'No hay diseño temporal en sesión']);
@@ -35,6 +36,44 @@ class DesignerController extends Controller
         /** @var User $user */
         $user = $request->user();
 
+        // --- Mover imágenes temporales a la carpeta del usuario y registrar assets ---
+        $userUploadedImages = $sessionState['userUploadedImages'] ?? [];
+        $sessionId = trim((string) $request->session()->getId()) ?: 'guest';
+        $assetsMap = [];
+        foreach ($userUploadedImages as &$image) {
+            $storagePath = $image['storagePath'] ?? null;
+            if ($storagePath && (str_starts_with($storagePath, $sessionId.'/') || str_starts_with($storagePath, 'guest/'))) {
+                $filename = basename($storagePath);
+                $oldPath = $storagePath;
+                $newPath = $user->id . '/' . $filename;
+                // Mover el archivo en el disco 'users'
+                if (Storage::disk('users')->exists($oldPath)) {
+                    Storage::disk('users')->move($oldPath, $newPath);
+                }
+                // Registrar el asset si no existe
+                $asset = $user->designAssets()->where('path', $newPath)->first();
+                if (! $asset) {
+                    $asset = $user->designAssets()->create([
+                        'uuid' => (string) Str::uuid(),
+                        'label' => $image['label'] ?? $filename,
+                        'disk' => 'users',
+                        'path' => $newPath,
+                        'mime_type' => $image['mime_type'] ?? null,
+                        'extension' => pathinfo($filename, PATHINFO_EXTENSION),
+                        'size_bytes' => $image['size_bytes'] ?? null,
+                        'uploaded_at' => now(),
+                    ]);
+                }
+                $assetsMap[$image['assetId'] ?? $image['id'] ?? $filename] = $asset->id;
+                // Actualizar storagePath en el estado
+                $image['storagePath'] = $newPath;
+                $image['assetId'] = $asset->id;
+            }
+        }
+        unset($image);
+        // Actualizar el estado en sesión con los paths y assetId corregidos
+        $sessionState['userUploadedImages'] = $userUploadedImages;
+
         // Si el diseño temporal tiene uuid y pertenece al usuario, actualizarlo
         $designUuid = $sessionState['currentDesignUuid'] ?? null;
         $design = null;
@@ -42,7 +81,7 @@ class DesignerController extends Controller
             $design = $user->designs()->where('uuid', $designUuid)->first();
         }
 
-        if ($design) {
+        if ($design && is_object($design) && method_exists($design, 'fill')) {
             // Actualizar el diseño existente
             $design->fill([
                 'name' => trim((string) ($sessionState['designTitle'] ?? '')) ?: 'Diseño sin título',
@@ -174,6 +213,12 @@ class DesignerController extends Controller
         $activeBaseTemplate = $activeDesign?->baseTemplate;
         $fontFamilies = $this->fontFamilies();
 
+        // Si no hay diseño activo (invitado), hidratar desde sesión
+        $designerState = $activeDesign?->state;
+        if (!$activeDesign) {
+            $designerState = $request->session()->get(self::SESSION_KEY) ?: null;
+        }
+
         return Inertia::render('Designer/EditorPage', [
             'currentStep' => 'editor',
             'steps' => [],
@@ -183,7 +228,7 @@ class DesignerController extends Controller
             ],
             'fontFamilies' => $fontFamilies,
             'designer' => [
-                'state' => $activeDesign?->state,
+                'state' => $designerState,
                 'currentDesign' => $activeDesign
                     ? [
                         'uuid' => $activeDesign->uuid,
@@ -324,12 +369,16 @@ class DesignerController extends Controller
         $file = $validated['file'];
         /** @var User|null $user */
         $user = $request->user();
-        $folder = $user
-            ? sprintf('designer/uploads/users/%s', $user->id)
-            : sprintf('designer/uploads/%s', trim((string) $request->session()->getId()) ?: 'guest');
+        if ($user) {
+            $folder = $user->id;
+            $disk = 'users';
+        } else {
+            $folder = trim((string) $request->session()->getId()) ?: 'guest';
+            $disk = 'users';
+        }
         $extension = $file->guessExtension() ?: $file->extension() ?: 'bin';
         $filename = sprintf('%s.%s', Str::uuid()->toString(), $extension);
-        $path = $file->storeAs($folder, $filename, 'public');
+        $path = $file->storeAs($folder, $filename, $disk);
 
         $assetId = $validated['assetId'] ?? null;
 
@@ -337,9 +386,9 @@ class DesignerController extends Controller
             $asset = $user->designAssets()->create([
                 'uuid' => (string) Str::uuid(),
                 'label' => $validated['label'] ?? $file->getClientOriginalName(),
-                'disk' => 'public',
+                'disk' => 'users',
                 'path' => $path,
-                'mime_type' => File::mimeType(Storage::disk('public')->path($path)) ?: $file->getMimeType(),
+                'mime_type' => File::mimeType(Storage::disk('users')->path($path)) ?: $file->getMimeType(),
                 'extension' => $extension,
                 'size_bytes' => $file->getSize() ?: 0,
                 'uploaded_at' => now(),
@@ -510,8 +559,8 @@ class DesignerController extends Controller
             $extension = 'jpg';
         }
 
-        $path = sprintf('designer/thumbnails/users/%s/%s.%s', $user->id, $design->uuid, $extension);
-        Storage::disk('public')->put($path, $binary);
+        $path = sprintf('%s.%s', $design->uuid, $extension);
+        Storage::disk('thumbnails')->put($path, $binary);
 
         return $path;
     }

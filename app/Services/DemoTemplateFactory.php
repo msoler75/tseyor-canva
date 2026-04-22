@@ -328,7 +328,7 @@ class DemoTemplateFactory
         $palette = $definition['palette'];
         $title = $this->escapeSvgText($definition['title']);
         $description = $this->escapeSvgText($definition['description']);
-        $path = sprintf('designer/thumbnails/templates/%s.svg', $designUuid);
+        $path = sprintf('%s.svg', $designUuid);
         $svg = <<<SVG
 <svg width="1200" height="675" viewBox="0 0 1200 675" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">{$title}</title>
@@ -352,7 +352,7 @@ class DemoTemplateFactory
 </svg>
 SVG;
 
-        Storage::disk('public')->put($path, $svg);
+        Storage::disk('thumbnails')->put($path, $svg);
 
         return $path;
     }

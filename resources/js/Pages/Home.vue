@@ -94,10 +94,7 @@ const resolveTargetSurface = (snapshot) => {
 };
 
 const finishAndOpenEditor = async ({ selectedTemplate } = {}) => {
-    if (!authUser.value) {
-        window.alert('Debes iniciar sesión para crear y guardar diseños.');
-        return;
-    }
+    // Permitir acceso al editor como invitado. El alert solo se mostrará en descarga/exportación o al crear un segundo diseño temporal.
 
     if (isCreatingDesign.value) return;
 
@@ -125,10 +122,13 @@ const finishAndOpenEditor = async ({ selectedTemplate } = {}) => {
             });
 
         const designUuid = response.data?.design?.uuid;
-        if (designUuid) {
+        if (authUser.value && designUuid) {
             state.currentDesignUuid = designUuid;
             state.designTitle = response.data?.design?.name ?? snapshot.designTitle;
             router.visit(`/designer/designs/${designUuid}/edit`);
+        } else {
+            // Invitado: ir al editor temporal
+            router.visit('/designer/editor');
         }
     } catch (error) {
         isCreatingDesign.value = false;

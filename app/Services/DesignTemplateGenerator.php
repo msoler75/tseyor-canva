@@ -99,7 +99,7 @@ class DesignTemplateGenerator
      * @param  array<string, mixed>  $targetSurface
      * @return array<string, mixed>
      */
-    private function adaptStateToSurface(array $state, array $baseSurface, array $targetSurface): array
+    public function adaptStateToSurface(array $state, array $baseSurface, array $targetSurface): array
     {
         $baseWidth = (float) ($baseSurface['width'] ?? 0);
         $baseHeight = (float) ($baseSurface['height'] ?? 0);
@@ -198,7 +198,7 @@ class DesignTemplateGenerator
      * @param  array<int, array<string, mixed>>  $fieldMappings
      * @return array<string, mixed>
      */
-    private function applyData(array $state, array $data, array $fieldMappings): array
+    public function applyData(array $state, array $data, array $fieldMappings): array
     {
         $content = is_array($state['content'] ?? null) ? $state['content'] : [];
         $incomingContent = is_array($data['content'] ?? null) ? $data['content'] : [];
@@ -433,7 +433,7 @@ class DesignTemplateGenerator
     /**
      * @return array<string, float>
      */
-    private function surfaceFromState(array $state, Design $design): array
+    public function surfaceFromState(array $state, Design $design): array
     {
         return $this->normalizeSurface($state['designSurface'] ?? null)
             ?? $this->surfaceFromDesign($design);
@@ -442,7 +442,7 @@ class DesignTemplateGenerator
     /**
      * @return array<string, float>
      */
-    private function surfaceFromDesign(Design $design): array
+    public function surfaceFromDesign(Design $design): array
     {
         return [
             'width' => (float) ($design->surface_width ?: 500),
@@ -454,7 +454,7 @@ class DesignTemplateGenerator
      * @param  mixed  $surface
      * @return array<string, float>|null
      */
-    private function normalizeSurface(mixed $surface): ?array
+    public function normalizeSurface(mixed $surface): ?array
     {
         if (! is_array($surface)) {
             return null;

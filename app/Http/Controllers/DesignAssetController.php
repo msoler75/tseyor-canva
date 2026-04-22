@@ -53,14 +53,15 @@ class DesignAssetController extends Controller
         $extension = $file->guessExtension() ?: $file->extension() ?: 'bin';
         $uuid = (string) Str::uuid();
         $filename = "{$uuid}.{$extension}";
-        $path = $file->storeAs("designer/uploads/users/{$user->id}", $filename, 'public');
+        $userFolder = $user->id;
+        $path = $file->storeAs($userFolder, $filename, 'users');
 
         $asset = $user->designAssets()->create([
             'uuid' => $uuid,
             'label' => $validated['label'] ?? $file->getClientOriginalName(),
-            'disk' => 'public',
+            'disk' => 'users',
             'path' => $path,
-            'mime_type' => File::mimeType(Storage::disk('public')->path($path)) ?: $file->getMimeType(),
+            'mime_type' => File::mimeType(Storage::disk('users')->path($path)) ?: $file->getMimeType(),
             'extension' => $extension,
             'size_bytes' => $file->getSize() ?: 0,
             'uploaded_at' => now(),

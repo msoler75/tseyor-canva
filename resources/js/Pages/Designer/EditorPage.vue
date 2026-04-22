@@ -3191,6 +3191,11 @@ const setRichEditorRef = (id, element) => {
 // Nuevo handler para abrir el modal de exportación
 const handleExportNavigation = async (event) => {
   event?.preventDefault?.();
+  // Si es invitado, mostrar alerta y no abrir el exportador
+  if (!authUser.value) {
+    window.alert('Para descargar o exportar tu diseño debes iniciar sesión. Puedes seguir editando como invitado.');
+    return;
+  }
   exportDialogOpen.value = true;
   try {
     await flushDesignerStatePersistence();
@@ -3229,6 +3234,11 @@ const handleLogin = async () => {
 };
 
 const handleCreateNewDesign = async () => {
+  // Si es invitado y ya existe un diseño temporal, mostrar alerta y no crear otro
+  if (!authUser.value && state.currentDesignUuid == null && window.sessionStorage.getItem('guestDesignCreated')) {
+    window.alert('Solo puedes tener un diseño temporal como invitado. Inicia sesión para guardar y crear más diseños.');
+    return;
+  }
   try {
     await axios.delete(resetEndpoint.value);
   } catch (error) {
@@ -3236,6 +3246,10 @@ const handleCreateNewDesign = async () => {
   }
 
   resetDesignerState();
+  // Marcar que el invitado ya creó un diseño temporal
+  if (!authUser.value) {
+    window.sessionStorage.setItem('guestDesignCreated', '1');
+  }
   window.location.href = '/';
 };
 

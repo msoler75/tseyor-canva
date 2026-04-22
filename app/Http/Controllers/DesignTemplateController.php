@@ -99,8 +99,9 @@ class DesignTemplateController extends Controller
     {
         /** @var User|null $user */
         $user = $request->user();
-        abort_unless($user, 401);
-        abort_if($template->status !== 'published' && ! $this->isAdmin($user), 404);
+        if ($template->status !== 'published' && ! ($user && $this->isAdmin($user))) {
+            abort(404);
+        }
 
         $validated = $request->validate([
             'content' => ['nullable', 'array'],
@@ -115,6 +116,45 @@ class DesignTemplateController extends Controller
             'designSurface.height' => ['nullable', 'numeric', 'min:1'],
             'targetDesignUuid' => ['nullable', 'string', 'max:36'],
         ]);
+
+        // Invitado: generar estado y guardar en sesión
+        if (!$user) {
+            $baseDesign = $template->baseDesign;
+            $generatorClass = get_class($generator);
+            // Generar el estado igual que el generador, pero sin guardar en BD
+            $state = $baseDesign->state ?? [];
+            $targetSurface = $generator->normalizeSurface($validated['designSurface'] ?? null)
+                ?? $generator->normalizeSurface($state['designSurface'] ?? null)
+                ?? $generator->surfaceFromDesign($baseDesign);
+            if ($targetSurface) {
+                $state = $generator->adaptStateToSurface($state, $generator->surfaceFromState($state, $baseDesign), $targetSurface);
+            }
+            $state = $generator->applyData($state, $validated, $template->field_mappings ?? []);
+            $uuid = (string) Str::uuid();
+            $state['currentDesignUuid'] = $uuid;
+            $state['selectedTemplateId'] = $template->uuid;
+            $state['designSurface'] = $targetSurface ?? ($state['designSurface'] ?? null);
+            $state['objective'] = $validated['objective'] ?? ($state['objective'] ?? null);
+            $state['outputType'] = $validated['outputType'] ?? ($state['outputType'] ?? null);
+            $state['format'] = $validated['format'] ?? ($state['format'] ?? null);
+            $state['size'] = $validated['size'] ?? ($state['size'] ?? null);
+            $name = trim((string) ($validated['designTitle'] ?? ''));
+            if ($name === '' || Str::lower($name) === 'diseño sin título' || Str::lower($name) === 'diseno sin titulo') {
+                $name = sprintf('%s personalizado', $template->title);
+            }
+            $state['designTitle'] = $name;
+            $state['designTitleManual'] = false;
+            // Guardar en sesión
+            $request->session()->put('designer.state', $state);
+            return response()->json([
+                'design' => [
+                    'uuid' => $uuid,
+                    'name' => $name,
+                    'state' => $state,
+                ],
+                'temporal' => true,
+            ], 201);
+        }
 
         $targetDesign = null;
         if (! empty($validated['targetDesignUuid'])) {
