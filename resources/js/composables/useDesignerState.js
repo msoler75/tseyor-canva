@@ -368,6 +368,12 @@ async function persistStateSnapshot(saveEndpoint, snapshot) {
         return;
     }
 
+    // Si el usuario es invitado y hay miniatura, incluirla en la petición
+    let payload = { state: snapshot, ...persistenceMeta };
+    if (!currentRequestIsAuthenticated && snapshot.thumbnailDataUrl) {
+        payload.thumbnailDataUrl = snapshot.thumbnailDataUrl;
+    }
+
     queuedSave = { saveEndpoint, snapshot, meta: { ...persistenceMeta } };
 
     if (saveInFlight) {
@@ -380,7 +386,12 @@ async function persistStateSnapshot(saveEndpoint, snapshot) {
         while (queuedSave) {
             const next = queuedSave;
             queuedSave = null;
-            const response = await axios.put(next.saveEndpoint, { state: next.snapshot, ...next.meta });
+            // Usar el payload correcto para invitados
+            let reqPayload = { state: next.snapshot, ...next.meta };
+            if (!currentRequestIsAuthenticated && next.snapshot.thumbnailDataUrl) {
+                reqPayload.thumbnailDataUrl = next.snapshot.thumbnailDataUrl;
+            }
+            const response = await axios.put(next.saveEndpoint, reqPayload);
 
             if (designerState && response?.data?.designUuid) {
                 designerState.currentDesignUuid = response.data.designUuid;

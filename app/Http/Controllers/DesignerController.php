@@ -168,6 +168,11 @@ class DesignerController extends Controller
             ? $this->publishedTemplates()
             : [];
 
+        $sessionDesign = null;
+        if (!$user) {
+            $sessionDesign = $request->session()->get(self::SESSION_KEY) ?: null;
+        }
+
         return Inertia::render('Home', [
             'currentStep' => null,
             'steps' => [],
@@ -201,6 +206,7 @@ class DesignerController extends Controller
                 : [],
             'communityDesigns' => $communityDesigns,
             'adminTemplates' => $adminTemplates,
+            'sessionDesign' => $sessionDesign,
         ]);
     }
 
@@ -279,16 +285,31 @@ class DesignerController extends Controller
             ], 422);
         }
 
+
         if (! Auth::check()) {
             // Usuario no autenticado: guardar el diseño en sesión
+            // Si hay miniatura, guardarla en disco y guardar la ruta
+            if (!empty($validated['thumbnailDataUrl'])) {
+                $sessionId = trim((string) $request->session()->getId()) ?: 'guest';
+                $uuid = $state['currentDesignUuid'] ?? $sessionId;
+                // Guardar miniatura en disco con prefijo guest_
+                $thumbnailPath = $this->storeGuestThumbnailDataUrl($uuid, $validated['thumbnailDataUrl']);
+                if ($thumbnailPath) {
+                    $state['thumbnail_path'] = $thumbnailPath;
+                }
+                $state['thumbnailDataUrl'] = $validated['thumbnailDataUrl'];
+            }
             $request->session()->put(self::SESSION_KEY, $state);
 
             return response()->json([
                 'saved' => true,
                 'designUuid' => $state['currentDesignUuid'] ?? null,
                 'temporal' => true,
+                'thumbnail_url' => !empty($state['thumbnail_path']) ? route('designer.uploads.show', ['path' => $state['thumbnail_path'], 'v' => time()]) : null,
             ]);
         }
+
+
 
         /** @var User $user */
         $user = $request->user();
@@ -314,8 +335,8 @@ class DesignerController extends Controller
             return response()->json([
                 'saved' => false,
                 'message' => empty($state['currentDesignUuid'])
-                    ? 'No se puede autoguardar un dise?o autenticado sin currentDesignUuid.'
-                    : 'No tienes permiso para autoguardar este dise?o.',
+                    ? 'No se puede autoguardar un diseño autenticado sin currentDesignUuid.'
+                    : 'No tienes permiso para autoguardar este diseño.',
             ], 409);
         } else {
             $state['currentDesignUuid'] = $design->uuid;
@@ -564,6 +585,32 @@ class DesignerController extends Controller
 
         return $path;
     }
+
+
+    /**
+     * Guarda la miniatura de un diseño temporal de invitado en disco con prefijo especial.
+     * @param string $uuid
+     * @param string $dataUrl
+     * @return string|null
+     */
+    private function storeGuestThumbnailDataUrl(string $uuid, string $dataUrl): ?string
+    {
+        if (!preg_match('/^data:image\/(?<type>[a-zA-Z0-9.+-]+);base64,(?<data>.+)$/', $dataUrl, $matches)) {
+            return null;
+        }
+        $binary = base64_decode($matches['data'], true);
+        if ($binary === false) {
+            return null;
+        }
+        $extension = strtolower($matches['type']);
+        if ($extension === 'jpeg') {
+            $extension = 'jpg';
+        }
+        $path = sprintf('guest_%s.%s', $uuid, $extension);
+        Storage::disk('thumbnails')->put($path, $binary);
+        return $path;
+    }
+
 
     private function thumbnailUrl(Design $design): ?string
     {

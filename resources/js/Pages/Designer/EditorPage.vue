@@ -1549,8 +1549,7 @@ const resolveThumbnailBackgroundColor = () => {
 };
 
 const scheduleThumbnailCapture = () => {
-  if (!authUser.value) return;
-
+  // Permitir miniatura para invitados y usuarios
   if (thumbnailTimer) {
     clearTimeout(thumbnailTimer);
   }

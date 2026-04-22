@@ -19,13 +19,19 @@ const props = defineProps({
     communityDesigns: {
         type: Array,
         default: () => [],
-    }
-    ,
+    },
     adminTemplates: {
         type: Array,
         default: () => [],
-    }
+    },
+    sessionDesign: {
+        type: Object,
+        default: null,
+    },
 });
+const continueSessionDesign = () => {
+    router.visit('/designer/editor');
+};
 
 const page = usePage();
 const state = useDesignerState();
@@ -249,6 +255,31 @@ const deleteDesign = async (design) => {
         @toggle-dark="toggleDesignerDarkMode"
     >
         <section class="grid gap-6 lg:grid-cols-[1.1fr,0.9fr]">
+            <!-- Diseño temporal de sesión para invitado -->
+            <div v-if="!authUser && props.sessionDesign" class="card border-2 border-primary/70 bg-primary/5 shadow-lg mb-6">
+                <div class="card-body p-4 flex flex-col">
+                    <div class="flex items-center gap-4">
+                        <div class="h-36 w-36 min-w-[9rem] rounded-xl opacity-90 flex items-center justify-center mb-2 bg-base-200/80 border border-base-300">
+                            <img
+                                v-if="props.sessionDesign.thumbnail_url || props.sessionDesign.thumbnailDataUrl"
+                                :src="props.sessionDesign.thumbnail_url || props.sessionDesign.thumbnailDataUrl"
+                                alt="Miniatura diseño temporal"
+                                class="h-full w-full object-contain rounded-xl bg-transparent"
+                            />
+                            <span v-else class="text-xs font-medium text-base-content/65">Sin miniatura</span>
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary mb-1">Diseño temporal</p>
+                            <h2 class="text-xl font-semibold mb-1">Tienes un diseño sin guardar</h2>
+                            <p class="text-base-content/80 text-sm mb-2">Puedes continuar editando tu diseño temporal. Si inicias sesión, podrás guardarlo en tu cuenta.</p>
+                            <button type="button" class="btn btn-primary btn-lg rounded-full px-8 mt-2" @click="continueSessionDesign">
+                                Continuar editando
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
             <div class="card border border-base-300/70 bg-base-100/90 shadow-sm">
                 <div class="card-body p-7">
                     <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Nuevo diseño</p>
