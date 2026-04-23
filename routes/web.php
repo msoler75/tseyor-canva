@@ -22,9 +22,12 @@ Route::prefix('designer')->group(function (): void {
     Route::put('/state', [DesignerController::class, 'saveState'])->name('designer.state.save');
     Route::delete('/state', [DesignerController::class, 'resetState'])->name('designer.state.reset');
     Route::post('/uploads', [DesignerController::class, 'storeUpload'])->name('designer.uploads.store');
-    Route::get('/storage/{path}', [DesignerController::class, 'showUpload'])
+    Route::get('/storage/uploads/{path}', [DesignerController::class, 'showUpload'])
         ->where('path', '.*')
         ->name('designer.uploads.show');
+    Route::get('/storage/thumbnails/{path}', [DesignerController::class, 'showThumbnail'])
+        ->where('path', '.*')
+        ->name('designer.thumbnails.show');
     Route::get('/designs/{design:uuid}', [DesignController::class, 'show'])->name('designer.designs.show');
     // Las rutas de edición y editor quedan accesibles sin autenticación
     Route::get('/editor', [DesignerController::class, 'editor'])->name('designer.editor');

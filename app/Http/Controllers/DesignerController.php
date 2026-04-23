@@ -167,7 +167,7 @@ class DesignerController extends Controller
             'file_exists' => Storage::disk('thumbnails')->exists($path),
             'file_size' => Storage::disk('thumbnails')->exists($path) ? filesize(Storage::disk('thumbnails')->path($path)) : null,
         ]);
-        return 'thumbnails/' . $path;
+        return $path;
     }
     // Hook para recuperar diseño temporal tras login
     // Se puede llamar desde el frontend tras login, o integrarse en el flujo de bienvenida
@@ -340,7 +340,7 @@ class DesignerController extends Controller
             }
             // Si hay miniatura, añadir thumbnail_url accesible públicamente
             if ($sessionDesign && !empty($sessionDesign['thumbnail_path'])) {
-                $sessionDesign['thumbnail_url'] = route('designer.uploads.show', [
+                $sessionDesign['thumbnail_url'] = route('designer.thumbnails.show', [
                     'path' => $sessionDesign['thumbnail_path'],
                     'v' => time(),
                 ]);
@@ -506,7 +506,7 @@ class DesignerController extends Controller
                 'designUuid' => $state['currentDesignUuid'] ?? null,
                 'temporal' => true,
                 'thumbnail_url' => !empty($state['thumbnail_path'])
-                    ? route('designer.uploads.show', [
+                    ? route('designer.thumbnails.show', [
                         'path' => $state['thumbnail_path'],
                         'v' => $state['thumbnail_version'] ?? uniqid('', true)
                     ])
@@ -632,10 +632,28 @@ class DesignerController extends Controller
         ]);
     }
 
-    public function showUpload(string $path): BinaryFileResponse
+    public function showThumbnail(string $path): BinaryFileResponse
     {
         // Siempre usar el disco 'thumbnails' para miniaturas
         $disk = 'thumbnails';
+        Log::info('[showThumbnail] Buscando archivo', ['path' => $path, 'disk' => $disk]);
+        abort_unless(Storage::disk($disk)->exists($path), 404);
+
+        $absolutePath = Storage::disk($disk)->path($path);
+        $mimeType = File::mimeType($absolutePath) ?: 'application/octet-stream';
+
+        Log::info('[showThumbnail] Sirviendo archivo', ['absolutePath' => $absolutePath, 'mimeType' => $mimeType]);
+        return response()->file($absolutePath, [
+            'Content-Type' => $mimeType,
+            'Cache-Control' => 'public, max-age=31536000',
+        ]);
+    }
+
+      public function showUpload(string $path): BinaryFileResponse
+    {
+        // Siempre usar el disco 'thumbnails' para miniaturas
+        //dd($path);
+        $disk = 'users';
         Log::info('[showUpload] Buscando archivo', ['path' => $path, 'disk' => $disk]);
         abort_unless(Storage::disk($disk)->exists($path), 404);
 
@@ -658,7 +676,7 @@ class DesignerController extends Controller
             return null;
         }
 
-        return route('designer.uploads.show', [
+        return route('designer.thumbnails.show', [
             'path' => $design->thumbnail_path,
             'v' => optional($design->updated_at)->timestamp ?? time(),
         ]);
@@ -704,7 +722,7 @@ class DesignerController extends Controller
             'sort_order' => $template->sort_order,
             'base_design_uuid' => $template->baseDesign?->uuid,
             'thumbnail_url' => $template->baseDesign?->thumbnail_path
-                ? route('designer.uploads.show', [
+                ? route('designer.thumbnails.show', [
                     'path' => $template->baseDesign->thumbnail_path,
                     'v' => optional($template->baseDesign->updated_at)->timestamp ?? time(),
                 ])
