@@ -419,6 +419,7 @@ export async function flushDesignerStatePersistence() {
     await persistStateSnapshot(currentSaveEndpoint, snapshot);
 }
 
-export function setDesignerThumbnailDataUrl(dataUrl) {
+export function setDesignerThumbnailDataUrl(dataUrl, hash) {
     persistenceMeta.thumbnailDataUrl = dataUrl;
+    persistenceMeta.thumbnailHash = hash ?? null;
 }

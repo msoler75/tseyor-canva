@@ -46,4 +46,7 @@ Thumbs.db
 /storage/framework/views/*
 /storage/logs/*
 
+# Custom directories
+storage/app/public/thumbnails/*
+storage/app/public/users/*
 public/fontsx/*

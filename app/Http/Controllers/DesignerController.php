@@ -168,10 +168,34 @@ class DesignerController extends Controller
             ? $this->publishedTemplates()
             : [];
 
+
+
         $sessionDesign = null;
         if (!$user) {
             $sessionDesign = $request->session()->get(self::SESSION_KEY) ?: null;
+            // Si falta thumbnail_path pero existe el archivo, asignarlo automáticamente
+            if ($sessionDesign && empty($sessionDesign['thumbnail_path']) && !empty($sessionDesign['currentDesignUuid'])) {
+                $uuid = $sessionDesign['currentDesignUuid'];
+                $possibleExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+                foreach ($possibleExtensions as $ext) {
+                    $guestThumb = "thumbnails/guest_{$uuid}.{$ext}";
+                    if (Storage::disk('thumbnails')->exists("guest_{$uuid}.{$ext}")) {
+                        $sessionDesign['thumbnail_path'] = $guestThumb;
+                        break;
+                    }
+                }
+            }
+            // Si hay miniatura, añadir thumbnail_url accesible públicamente
+            if ($sessionDesign && !empty($sessionDesign['thumbnail_path'])) {
+                $sessionDesign['thumbnail_url'] = route('designer.uploads.show', [
+                    'path' => $sessionDesign['thumbnail_path'],
+                    'v' => time(),
+                ]);
+            }
         }
+
+        \Log::debug('DesignerController::welcome: sessionDesign recuperado', ['sessionDesign' => $sessionDesign]);
+        \Log::debug('DesignerController::welcome: sessionDesign tiene thumbnail_path', ['thumbnail_path' => isset($sessionDesign['thumbnail_path'])?"SI":"NO"]);
 
         return Inertia::render('Home', [
             'currentStep' => null,
@@ -277,6 +301,7 @@ class DesignerController extends Controller
             'thumbnailDataUrl' => ['nullable', 'string'],
         ]);
 
+
         $state = $validated['state'];
         if (! $this->isPersistableDesignerState($state)) {
             return response()->json([
@@ -284,7 +309,6 @@ class DesignerController extends Controller
                 'message' => 'El estado recibido esta incompleto y no se ha guardado.',
             ], 422);
         }
-
 
         if (! Auth::check()) {
             // Usuario no autenticado: guardar el diseño en sesión
@@ -298,6 +322,11 @@ class DesignerController extends Controller
                     $state['thumbnail_path'] = $thumbnailPath;
                 }
                 $state['thumbnailDataUrl'] = $validated['thumbnailDataUrl'];
+                // Guardar un valor único para forzar recarga de la miniatura
+                $state['thumbnail_version'] = uniqid('', true);
+            } else if (!empty($state['thumbnail_path'])) {
+                // Si no se envía nueva miniatura pero ya existe, solo actualiza versión para forzar recarga
+                $state['thumbnail_version'] = uniqid('', true);
             }
             $request->session()->put(self::SESSION_KEY, $state);
 
@@ -305,7 +334,12 @@ class DesignerController extends Controller
                 'saved' => true,
                 'designUuid' => $state['currentDesignUuid'] ?? null,
                 'temporal' => true,
-                'thumbnail_url' => !empty($state['thumbnail_path']) ? route('designer.uploads.show', ['path' => $state['thumbnail_path'], 'v' => time()]) : null,
+                'thumbnail_url' => !empty($state['thumbnail_path'])
+                    ? route('designer.uploads.show', [
+                        'path' => $state['thumbnail_path'],
+                        'v' => $state['thumbnail_version'] ?? uniqid('', true)
+                    ])
+                    : null,
             ]);
         }
 
@@ -595,20 +629,38 @@ class DesignerController extends Controller
      */
     private function storeGuestThumbnailDataUrl(string $uuid, string $dataUrl): ?string
     {
+        \Log::info('[storeGuestThumbnailDataUrl] INICIO', [
+            'uuid' => $uuid,
+            'dataUrl_sample' => substr($dataUrl, 0, 80),
+            'dataUrl_length' => strlen($dataUrl),
+        ]);
         if (!preg_match('/^data:image\/(?<type>[a-zA-Z0-9.+-]+);base64,(?<data>.+)$/', $dataUrl, $matches)) {
+            \Log::warning('[storeGuestThumbnailDataUrl] No match dataUrl', ['uuid' => $uuid]);
             return null;
         }
         $binary = base64_decode($matches['data'], true);
         if ($binary === false) {
+            \Log::warning('[storeGuestThumbnailDataUrl] base64_decode falló', ['uuid' => $uuid]);
             return null;
         }
+        $md5 = md5($binary);
         $extension = strtolower($matches['type']);
         if ($extension === 'jpeg') {
             $extension = 'jpg';
         }
         $path = sprintf('guest_%s.%s', $uuid, $extension);
-        Storage::disk('thumbnails')->put($path, $binary);
-        return $path;
+        $writeResult = Storage::disk('thumbnails')->put($path, $binary);
+        \Log::info('[storeGuestThumbnailDataUrl] Guardando miniatura', [
+            'path' => $path,
+            'bytes' => strlen($binary),
+            'md5' => $md5,
+            'writeResult' => $writeResult,
+            'full_path' => Storage::disk('thumbnails')->path($path),
+            'file_exists' => Storage::disk('thumbnails')->exists($path),
+            'file_size' => Storage::disk('thumbnails')->exists($path) ? filesize(Storage::disk('thumbnails')->path($path)) : null,
+        ]);
+        // El path devuelto debe ser relativo a public: thumbnails/guest_xxx.jpg
+        return 'thumbnails/' . $path;
     }
 
 

@@ -1548,6 +1548,7 @@ const resolveThumbnailBackgroundColor = () => {
   return '#ffffff';
 };
 
+
 const scheduleThumbnailCapture = () => {
   // Permitir miniatura para invitados y usuarios
   if (thumbnailTimer) {
@@ -1557,22 +1558,29 @@ const scheduleThumbnailCapture = () => {
   thumbnailTimer = setTimeout(async () => {
     thumbnailTimer = null;
 
-    if (!canvasRef.value) return;
-
-    try {
-      const { toJpegExport } = await import('../../utils/useHtml2Image');
-      const dataUrl = await toJpegExport(canvasRef.value, {
-        quality: 0.6,
-        pixelRatio: 0.35,
-        backgroundColor: resolveThumbnailBackgroundColor(),
-        filter: (node) => !(node instanceof Element && node.closest?.('[data-editor-control="true"]')),
-      });
-
-      setDesignerThumbnailDataUrl(dataUrl);
-      await flushDesignerStatePersistence();
-    } catch (error) {
-      console.error('No se pudo generar la miniatura del diseño', error);
-    }
+    // Esperar a que el DOM/canvas termine de renderizar
+    await nextTick();
+    setTimeout(async () => {
+      if (!canvasRef.value) return;
+      try {
+        const { toJpegExport } = await import('../../utils/useHtml2Image');
+        const dataUrl = await toJpegExport(canvasRef.value, {
+          quality: 0.6,
+          pixelRatio: 0.35,
+          backgroundColor: resolveThumbnailBackgroundColor(),
+          filter: (node) => !(node instanceof Element && node.closest?.('[data-editor-control="true"]')),
+        });
+        // LOG: miniatura generada
+        const hash = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(dataUrl));
+        const hashArray = Array.from(new Uint8Array(hash));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        console.log('[Miniatura] Generada', { length: dataUrl.length, hash: hashHex });
+        setDesignerThumbnailDataUrl(dataUrl, hashHex);
+        await flushDesignerStatePersistence();
+      } catch (error) {
+        console.error('No se pudo generar la miniatura del diseño', error);
+      }
+    }, 0); // Espera mínima para asegurar render
   }, 1200);
 };
 
@@ -3069,15 +3077,35 @@ onMounted(() => {
   }
 });
 
-// Watcher para rehidratar si cambia el diseño (uuid)
-watch(
-  () => page.props.designer?.currentDesign?.uuid,
-  (newUuid, oldUuid) => {
-    if (newUuid && newUuid !== oldUuid) {
-      resetDesignerState();
-      hydrateDesignerStateFromPage();
+
+// --- SIEMPRE GENERAR MINIATURA ANTES DE GUARDAR ESTADO ---
+// Debounce para evitar capturas excesivas
+let pendingFlush = false;
+const flushDesignerStateWithThumbnail = async () => {
+  if (pendingFlush) return;
+  pendingFlush = true;
+  console.log('[Guardado] Solicitado');
+  scheduleThumbnailCapture();
+  // Esperar a que la miniatura se genere (1200ms debounce)
+  setTimeout(async () => {
+    pendingFlush = false;
+    console.log('[Guardado] Ejecutando flushDesignerStatePersistence');
+    try {
+      await flushDesignerStatePersistence();
+    } catch (error) {
+      console.error('No se pudo guardar el estado del diseño automáticamente', error);
     }
-  }
+  }, 1300);
+};
+
+// Watcher principal para cambios en el diseño
+watch(
+  () => [state.content, state.elementLayout, state.customElements],
+  () => {
+    scheduleHistorySnapshot();
+    flushDesignerStateWithThumbnail();
+  },
+  { deep: true }
 );
 
 onBeforeUnmount(() => {
@@ -3122,13 +3150,7 @@ watch(editorElements, () => {
 watch(
   () => [state.content, state.elementLayout, state.customElements],
   async () => {
-    scheduleHistorySnapshot();
-    scheduleThumbnailCapture();
-    try {
-      await flushDesignerStatePersistence();
-    } catch (error) {
-      console.error('No se pudo guardar el estado del diseño automáticamente', error);
-    }
+    // ...el guardado ahora lo hace flushDesignerStateWithThumbnail
   },
   { deep: true }
 );

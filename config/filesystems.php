@@ -61,9 +61,10 @@ return [
         ],
 
 
+
         'thumbnails' => [
             'driver' => 'local',
-            'root' => storage_path('app/thumbnails'),
+            'root' => storage_path('app/public/thumbnails'),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage/thumbnails',
             'visibility' => 'public',
             'throw' => false,
@@ -72,7 +73,7 @@ return [
 
         'users' => [
             'driver' => 'local',
-            'root' => storage_path('app/users'),
+            'root' => storage_path('app/public/users'),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage/users',
             'visibility' => 'public',
             'throw' => false,
