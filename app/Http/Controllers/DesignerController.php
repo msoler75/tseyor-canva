@@ -477,6 +477,15 @@ class DesignerController extends Controller
             if (!empty($validated['thumbnailDataUrl'])) {
                 $sessionId = trim((string) $request->session()->getId()) ?: 'guest';
                 $uuid = $sessionId;
+                // Eliminar miniatura anterior si existe
+                if (!empty($state['thumbnail_path'])) {
+                    $oldPath = $state['thumbnail_path'];
+                    $oldFile = str_replace('thumbnails/', '', $oldPath);
+                    if (Storage::disk('thumbnails')->exists($oldFile)) {
+                        Storage::disk('thumbnails')->delete($oldFile);
+                        Log::info('[saveState] Miniatura anterior eliminada', ['oldFile' => $oldFile]);
+                    }
+                }
                 // Guardar miniatura en disco unificado
                 $thumbnailPath = $this->storeThumbnailDataUrlUniversal($uuid, $validated['thumbnailDataUrl']);
                 if ($thumbnailPath) {

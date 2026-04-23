@@ -449,6 +449,13 @@ export async function flushDesignerStatePersistence() {
     saveTimer = null;
 
     const snapshot = JSON.parse(JSON.stringify(designerState));
+    // Copiar la miniatura más reciente generada (si existe) al snapshot antes de guardar
+    if (persistenceMeta.thumbnailDataUrl) {
+        snapshot.thumbnailDataUrl = persistenceMeta.thumbnailDataUrl;
+        if (persistenceMeta.thumbnailHash) {
+            snapshot.thumbnailHash = persistenceMeta.thumbnailHash;
+        }
+    }
     // LOG: Estado a guardar
     // eslint-disable-next-line no-console
     console.log('[flushDesignerStatePersistence] snapshot a guardar:', snapshot);

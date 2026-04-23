@@ -1549,16 +1549,14 @@ const resolveThumbnailBackgroundColor = () => {
 };
 
 
-const scheduleThumbnailCapture = () => {
-  // Permitir miniatura para invitados y usuarios
+
+// Genera la miniatura y ejecuta un callback cuando esté lista
+const generateThumbnailAndThen = (cb) => {
   if (thumbnailTimer) {
     clearTimeout(thumbnailTimer);
   }
-
   thumbnailTimer = setTimeout(async () => {
     thumbnailTimer = null;
-
-    // Esperar a que el DOM/canvas termine de renderizar
     await nextTick();
     setTimeout(async () => {
       if (!canvasRef.value) return;
@@ -1570,16 +1568,21 @@ const scheduleThumbnailCapture = () => {
           backgroundColor: resolveThumbnailBackgroundColor(),
           filter: (node) => !(node instanceof Element && node.closest?.('[data-editor-control="true"]')),
         });
-        // LOG: miniatura generada
         const hash = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(dataUrl));
         const hashArray = Array.from(new Uint8Array(hash));
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         console.log('[Miniatura] Generada', { length: dataUrl.length, hash: hashHex });
         setDesignerThumbnailDataUrl(dataUrl, hashHex);
+        if (typeof cb === 'function') {
+          await cb();
+        }
       } catch (error) {
         console.error('No se pudo generar la miniatura del diseño', error);
+        if (typeof cb === 'function') {
+          await cb(); // Aun con error, intentar guardar
+        }
       }
-    }, 0); // Espera mínima para asegurar render
+    }, 0);
   }, 1200);
 };
 
@@ -3084,9 +3087,7 @@ const flushDesignerStateWithThumbnail = async () => {
   if (pendingFlush) return;
   pendingFlush = true;
   console.log('[Guardado] Solicitado');
-  scheduleThumbnailCapture();
-  // Esperar a que la miniatura se genere (1200ms debounce)
-  setTimeout(async () => {
+  generateThumbnailAndThen(async () => {
     pendingFlush = false;
     console.log('[Guardado] Ejecutando flushDesignerStatePersistence');
     try {
@@ -3094,7 +3095,7 @@ const flushDesignerStateWithThumbnail = async () => {
     } catch (error) {
       console.error('No se pudo guardar el estado del diseño automáticamente', error);
     }
-  }, 1300);
+  });
 };
 
 // Watcher principal para cambios en el diseño
