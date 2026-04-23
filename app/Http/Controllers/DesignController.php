@@ -48,6 +48,7 @@ class DesignController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
+        \Log::info('[store] INICIO', ['user_id' => $user?->id, 'is_guest' => !$user]);
 
         $validated = $request->validate([
             ...DesignerStateRules::rules(),
@@ -61,6 +62,7 @@ class DesignController extends Controller
         $requestedUuid = (string) ($state['currentDesignUuid'] ?? '');
         $uuid = Str::isUuid($requestedUuid) ? $requestedUuid : (string) Str::uuid();
         $state['currentDesignUuid'] = $uuid;
+        \Log::info('[store] Datos recibidos', ['uuid' => $uuid, 'state' => $state]);
 
         $existingDesign = Design::query()->where('uuid', $uuid)->first();
         abort_if($existingDesign && ! $existingDesign->user?->is($user), 409);
@@ -74,6 +76,7 @@ class DesignController extends Controller
             'last_opened_at' => now(),
             'public' => $validated['public'] ?? ($state['public'] ?? false),
         ];
+        \Log::info('[store] Atributos preparados', ['attributes' => $attributes]);
 
         $status = 201;
         if ($user) {
@@ -81,11 +84,13 @@ class DesignController extends Controller
                 $existingDesign->fill($attributes)->save();
                 $design = $existingDesign;
                 $status = 200;
+                \Log::info('[store] Diseño actualizado para usuario', ['user_id' => $user->id, 'uuid' => $uuid]);
             } else {
                 $design = $user->designs()->create([
                     ...$attributes,
                     'uuid' => $uuid,
                 ]);
+                \Log::info('[store] Diseño creado para usuario', ['user_id' => $user->id, 'uuid' => $uuid]);
             }
 
             return response()->json([
@@ -97,8 +102,9 @@ class DesignController extends Controller
                 'uuid' => $uuid,
                 ...$attributes,
             ];
-            // Opcional: puedes guardar varios diseños en sesión si lo deseas
+            \Log::info('[store] Guardando diseño invitado en sesión', ['uuid' => $uuid, 'guestDesign' => $guestDesign]);
             $request->session()->put('guest_design', $guestDesign);
+            \Log::info('[store] Diseño invitado guardado en sesión', ['uuid' => $uuid]);
 
             return response()->json([
                 'design' => $guestDesign,

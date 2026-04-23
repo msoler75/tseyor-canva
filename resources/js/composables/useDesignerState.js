@@ -41,16 +41,35 @@ function normalizeUploadedAssetUrl(value) {
     }
 }
 
-export function useDesignerState() {
+
+/**
+ * Obtiene el estado reactivo del diseñador.
+ * @param {Object} [opts]
+ * @param {boolean} [opts.forceRehydrate] - Si es true, fuerza la rehidratación desde los props actuales.
+ * @param {Object} [opts.overrideState] - Si se pasa, se usa como estado fuente en vez de los props.
+ */
+export function useDesignerState(opts = {}) {
     const page = usePage();
-    const sessionState = page.props.designer?.state ?? null;
+    const sessionState = opts.overrideState !== undefined
+        ? opts.overrideState
+        : (page.props.designer?.state ?? null);
     const saveEndpoint = page.props.designer?.endpoints?.save ?? '/designer/state';
     const incomingDesignUuid = sessionState?.currentDesignUuid ?? page.props.designer?.currentDesign?.uuid ?? null;
     currentSaveEndpoint = saveEndpoint;
     currentRequestIsAuthenticated = Boolean(page.props.auth?.user);
 
-    if (!designerState) {
-        designerState = reactive(buildInitialState(sessionState));
+    const shouldForce = opts.forceRehydrate === true;
+
+    if (!designerState || shouldForce) {
+        // Si ya existe, limpiar y rehidratar
+        if (designerState && shouldForce) {
+            Object.keys(designerState).forEach((key) => {
+                delete designerState[key];
+            });
+            Object.assign(designerState, buildInitialState(sessionState));
+        } else {
+            designerState = reactive(buildInitialState(sessionState));
+        }
         currentHydratedDesignUuid = designerState.currentDesignUuid ?? incomingDesignUuid;
     } else if (incomingDesignUuid && incomingDesignUuid !== currentHydratedDesignUuid) {
         const fresh = buildInitialState(sessionState);
@@ -69,11 +88,21 @@ export function useDesignerState() {
     return designerState;
 }
 
+
+/**
+ * Hidrata el estado del diseñador desde los props actuales, forzando la rehidratación.
+ * Úsalo tras resetDesignerState o cuando quieras garantizar que el estado se sincroniza con backend.
+ */
 export function hydrateDesignerStateFromPage() {
     const page = usePage();
-    const state = useDesignerState();
+    // Forzar rehidratación desde los props actuales
+    const state = useDesignerState({ forceRehydrate: true });
     const designUuid = page.props.designer?.currentDesign?.uuid ?? null;
     const savedTheme = readThemePreference();
+
+    // LOG: Estado recibido al hidratar
+    // eslint-disable-next-line no-console
+    console.log('[hydrateDesignerStateFromPage] props.designer.state:', page.props.designer?.state);
 
     if (designUuid) {
         state.currentDesignUuid = designUuid;
@@ -83,6 +112,10 @@ export function hydrateDesignerStateFromPage() {
     if (savedTheme !== null) {
         state.darkMode = savedTheme;
     }
+
+    // LOG: Estado final tras hidratar
+    // eslint-disable-next-line no-console
+    console.log('[hydrateDesignerStateFromPage] state:', state);
 
     return state;
 }
@@ -97,12 +130,16 @@ export function toggleDesignerDarkMode() {
     return designerState.darkMode;
 }
 
+
+/**
+ * Resetea el estado del diseñador a los valores iniciales (sin props).
+ * Si quieres rehidratar desde backend tras reset, llama después a hydrateDesignerStateFromPage().
+ */
 export function resetDesignerState() {
-    const fresh = buildInitialState(null);
     currentHydratedDesignUuid = null;
 
     if (!designerState) {
-        designerState = reactive(fresh);
+        designerState = reactive(buildInitialState(null));
         return designerState;
     }
 
@@ -110,7 +147,7 @@ export function resetDesignerState() {
         delete designerState[key];
     });
 
-    Object.assign(designerState, fresh);
+    Object.assign(designerState, buildInitialState(null));
 
     return designerState;
 }
@@ -123,6 +160,10 @@ function buildInitialState(sessionState) {
         elementLayout: structuredClone(initialDesignerState.elementLayout),
     };
 
+    // LOG: Estado recibido en buildInitialState
+    // eslint-disable-next-line no-console
+    console.log('[buildInitialState] sessionState:', sessionState);
+
     if (!sessionState) {
         base.darkMode = savedTheme ?? false;
         return base;
@@ -130,7 +171,7 @@ function buildInitialState(sessionState) {
 
     const mergedElementLayout = mergeElementLayout(base.elementLayout, sessionState.elementLayout ?? {});
 
-    return {
+    const result = {
         ...base,
         ...sessionState,
         darkMode: savedTheme ?? (typeof sessionState.darkMode === 'boolean' ? sessionState.darkMode : false),
@@ -144,6 +185,12 @@ function buildInitialState(sessionState) {
         userUploadedImages: normalizeUserUploadedImages(sessionState.userUploadedImages),
         designSurface: normalizeDesignSurface(sessionState.designSurface),
     };
+
+    // LOG: Estado devuelto por buildInitialState
+    // eslint-disable-next-line no-console
+    console.log('[buildInitialState] result:', result);
+
+    return result;
 }
 
 function normalizeDesignSurface(designSurface) {
@@ -416,7 +463,13 @@ export async function flushDesignerStatePersistence() {
     saveTimer = null;
 
     const snapshot = JSON.parse(JSON.stringify(designerState));
-    await persistStateSnapshot(currentSaveEndpoint, snapshot);
+    // LOG: Estado a guardar
+    // eslint-disable-next-line no-console
+    console.log('[flushDesignerStatePersistence] snapshot a guardar:', snapshot);
+    const resp = await persistStateSnapshot(currentSaveEndpoint, snapshot);
+    // LOG: Respuesta del backend tras guardar
+    // eslint-disable-next-line no-console
+    console.log('[flushDesignerStatePersistence] respuesta backend:', resp);
 }
 
 export function setDesignerThumbnailDataUrl(dataUrl, hash) {

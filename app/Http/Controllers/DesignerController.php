@@ -248,6 +248,7 @@ class DesignerController extends Controller
         if (!$activeDesign) {
             $designerState = $request->session()->get(self::SESSION_KEY) ?: null;
         }
+        \Log::info('[editor] Estado enviado a EditorPage', ['designerState' => $designerState]);
 
         return Inertia::render('Designer/EditorPage', [
             'currentStep' => 'editor',
@@ -301,9 +302,17 @@ class DesignerController extends Controller
             'thumbnailDataUrl' => ['nullable', 'string'],
         ]);
 
+        \Log::info('[saveState] INICIO', [
+            'auth_user_id' => Auth::id(),
+            'session_id' => $request->session()->getId(),
+            'input' => $request->all(),
+            'validated' => $validated,
+        ]);
 
         $state = $validated['state'];
+        \Log::info('[saveState] State recibido', ['state' => $state]);
         if (! $this->isPersistableDesignerState($state)) {
+            \Log::warning('[saveState] Estado incompleto, no se guarda', ['state' => $state]);
             return response()->json([
                 'saved' => false,
                 'message' => 'El estado recibido esta incompleto y no se ha guardado.',
@@ -324,11 +333,14 @@ class DesignerController extends Controller
                 $state['thumbnailDataUrl'] = $validated['thumbnailDataUrl'];
                 // Guardar un valor único para forzar recarga de la miniatura
                 $state['thumbnail_version'] = uniqid('', true);
+                \Log::info('[saveState] Miniatura guardada', ['thumbnail_path' => $thumbnailPath]);
             } else if (!empty($state['thumbnail_path'])) {
                 // Si no se envía nueva miniatura pero ya existe, solo actualiza versión para forzar recarga
                 $state['thumbnail_version'] = uniqid('', true);
             }
+            \Log::info('[saveState] Guardando en sesión', ['session_key' => self::SESSION_KEY, 'state' => $state]);
             $request->session()->put(self::SESSION_KEY, $state);
+            \Log::info('[saveState] Guardado en sesión OK', ['session_key' => self::SESSION_KEY]);
 
             return response()->json([
                 'saved' => true,
