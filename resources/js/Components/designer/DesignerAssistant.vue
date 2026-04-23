@@ -125,11 +125,23 @@ const canApplyCurrentStep = computed(() => {
 function goNext() {
   if (!canGoNext.value || isLastStep.value) return;
   assistantStep.value = assistantSteps.value[assistantIndex.value + 1].id;
+  scrollToHeader()
 }
 function goPrevious() {
   if (isFirstStep.value) return;
   assistantStep.value = assistantSteps.value[assistantIndex.value - 1].id;
+  scrollToHeader()
 }
+
+function scrollToHeader() {
+    setTimeout(() => {
+        const el = document.getElementById(`header-${assistantStep.value}`);
+        if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 100);
+}
+
 function selectSizeOption(option) {
   state.size = option.label;
   if (state.format === 'other' && option.formatHint) {
@@ -149,6 +161,32 @@ watch(assistantSteps, (steps) => {
     assistantStep.value = steps[0]?.id ?? 'objective';
   }
 }, { immediate: true });
+
+
+function chooseOutput(o) {
+    state.outputType = o;
+    state.size = null
+    // scroll para que el elemento #step-2 se vea (mover scroll)
+    setTimeout(() => {
+      const el = document.getElementById('step-2');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+}
+
+function chooseFormat(f) {
+    state.format = f;
+    state.size = null
+    // scroll para que el elemento #step-3 se vea (mover scroll)
+    setTimeout(() => {
+      const el = document.getElementById('step-3');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+}
+
 
 onMounted(async () => {
   try {
@@ -189,7 +227,7 @@ defineExpose({ assistantStep });
     </header>
     <div class="flex-1 min-h-0 overflow-y-auto px-6 py-5">
       <section v-if="assistantStep === 'objective'" class="space-y-4">
-        <div class="alert border border-base-300 bg-base-100/80 text-base-content">
+        <div class="alert border border-base-300 bg-base-100/80 text-base-content" id="header-objective">
           <span>Elige para que quieres crear esta pieza.</span>
         </div>
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -205,20 +243,24 @@ defineExpose({ assistantStep });
         </div>
       </section>
       <section v-else-if="assistantStep === 'format'" class="space-y-6">
-        <div v-if="state.objective" class="alert border border-base-300 bg-base-100/80 text-base-content shadow-sm">
+        <div v-if="state.objective" class="alert border border-base-300 bg-base-100/80 text-base-content shadow-sm"
+        id="header-format"
+        >
           <span>Objetivo activo: <strong>{{ objectiveTitle }}</strong></span>
         </div>
         <div class="grid gap-5 lg:grid-cols-3">
-          <article class="card border border-base-300 bg-base-100/80">
+          <article class="card border border-base-300 bg-base-100/80" id="step-1"
+          :class="[!state.outputType?'outline-4 outline-red-500':'']"
+          >
             <div class="card-body p-5">
-              <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 1</p>
-              <p class="mt-1 text-base font-semibold">Salida</p>
+              <div class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 1</div>
+              <div class="mt-1 text-base font-semibold">Salida</div>
               <div class="mt-3 grid gap-3">
                 <button
                   type="button"
                   class="card rounded-2xl border-2 p-3 text-left"
                   :class="state.outputType === 'print' ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40'"
-                  @click="state.outputType = 'print'; state.size = null"
+                  @click="chooseOutput('print')"
                 >
                   <div class="flex items-start justify-start gap-3">
                     <span class="font-medium">Impresión</span>
@@ -229,7 +271,7 @@ defineExpose({ assistantStep });
                   type="button"
                   class="card rounded-2xl border-2 p-3 text-left"
                   :class="state.outputType === 'digital' ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40'"
-                  @click="state.outputType = 'digital'; state.size = null"
+                  @click="chooseOutput('digital')"
                 >
                   <div class="flex items-start justify-start gap-3">
                     <span class="font-medium">Digital</span>
@@ -239,7 +281,10 @@ defineExpose({ assistantStep });
               </div>
             </div>
           </article>
-          <article class="card border border-base-300 bg-base-100/80">
+          <article class="card border border-base-300 bg-base-100/80" id="step-2"
+          :class="[state.outputType?'':'blur-xs',
+            state.outputType&&!state.format?'outline-4 outline-red-500':''
+          ]">
             <div class="card-body p-5">
               <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 2</p>
               <p class="mt-1 text-base font-semibold">Formato</p>
@@ -251,20 +296,21 @@ defineExpose({ assistantStep });
                   class="rounded-2xl border px-3 py-2 text-left"
                   :disabled="!state.outputType"
                   :class="state.format === item.id ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40 disabled:opacity-50'"
-                  @click="state.format = item.id; state.size = null"
+                  @click="chooseFormat(item.id)"
                 >
                   <span class="font-medium">{{ item.title }}</span>
                 </button>
               </div>
             </div>
           </article>
-          <article class="card border border-base-300 bg-base-100/80">
+          <article class="card border border-base-300 bg-base-100/80" id="step-3"
+          :class="[state.format?'':'blur-xs',
+            state.format&&!state.size?'outline-4 outline-red-500':'']">
             <div class="card-body p-5">
-              <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 3</p>
-              <p class="mt-1 text-base font-semibold">Tamaño</p>
+              <div class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 3</div>
+              <div class="mt-1 text-base font-semibold">Tamaño</div>
               <div class="mt-3 flex flex-col items-start justify-start gap-3">
                 <label class="w-full">
-                  <span class="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-base-content/60">Listado de tamaños</span>
                   <select
                     v-model="selectedSizeId"
                     class="select select-bordered w-full rounded-2xl bg-base-100"
@@ -286,7 +332,7 @@ defineExpose({ assistantStep });
         </div>
       </section>
       <section v-else-if="assistantStep === 'content'" class="space-y-4">
-        <div class="alert border border-base-300 bg-base-100/80 text-base-content">
+        <div class="alert border border-base-300 bg-base-100/80 text-base-content" id="header-content">
           <span>Rellena los datos clave para completar las plantillas.</span>
         </div>
         <div class="grid gap-4 sm:grid-cols-2">
@@ -306,7 +352,7 @@ defineExpose({ assistantStep });
         </div>
       </section>
       <section v-else class="space-y-5">
-        <div class="flex flex-wrap gap-2">
+        <div class="flex flex-wrap gap-2" id="header-templates">
           <button
             v-for="filter in availableTemplateFilters"
             :key="filter"
