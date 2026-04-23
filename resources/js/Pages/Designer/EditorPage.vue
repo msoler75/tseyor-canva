@@ -79,12 +79,6 @@ const closeAssistant = () => {
   assistantOpen.value = false;
 };
 const openAssistantStep = async (step) => {
-  try {
-    await flushDesignerStatePersistence();
-  } catch (error) {
-    console.error('Failed to flush designer state before opening assistant', error);
-  }
-
   openAssistant(step, false);
 };
 if (!state.customElements || Array.isArray(state.customElements)) {
@@ -3218,21 +3212,10 @@ const handleExportNavigation = async (event) => {
     return;
   }
   exportDialogOpen.value = true;
-  try {
-    await flushDesignerStatePersistence();
-  } catch (error) {
-    console.error('Failed to flush designer state before export', error);
-  }
 };
 
-const handleHomeNavigation = async () => {
-  try {
-    await flushDesignerStatePersistence();
-  } catch (error) {
-    console.error('Failed to flush designer state before leaving the editor', error);
-  }
-
-  window.location.href = '/';
+const handleHomeNavigation = async () => {  
+  router.visit('/')
 };
 
 const handleLogout = async () => {
@@ -3245,12 +3228,6 @@ const handleLogout = async () => {
 }
 
 const handleLogin = async () => {
-  try {
-    await flushDesignerStatePersistence();
-  } catch (error) {
-    console.error('Failed to flush designer state before login', error);
-  }
-
   router.visit('/auth/login?recover_design=1');
 };
 
@@ -3277,7 +3254,6 @@ const handleCreateNewDesign = async () => {
 const handleDuplicateDesign = async () => {
   if (authUser.value && currentDesignDuplicateEndpoint.value) {
     try {
-      await flushDesignerStatePersistence();
       const response = await axios.post(currentDesignDuplicateEndpoint.value);
       const duplicateUuid = response.data?.design?.uuid;
 

@@ -325,6 +325,12 @@ class DesignerController extends Controller
         if (!$user) {
             $sessionDesign = $request->session()->get(self::SESSION_KEY) ?: null;
             Log::debug('[welcome] sessionDesign recuperado', ['sessionDesign' => $sessionDesign]);
+            if ($sessionDesign && array_key_exists('thumbnailDataUrl', $sessionDesign)) {
+                Log::warning('[welcome] sessionDesign contiene thumbnailDataUrl en Home', [
+                    'thumbnailDataUrl_sample' => substr($sessionDesign['thumbnailDataUrl'], 0, 80) ?? null,
+                    'thumbnailDataUrl_length' => strlen($sessionDesign['thumbnailDataUrl'] ?? '')
+                ]);
+            }
             // Si falta thumbnail_path pero existe el archivo, asignarlo automáticamente
             if ($sessionDesign && empty($sessionDesign['thumbnail_path']) && !empty($sessionDesign['currentDesignUuid'])) {
                 $uuid = $sessionDesign['currentDesignUuid'];
@@ -337,6 +343,11 @@ class DesignerController extends Controller
                         break;
                     }
                 }
+            }
+            // Limpiar cualquier thumbnailDataUrl para evitar sobrescritura o confusión en Home
+            if ($sessionDesign && array_key_exists('thumbnailDataUrl', $sessionDesign)) {
+                unset($sessionDesign['thumbnailDataUrl']);
+                Log::info('[welcome] thumbnailDataUrl eliminado de sessionDesign antes de renderizar Home');
             }
             // Si hay miniatura, añadir thumbnail_url accesible públicamente
             if ($sessionDesign && !empty($sessionDesign['thumbnail_path'])) {
