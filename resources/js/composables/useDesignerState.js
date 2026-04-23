@@ -368,21 +368,7 @@ function bootstrapPersistence(saveEndpoint) {
         { flush: 'sync' }
     );
 
-    watch(
-        designerState,
-        () => {
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(async () => {
-                try {
-                    const snapshot = JSON.parse(JSON.stringify(designerState));
-                    await persistStateSnapshot(saveEndpoint, snapshot);
-                } catch (error) {
-                    console.error('Failed to persist designer session state', error);
-                }
-            }, 250);
-        },
-        { deep: true }
-    );
+    // Guardado automático desactivado para evitar múltiples PUT; el guardado lo controla el editor
 }
 
 function isPersistableDesignerStateSnapshot(snapshot) {

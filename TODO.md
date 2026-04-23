@@ -1,0 +1,2 @@
+-CTRL+Z y CTRL+Y son atajos de teclado de undo y redo, respectivamente
+-

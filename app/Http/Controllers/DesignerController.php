@@ -14,11 +14,161 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Log;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
+
 class DesignerController extends Controller
 {
+
+    private function resolveRequestedDesign(Request $request): ?Design
+    {
+        $routeDesign = $request->route('design');
+        $designUuid = $routeDesign instanceof Design
+            ? $routeDesign->uuid
+            : (is_string($routeDesign) ? $routeDesign : ($request->query('design') ?: null));
+
+        if (! $designUuid) {
+            return null;
+        }
+
+        $design = Design::where('uuid', $designUuid)->first();
+        if (! $design) {
+            return null;
+        }
+
+        $user = $request->user();
+        $design->loadMissing('baseTemplate');
+
+        // Un diseño base de plantilla solo puede abrirse/editarse como tal por admin.
+        // Usuarios no admin (incluyendo invitados) reciben 403 y no se genera copia.
+        if (($design->baseTemplate !== null) && (($user?->name ?? null) !== 'admin')) {
+            abort(403);
+        }
+
+        // Los diseños base de plantilla se editan como la base original.
+        if ($user?->name === 'admin' && $design->baseTemplate) {
+            $state = $design->state ?? [];
+            $state['currentDesignUuid'] = $design->uuid;
+            $state['designTitle'] = $design->name;
+            $state['designTitleManual'] = (bool) $design->name_manual;
+            $design->state = $state;
+            return $design;
+        }
+
+        // Si hay usuario autenticado y el diseño es suyo, devolverlo tal cual
+        if ($user && $design->user_id === $user->id) {
+            $state = $design->state ?? [];
+            $state['currentDesignUuid'] = $design->uuid;
+            $state['designTitle'] = $design->name;
+            $state['designTitleManual'] = (bool) $design->name_manual;
+            $design->state = $state;
+            return $design;
+        }
+
+        // Si hay usuario autenticado y el diseño NO es suyo, crear copia para él
+        if ($user && $design->user_id !== $user->id) {
+            $copy = $user->designs()->create([
+                'uuid' => (string) Str::uuid(),
+                'name' => $design->name.' (copia)',
+                'name_manual' => $design->name_manual,
+                'objective' => $design->objective,
+                'output_type' => $design->output_type,
+                'format' => $design->format,
+                'size_label' => $design->size_label,
+                'surface_width' => $design->surface_width,
+                'surface_height' => $design->surface_height,
+                'template_category' => $design->template_category,
+                'selected_template_id' => $design->selected_template_id,
+                'state' => $design->state,
+                'status' => 'draft',
+                'last_opened_at' => now(),
+            ]);
+            $state = $copy->state ?? [];
+            $state['currentDesignUuid'] = $copy->uuid;
+            $state['designTitle'] = $copy->name;
+            $state['designTitleManual'] = (bool) $copy->name_manual;
+            $copy->state = $state;
+            return $copy;
+        }
+
+        // Si NO hay usuario autenticado, guardar el diseño en sesión como temporal
+        if (! $user) {
+            $state = $design->state ?? [];
+            $state['currentDesignUuid'] = null; // No asociar UUID real
+            $state['designTitle'] = $design->name;
+            $state['designTitleManual'] = (bool) $design->name_manual;
+            // Guardar en sesión para edición temporal
+            $request->session()->put(self::SESSION_KEY, $state);
+            // Devolver un objeto Design simulado solo para el frontend
+            $fakeDesign = new Design;
+            $fakeDesign->uuid = null;
+            $fakeDesign->name = $design->name;
+            $fakeDesign->state = $state;
+            $fakeDesign->updated_at = $design->updated_at;
+            return $fakeDesign;
+        }
+
+        return null;
+    }
+
+    private function fontFamilies(): array
+    {
+        $fontsListPath = base_path('resources/fonts_list.txt');
+        if (! file_exists($fontsListPath)) {
+            return [];
+        }
+
+        $fontFamilies = [];
+        $lines = file($fontsListPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line !== '' && $line[0] !== '#') {
+                $fontFamilies[] = $line;
+            }
+        }
+
+        return $fontFamilies;
+    }
+    /**
+     * Guarda la miniatura en el disco 'thumbnails' para cualquier usuario (invitado o autenticado).
+     * El path devuelto es siempre relativo a public: thumbnails/{uuid}.jpg
+     */
+    private function storeThumbnailDataUrlUniversal(string $uuid, string $dataUrl): ?string
+    {
+        Log::info('[storeThumbnailDataUrlUniversal] INICIO', [
+            'uuid' => $uuid,
+            'dataUrl_sample' => substr($dataUrl, 0, 80),
+            'dataUrl_length' => strlen($dataUrl),
+        ]);
+        if (!preg_match('/^data:image\/(?<type>[a-zA-Z0-9.+-]+);base64,(?<data>.+)$/', $dataUrl, $matches)) {
+            Log::warning('[storeThumbnailDataUrlUniversal] No match dataUrl', ['uuid' => $uuid]);
+            return null;
+        }
+        $binary = base64_decode($matches['data'], true);
+        if ($binary === false) {
+            Log::warning('[storeThumbnailDataUrlUniversal] base64_decode falló', ['uuid' => $uuid]);
+            return null;
+        }
+        $md5 = md5($binary);
+        $extension = strtolower($matches['type']);
+        if ($extension === 'jpeg') {
+            $extension = 'jpg';
+        }
+        $path = sprintf('%s.%s', $uuid, $extension);
+        $writeResult = Storage::disk('thumbnails')->put($path, $binary);
+        Log::info('[storeThumbnailDataUrlUniversal] Guardando miniatura', [
+            'path' => $path,
+            'bytes' => strlen($binary),
+            'md5' => $md5,
+            'writeResult' => $writeResult,
+            'full_path' => Storage::disk('thumbnails')->path($path),
+            'file_exists' => Storage::disk('thumbnails')->exists($path),
+            'file_size' => Storage::disk('thumbnails')->exists($path) ? filesize(Storage::disk('thumbnails')->path($path)) : null,
+        ]);
+        return 'thumbnails/' . $path;
+    }
     // Hook para recuperar diseño temporal tras login
     // Se puede llamar desde el frontend tras login, o integrarse en el flujo de bienvenida
     public static function recoverSessionDesign(Request $request): JsonResponse
@@ -170,9 +320,11 @@ class DesignerController extends Controller
 
 
 
+
         $sessionDesign = null;
         if (!$user) {
             $sessionDesign = $request->session()->get(self::SESSION_KEY) ?: null;
+            Log::debug('[welcome] sessionDesign recuperado', ['sessionDesign' => $sessionDesign]);
             // Si falta thumbnail_path pero existe el archivo, asignarlo automáticamente
             if ($sessionDesign && empty($sessionDesign['thumbnail_path']) && !empty($sessionDesign['currentDesignUuid'])) {
                 $uuid = $sessionDesign['currentDesignUuid'];
@@ -181,6 +333,7 @@ class DesignerController extends Controller
                     $guestThumb = "thumbnails/guest_{$uuid}.{$ext}";
                     if (Storage::disk('thumbnails')->exists("guest_{$uuid}.{$ext}")) {
                         $sessionDesign['thumbnail_path'] = $guestThumb;
+                        Log::info('[welcome] Miniatura encontrada en disco', ['thumbnail_path' => $guestThumb]);
                         break;
                     }
                 }
@@ -191,11 +344,11 @@ class DesignerController extends Controller
                     'path' => $sessionDesign['thumbnail_path'],
                     'v' => time(),
                 ]);
+                Log::info('[welcome] Miniatura url generada', ['thumbnail_url' => $sessionDesign['thumbnail_url']]);
+            } else {
+                Log::warning('[welcome] No se encontró miniatura para diseño de invitado', ['sessionDesign' => $sessionDesign]);
             }
         }
-
-        \Log::debug('DesignerController::welcome: sessionDesign recuperado', ['sessionDesign' => $sessionDesign]);
-        \Log::debug('DesignerController::welcome: sessionDesign tiene thumbnail_path', ['thumbnail_path' => isset($sessionDesign['thumbnail_path'])?"SI":"NO"]);
 
         return Inertia::render('Home', [
             'currentStep' => null,
@@ -248,7 +401,7 @@ class DesignerController extends Controller
         if (!$activeDesign) {
             $designerState = $request->session()->get(self::SESSION_KEY) ?: null;
         }
-        \Log::info('[editor] Estado enviado a EditorPage', ['designerState' => $designerState]);
+        Log::info('[editor] Estado enviado a EditorPage', ['designerState' => $designerState]);
 
         return Inertia::render('Designer/EditorPage', [
             'currentStep' => 'editor',
@@ -302,7 +455,7 @@ class DesignerController extends Controller
             'thumbnailDataUrl' => ['nullable', 'string'],
         ]);
 
-        \Log::info('[saveState] INICIO', [
+        Log::info('[saveState] INICIO', [
             'auth_user_id' => Auth::id(),
             'session_id' => $request->session()->getId(),
             'input' => $request->all(),
@@ -310,9 +463,9 @@ class DesignerController extends Controller
         ]);
 
         $state = $validated['state'];
-        \Log::info('[saveState] State recibido', ['state' => $state]);
+        Log::info('[saveState] State recibido', ['state' => $state]);
         if (! $this->isPersistableDesignerState($state)) {
-            \Log::warning('[saveState] Estado incompleto, no se guarda', ['state' => $state]);
+            Log::warning('[saveState] Estado incompleto, no se guarda', ['state' => $state]);
             return response()->json([
                 'saved' => false,
                 'message' => 'El estado recibido esta incompleto y no se ha guardado.',
@@ -321,26 +474,23 @@ class DesignerController extends Controller
 
         if (! Auth::check()) {
             // Usuario no autenticado: guardar el diseño en sesión
-            // Si hay miniatura, guardarla en disco y guardar la ruta
             if (!empty($validated['thumbnailDataUrl'])) {
                 $sessionId = trim((string) $request->session()->getId()) ?: 'guest';
-                $uuid = $state['currentDesignUuid'] ?? $sessionId;
-                // Guardar miniatura en disco con prefijo guest_
-                $thumbnailPath = $this->storeGuestThumbnailDataUrl($uuid, $validated['thumbnailDataUrl']);
+                $uuid = $sessionId;
+                // Guardar miniatura en disco unificado
+                $thumbnailPath = $this->storeThumbnailDataUrlUniversal($uuid, $validated['thumbnailDataUrl']);
                 if ($thumbnailPath) {
                     $state['thumbnail_path'] = $thumbnailPath;
                 }
                 $state['thumbnailDataUrl'] = $validated['thumbnailDataUrl'];
-                // Guardar un valor único para forzar recarga de la miniatura
                 $state['thumbnail_version'] = uniqid('', true);
-                \Log::info('[saveState] Miniatura guardada', ['thumbnail_path' => $thumbnailPath]);
+                Log::info('[saveState] Miniatura guardada', ['thumbnail_path' => $thumbnailPath]);
             } else if (!empty($state['thumbnail_path'])) {
-                // Si no se envía nueva miniatura pero ya existe, solo actualiza versión para forzar recarga
                 $state['thumbnail_version'] = uniqid('', true);
             }
-            \Log::info('[saveState] Guardando en sesión', ['session_key' => self::SESSION_KEY, 'state' => $state]);
+            Log::info('[saveState] Guardando en sesión', ['session_key' => self::SESSION_KEY, 'state' => $state]);
             $request->session()->put(self::SESSION_KEY, $state);
-            \Log::info('[saveState] Guardado en sesión OK', ['session_key' => self::SESSION_KEY]);
+            Log::info('[saveState] Guardado en sesión OK', ['session_key' => self::SESSION_KEY]);
 
             return response()->json([
                 'saved' => true,
@@ -404,7 +554,7 @@ class DesignerController extends Controller
         }
 
         if (! empty($validated['thumbnailDataUrl'])) {
-            $thumbnailPath = $this->storeThumbnailDataUrl($user, $design, $validated['thumbnailDataUrl']);
+            $thumbnailPath = $this->storeThumbnailDataUrlUniversal($design->uuid, $validated['thumbnailDataUrl']);
             if ($thumbnailPath) {
                 $design->forceFill([
                     'thumbnail_path' => $thumbnailPath,
@@ -475,205 +625,22 @@ class DesignerController extends Controller
 
     public function showUpload(string $path): BinaryFileResponse
     {
-        abort_unless(Storage::disk('public')->exists($path), 404);
+        // Siempre usar el disco 'thumbnails' para miniaturas
+        $disk = 'thumbnails';
+        Log::info('[showUpload] Buscando archivo', ['path' => $path, 'disk' => $disk]);
+        abort_unless(Storage::disk($disk)->exists($path), 404);
 
-        $absolutePath = Storage::disk('public')->path($path);
+        $absolutePath = Storage::disk($disk)->path($path);
         $mimeType = File::mimeType($absolutePath) ?: 'application/octet-stream';
 
+        Log::info('[showUpload] Sirviendo archivo', ['absolutePath' => $absolutePath, 'mimeType' => $mimeType]);
         return response()->file($absolutePath, [
             'Content-Type' => $mimeType,
             'Cache-Control' => 'public, max-age=31536000',
         ]);
     }
 
-    /**
-     * @return array<int, string>
-     */
-    private function fontFamilies(): array
-    {
-        $fontsListPath = base_path('resources/fonts_list.txt');
-        if (! file_exists($fontsListPath)) {
-            return [];
-        }
 
-        $fontFamilies = [];
-        $lines = file($fontsListPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line !== '' && $line[0] !== '#') {
-                $fontFamilies[] = $line;
-            }
-        }
-
-        return $fontFamilies;
-    }
-
-    public static function sessionKey(): string
-    {
-        return self::SESSION_KEY;
-    }
-
-    private function resolveRequestedDesign(Request $request): ?Design
-    {
-        $routeDesign = $request->route('design');
-        $designUuid = $routeDesign instanceof Design
-            ? $routeDesign->uuid
-            : (is_string($routeDesign) ? $routeDesign : ($request->query('design') ?: null));
-
-        if (! $designUuid) {
-            return null;
-        }
-
-        $design = Design::where('uuid', $designUuid)->first();
-        if (! $design) {
-            return null;
-        }
-
-        $user = $request->user();
-        $design->loadMissing('baseTemplate');
-
-        // Un diseño base de plantilla solo puede abrirse/editarse como tal por admin.
-        // Usuarios no admin (incluyendo invitados) reciben 403 y no se genera copia.
-        if (($design->baseTemplate !== null) && (($user?->name ?? null) !== 'admin')) {
-            abort(403);
-        }
-
-        // Los dise?os base de plantilla se editan como la base original.
-        // No deben copiarse para admin, porque al copiarlos se pierde la relaci?n
-        // design_templates.base_design_id -> designs.id que activa el modo plantilla.
-        if ($user?->name === 'admin' && $design->baseTemplate) {
-            $state = $design->state ?? [];
-            $state['currentDesignUuid'] = $design->uuid;
-            $state['designTitle'] = $design->name;
-            $state['designTitleManual'] = (bool) $design->name_manual;
-            $design->state = $state;
-
-            return $design;
-        }
-
-        // Si hay usuario autenticado y el diseño es suyo, devolverlo tal cual
-        if ($user && $design->user_id === $user->id) {
-            $state = $design->state ?? [];
-            $state['currentDesignUuid'] = $design->uuid;
-            $state['designTitle'] = $design->name;
-            $state['designTitleManual'] = (bool) $design->name_manual;
-            $design->state = $state;
-
-            return $design;
-        }
-
-        // Si hay usuario autenticado y el diseño NO es suyo, crear copia para él
-        if ($user && $design->user_id !== $user->id) {
-            $copy = $user->designs()->create([
-                'uuid' => (string) Str::uuid(),
-                'name' => $design->name.' (copia)',
-                'name_manual' => $design->name_manual,
-                'objective' => $design->objective,
-                'output_type' => $design->output_type,
-                'format' => $design->format,
-                'size_label' => $design->size_label,
-                'surface_width' => $design->surface_width,
-                'surface_height' => $design->surface_height,
-                'template_category' => $design->template_category,
-                'selected_template_id' => $design->selected_template_id,
-                'state' => $design->state,
-                'status' => 'draft',
-                'last_opened_at' => now(),
-            ]);
-            $state = $copy->state ?? [];
-            $state['currentDesignUuid'] = $copy->uuid;
-            $state['designTitle'] = $copy->name;
-            $state['designTitleManual'] = (bool) $copy->name_manual;
-            $copy->state = $state;
-
-            return $copy;
-        }
-
-        // Si NO hay usuario autenticado, guardar el diseño en sesión como temporal
-        if (! $user) {
-            $state = $design->state ?? [];
-            $state['currentDesignUuid'] = null; // No asociar UUID real
-            $state['designTitle'] = $design->name;
-            $state['designTitleManual'] = (bool) $design->name_manual;
-            // Guardar en sesión para edición temporal
-            $request->session()->put(self::SESSION_KEY, $state);
-            // Devolver un objeto Design simulado solo para el frontend
-            $fakeDesign = new Design;
-            $fakeDesign->uuid = null;
-            $fakeDesign->name = $design->name;
-            $fakeDesign->state = $state;
-            $fakeDesign->updated_at = $design->updated_at;
-
-            return $fakeDesign;
-        }
-
-        return null;
-    }
-
-    private function storeThumbnailDataUrl(User $user, Design $design, string $dataUrl): ?string
-    {
-        if (! preg_match('/^data:image\/(?<type>[a-zA-Z0-9.+-]+);base64,(?<data>.+)$/', $dataUrl, $matches)) {
-            return null;
-        }
-
-        $binary = base64_decode($matches['data'], true);
-        if ($binary === false) {
-            return null;
-        }
-
-        $extension = strtolower($matches['type']);
-        if ($extension === 'jpeg') {
-            $extension = 'jpg';
-        }
-
-        $path = sprintf('%s.%s', $design->uuid, $extension);
-        Storage::disk('thumbnails')->put($path, $binary);
-
-        return $path;
-    }
-
-
-    /**
-     * Guarda la miniatura de un diseño temporal de invitado en disco con prefijo especial.
-     * @param string $uuid
-     * @param string $dataUrl
-     * @return string|null
-     */
-    private function storeGuestThumbnailDataUrl(string $uuid, string $dataUrl): ?string
-    {
-        \Log::info('[storeGuestThumbnailDataUrl] INICIO', [
-            'uuid' => $uuid,
-            'dataUrl_sample' => substr($dataUrl, 0, 80),
-            'dataUrl_length' => strlen($dataUrl),
-        ]);
-        if (!preg_match('/^data:image\/(?<type>[a-zA-Z0-9.+-]+);base64,(?<data>.+)$/', $dataUrl, $matches)) {
-            \Log::warning('[storeGuestThumbnailDataUrl] No match dataUrl', ['uuid' => $uuid]);
-            return null;
-        }
-        $binary = base64_decode($matches['data'], true);
-        if ($binary === false) {
-            \Log::warning('[storeGuestThumbnailDataUrl] base64_decode falló', ['uuid' => $uuid]);
-            return null;
-        }
-        $md5 = md5($binary);
-        $extension = strtolower($matches['type']);
-        if ($extension === 'jpeg') {
-            $extension = 'jpg';
-        }
-        $path = sprintf('guest_%s.%s', $uuid, $extension);
-        $writeResult = Storage::disk('thumbnails')->put($path, $binary);
-        \Log::info('[storeGuestThumbnailDataUrl] Guardando miniatura', [
-            'path' => $path,
-            'bytes' => strlen($binary),
-            'md5' => $md5,
-            'writeResult' => $writeResult,
-            'full_path' => Storage::disk('thumbnails')->path($path),
-            'file_exists' => Storage::disk('thumbnails')->exists($path),
-            'file_size' => Storage::disk('thumbnails')->exists($path) ? filesize(Storage::disk('thumbnails')->path($path)) : null,
-        ]);
-        // El path devuelto debe ser relativo a public: thumbnails/guest_xxx.jpg
-        return 'thumbnails/' . $path;
-    }
 
 
     private function thumbnailUrl(Design $design): ?string

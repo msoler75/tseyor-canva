@@ -1576,7 +1576,6 @@ const scheduleThumbnailCapture = () => {
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         console.log('[Miniatura] Generada', { length: dataUrl.length, hash: hashHex });
         setDesignerThumbnailDataUrl(dataUrl, hashHex);
-        await flushDesignerStatePersistence();
       } catch (error) {
         console.error('No se pudo generar la miniatura del diseño', error);
       }
