@@ -76,20 +76,34 @@ class DesignController extends Controller
         ];
 
         $status = 201;
-        if ($existingDesign) {
-            $existingDesign->fill($attributes)->save();
-            $design = $existingDesign;
-            $status = 200;
-        } else {
-            $design = $user->designs()->create([
-                ...$attributes,
-                'uuid' => $uuid,
-            ]);
-        }
+        if ($user) {
+            if ($existingDesign) {
+                $existingDesign->fill($attributes)->save();
+                $design = $existingDesign;
+                $status = 200;
+            } else {
+                $design = $user->designs()->create([
+                    ...$attributes,
+                    'uuid' => $uuid,
+                ]);
+            }
 
-        return response()->json([
-            'design' => $design->fresh(),
-        ], $status);
+            return response()->json([
+                'design' => $design->fresh(),
+            ], $status);
+        } else {
+            // Invitado: guardar en sesión
+            $guestDesign = [
+                'uuid' => $uuid,
+                ...$attributes,
+            ];
+            // Opcional: puedes guardar varios diseños en sesión si lo deseas
+            $request->session()->put('guest_design', $guestDesign);
+
+            return response()->json([
+                'design' => $guestDesign,
+            ], 201);
+        }
     }
 
     public function show(Request $request, Design $design): JsonResponse

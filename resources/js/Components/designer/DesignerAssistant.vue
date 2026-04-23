@@ -288,16 +288,17 @@ defineExpose({ assistantStep });
             <div class="card-body p-5">
               <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 2</p>
               <p class="mt-1 text-base font-semibold">Formato</p>
-              <div class="mt-3 grid gap-3">
+              <div class="mt-3 grid grid-cols-2 gap-3">
                 <button
                   v-for="item in formatCards"
                   :key="item.id"
                   type="button"
-                  class="rounded-2xl border px-3 py-2 text-left"
+                  class="rounded-2xl border px-3 py-2 text-left flex gap-2 items-center"
                   :disabled="!state.outputType"
                   :class="state.format === item.id ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40 disabled:opacity-50'"
                   @click="chooseFormat(item.id)"
                 >
+                    <IconifyIcon :icon="item.icon" :class="item.iconClass" class="text-6xl text-base-content"/>
                   <span class="font-medium">{{ item.title }}</span>
                 </button>
               </div>

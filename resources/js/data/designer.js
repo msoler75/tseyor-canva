@@ -65,10 +65,10 @@ export const objectiveOptions = [
 ];
 
 export const formatCards = [
-    { id: 'vertical', title: 'Cartel vertical', description: 'El más habitual para imprimir y colgar.', shape: 'h-36 w-24', gradient: 'from-violet-600 to-fuchsia-500' },
-    { id: 'horizontal', title: 'Cartel horizontal', description: 'Útil para cabeceras y banners.', shape: 'h-24 w-36', gradient: 'from-cyan-500 to-sky-400' },
-    { id: 'square', title: 'Cuadrado', description: 'Perfecto para redes o piezas cuadradas.', shape: 'h-28 w-28', gradient: 'from-amber-400 to-orange-500' },
-    { id: 'other', title: 'No lo sé', description: 'No tienes claro el formato y quieres decidirlo más adelante.', shape: 'h-28 w-28', gradient: 'from-slate-300 to-slate-400' },
+    { id: 'vertical', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-y-80 rotate-90', title: 'Cartel vertical', description: 'El más habitual para imprimir y colgar.', shape: 'h-36 w-24', gradient: 'from-violet-600 to-fuchsia-500' },
+    { id: 'horizontal', icon: 'ph:rectangle-duotone', iconClass:'transform scale-x-110 scale-y-80 ', title: 'Cartel horizontal', description: 'Útil para cabeceras y banners.', shape: 'h-24 w-36', gradient: 'from-cyan-500 to-sky-400' },
+    { id: 'square', icon: 'ph:square-duotone', title: 'Cuadrado', description: 'Perfecto para redes o piezas cuadradas.', shape: 'h-28 w-28', gradient: 'from-amber-400 to-orange-500' },
+    { id: 'other', icon: 'ph:question-duotone', title: 'No lo sé', description: 'No tienes claro el formato y quieres decidirlo más adelante.', shape: 'h-28 w-28', gradient: 'from-slate-300 to-slate-400' },
 ];
 
 export const templateFilters = ['all', 'modern', 'minimal', 'promo', 'elegant', 'corporate', 'youth', 'informative'];
