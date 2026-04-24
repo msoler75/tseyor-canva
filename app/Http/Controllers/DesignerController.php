@@ -22,6 +22,10 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 class DesignerController extends Controller
 {
 
+    public static function sessionKey() {
+        return 'designer_session_key';
+    }
+
     private function resolveRequestedDesign(Request $request): ?Design
     {
         $routeDesign = $request->route('design');

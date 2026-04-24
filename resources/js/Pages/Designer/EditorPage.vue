@@ -3214,7 +3214,7 @@ const handleExportNavigation = async (event) => {
   exportDialogOpen.value = true;
 };
 
-const handleHomeNavigation = async () => {  
+const handleHomeNavigation = async () => {
   router.visit('/')
 };
 
@@ -3228,7 +3228,7 @@ const handleLogout = async () => {
 }
 
 const handleLogin = async () => {
-  router.visit('/auth/login?recover_design=1');
+  router.visit('/auth/login?from_editor=1');
 };
 
 const handleCreateNewDesign = async () => {

@@ -17,7 +17,7 @@ use RuntimeException;
 
 class AuthController extends Controller
 {
-    private const RECOVER_DESIGN_AFTER_LOGIN_KEY = 'auth.recover_design_after_login';
+    private const FROM_EDITOR_KEY = 'auth.redirect_to_editor_after_login';
 
     public function __construct(
         private readonly JwtService $jwtService,
@@ -25,8 +25,8 @@ class AuthController extends Controller
     }
 
     public function login(Request $request) {
-        if ($request->boolean('recover_design')) {
-            $request->session()->put(self::RECOVER_DESIGN_AFTER_LOGIN_KEY, true);
+        if ($request->boolean('from_editor')) {
+            $request->session()->put(self::FROM_EDITOR_KEY, true);
         }
 
         if ($request->filled('token')) {
@@ -168,24 +168,41 @@ class AuthController extends Controller
 
         // Recover a temporary design only when login explicitly started from the editor.
         // From home or shared layout login, authenticate and return to the project list.
-        $sessionKey = \App\Http\Controllers\DesignerController::sessionKey();
-        $recoverDesignAfterLogin = (bool) $request->session()->pull(self::RECOVER_DESIGN_AFTER_LOGIN_KEY, false);
-
-        if ($recoverDesignAfterLogin) {
-            $sessionState = $request->session()->get($sessionKey);
-            if ($sessionState) {
-                $response = \App\Http\Controllers\DesignerController::recoverSessionDesign($request);
-                $data = $response->getData(true);
-                if (!empty($data['recovered']) && !empty($data['designUuid'])) {
-                    return redirect()->route('designer.designs.edit', ['design' => $data['designUuid']]);
+        // Siempre intentar recuperar diseño temporal tras login, si existe
+        $sessionKey = 'designer.state';
+        $sessionState = $request->session()->get($sessionKey);
+        $recoverDesignAfterLogin = (bool) $request->session()->pull(self::FROM_EDITOR_KEY, false);
+        if ($sessionState) {
+            $response = \App\Http\Controllers\DesignerController::recoverSessionDesign($request);
+            $data = $response->getData(true);
+            // Renombrar thumbnail si es necesario
+            if (!empty($data['recovered']) && !empty($data['designUuid'])) {
+                // Buscar el diseño recién creado
+                $designUuid = $data['designUuid'];
+                $design = \App\Models\Design::where('uuid', $designUuid)->first();
+                if ($design && !empty($sessionState['thumbnail_path'])) {
+                    $oldThumbnail = $sessionState['thumbnail_path'];
+                    $extension = pathinfo($oldThumbnail, PATHINFO_EXTENSION);
+                    $newThumbnail = $designUuid . ($extension ? ('.' . $extension) : '.jpg');
+                    if ($oldThumbnail !== $newThumbnail && \Storage::disk('thumbnails')->exists($oldThumbnail)) {
+                        \Storage::disk('thumbnails')->move($oldThumbnail, $newThumbnail);
+                        $design->thumbnail_path = $newThumbnail;
+                        $design->save();
+                    }
                 }
+                if ($recoverDesignAfterLogin) {
+                    return redirect()->route('designer.designs.edit', ['design' => $designUuid]);
+                }
+                // Si no, simplemente redirigir a la home
+                return redirect()->route('designer.welcome');
             }
         } else {
             $request->session()->forget($sessionKey);
         }
-
         return redirect()->route('designer.welcome');
     }
+
+
 
     public function me(Request $request): JsonResponse
     {
