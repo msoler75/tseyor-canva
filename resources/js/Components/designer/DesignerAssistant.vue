@@ -11,7 +11,6 @@ import {
   formatCards,
   objectiveOptions,
   objectiveRecommendations,
-  templateCatalog,
   templateFilters,
 } from '../../data/designer';
 import { useDesignerState, resetDesignerState, flushDesignerStatePersistence } from '../../composables/useDesignerState';
@@ -71,33 +70,30 @@ const fieldPlaceholders = {
   contact: 'Ej. 600 123 123 · hola@tudominio.com',
   extra: 'Ej. Aforo limitado · Reserva previa · Traer material',
 };
-const persistedTemplates = computed(() => page.props.designer?.templates ?? []);
-const availableTemplates = computed(() => {
-  if (remoteTemplates.value.length) return remoteTemplates.value;
-  if (persistedTemplates.value.length) return persistedTemplates.value;
-  return templateCatalog;
-});
+const availableTemplates = computed(() => remoteTemplates.value);
 const availableTemplateFilters = computed(() => {
   const categories = new Set(templateFilters);
   availableTemplates.value.forEach((template) => {
     (template.category_ids ?? (template.category ? [template.category] : [])).forEach((category) => categories.add(category));
   });
-
   return Array.from(categories);
 });
-const filteredTemplates = computed(() => availableTemplates.value.filter((item) => {
-  const categoryIds = item.category_ids ?? (item.category ? [item.category] : []);
-  const objectiveIds = item.objective_ids ?? [];
-  const matchesCategory = !state.templateCategory
-    || state.templateCategory === 'all'
-    || categoryIds.includes(state.templateCategory);
-  const matchesObjective = !objectiveIds.length
-    || objectiveIds.includes('generic')
-    || !state.objective
-    || objectiveIds.includes(state.objective);
+const filteredTemplates = computed(() => {
+  if (!availableTemplates.value.length) return [];
+  return availableTemplates.value.filter((item) => {
+    const categoryIds = item.category_ids ?? (item.category ? [item.category] : []);
+    const objectiveIds = item.objective_ids ?? [];
+    const matchesCategory = !state.templateCategory
+      || state.templateCategory === 'all'
+      || categoryIds.includes(state.templateCategory);
+    const matchesObjective = !objectiveIds.length
+      || objectiveIds.includes('generic')
+      || !state.objective
+      || objectiveIds.includes(state.objective);
 
-  return matchesCategory && matchesObjective;
-}));
+    return matchesCategory && matchesObjective;
+  });
+});
 const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
 const venueLine = computed(() => {
   if (state.objective === 'event_virtual') {
@@ -150,7 +146,7 @@ function selectSizeOption(option) {
 }
 function finishAndOpenEditor() {
   const selectedTemplate = availableTemplates.value.find((template) => template.id === state.selectedTemplateId) ?? null;
-  emit('finish', { selectedTemplate });
+  emit('finish', { selectedTemplate});
   if (props.onFinish) props.onFinish();
 }
 watch(() => props.step, (val) => {

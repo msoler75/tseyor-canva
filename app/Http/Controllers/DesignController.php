@@ -8,6 +8,8 @@ use App\Support\DesignerStateRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use App\Models\DesignTemplate;
+use App\Services\DesignTemplateGenerator;
 
 class DesignController extends Controller
 {
@@ -58,11 +60,27 @@ class DesignController extends Controller
             'public' => ['nullable', 'boolean'],
         ]);
 
+
         $state = $validated['state'];
         $requestedUuid = (string) ($state['currentDesignUuid'] ?? '');
         $uuid = Str::isUuid($requestedUuid) ? $requestedUuid : (string) Str::uuid();
         $state['currentDesignUuid'] = $uuid;
         \Log::info('[store] Datos recibidos', ['uuid' => $uuid, 'state' => $state]);
+
+        // Aplicar datos del asistente a los elementos del diseño
+        $generator = app(DesignTemplateGenerator::class);
+        \Log::info('[store] selectedTemplateId', ['selectedTemplateId' => $state['selectedTemplateId'] ?? null]);
+        if (!empty($state['selectedTemplateId'])) {
+            $template = DesignTemplate::where('uuid', $state['selectedTemplateId'])->first();
+            if ($template && is_array($template->field_mappings)) {
+                $state = $generator->applyData($state, $state, $template->field_mappings);
+                \Log::info('[store] applyData ejecutado', ['template_id' => $template->uuid, 'field_mappings' => $template->field_mappings, 'state_content' => $state['content'] ?? null]);
+            }
+        } else {
+            // Si no hay plantilla, aplicar los datos a los elementos base (sin mappings)
+            $state = $generator->applyData($state, $state, []);
+            \Log::info('[store] applyData ejecutado (sin plantilla)', ['state_content' => $state['content'] ?? null]);
+        }
 
         $existingDesign = Design::query()->where('uuid', $uuid)->first();
         abort_if($existingDesign && ! $existingDesign->user?->is($user), 409);

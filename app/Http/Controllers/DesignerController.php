@@ -412,10 +412,21 @@ class DesignerController extends Controller
         $fontFamilies = $this->fontFamilies();
 
         // Si no hay diseño activo (invitado), hidratar desde sesión
+
         $designerState = $activeDesign?->state;
         if (!$activeDesign) {
             $designerState = $request->session()->get(self::SESSION_KEY) ?: null;
         }
+
+        // Refuerzo de coherencia: sincronizar content <-> elementLayout
+        if (is_array($designerState)) {
+            $content = $designerState['content'] ?? [];
+            $elementLayout = $designerState['elementLayout'] ?? [];
+            \App\Support\DesignerStateSync::syncContentAndElementLayout($content, $elementLayout);
+            $designerState['content'] = $content;
+            $designerState['elementLayout'] = $elementLayout;
+        }
+
         Log::info('[editor] Estado enviado a EditorPage', ['designerState' => $designerState]);
 
         return Inertia::render('Designer/EditorPage', [

@@ -104,6 +104,11 @@ export function hydrateDesignerStateFromPage() {
     // eslint-disable-next-line no-console
     console.log('[hydrateDesignerStateFromPage] props.designer.state:', page.props.designer?.state);
 
+    // --- Sincronización de textos entre content y elementLayout tras hidratar (DRY) ---
+    if (state && state.content && state.elementLayout) {
+        syncContentAndElementLayout(state.content, state.elementLayout);
+    }
+
     if (designUuid) {
         state.currentDesignUuid = designUuid;
         currentHydratedDesignUuid = designUuid;
@@ -170,16 +175,18 @@ function buildInitialState(sessionState) {
     }
 
     const mergedElementLayout = mergeElementLayout(base.elementLayout, sessionState.elementLayout ?? {});
+    const normalizedContent = {
+        ...base.content,
+        ...normalizeContentStrings(sessionState.content ?? {}),
+    };
+    syncContentAndElementLayout(normalizedContent, mergedElementLayout);
 
     const result = {
         ...base,
         ...sessionState,
         darkMode: savedTheme ?? (typeof sessionState.darkMode === 'boolean' ? sessionState.darkMode : false),
         designTitleManual: Boolean(sessionState.designTitleManual),
-        content: {
-            ...base.content,
-            ...normalizeContentStrings(sessionState.content ?? {}),
-        },
+        content: normalizedContent,
         elementLayout: mergedElementLayout,
         customElements: normalizeCustomElements(sessionState.customElements, mergedElementLayout),
         userUploadedImages: normalizeUserUploadedImages(sessionState.userUploadedImages),
@@ -468,4 +475,25 @@ export async function flushDesignerStatePersistence() {
 export function setDesignerThumbnailDataUrl(dataUrl, hash) {
     persistenceMeta.thumbnailDataUrl = dataUrl;
     persistenceMeta.thumbnailHash = hash ?? null;
+}
+
+// Sincroniza los campos title, subtitle, meta, contact, extra entre content y elementLayout
+function syncContentAndElementLayout(content, elementLayout) {
+    for (const key of ['title','subtitle','meta','contact','extra']) {
+        if (
+            elementLayout[key] &&
+            typeof elementLayout[key].text === 'string' &&
+            elementLayout[key].text !== '' &&
+            (!content[key] || content[key] === '')
+        ) {
+            content[key] = elementLayout[key].text;
+        }
+        if (
+            content[key] && content[key] !== '' &&
+            elementLayout[key] &&
+            (typeof elementLayout[key].text !== 'string' || elementLayout[key].text === '')
+        ) {
+            elementLayout[key].text = content[key];
+        }
+    }
 }

@@ -200,6 +200,12 @@ class DesignTemplateGenerator
      */
     public function applyData(array $state, array $data, array $fieldMappings): array
     {
+        \Log::info('[DesignTemplateGenerator::applyData] INICIO', [
+            'state_content_inicial' => $state['content'] ?? null,
+            'data_content' => $data['content'] ?? null,
+            'fieldMappings' => $fieldMappings,
+        ]);
+
         $content = is_array($state['content'] ?? null) ? $state['content'] : [];
         $incomingContent = is_array($data['content'] ?? null) ? $data['content'] : [];
 
@@ -241,7 +247,39 @@ class DesignTemplateGenerator
             }
         }
 
+        \Log::info("DesignTemplateGenerator::applyData] ANTES DE APLICAR DATOS", [
+            'state'=>$state
+        ]);
+
         $state = $this->applyContentToMatchingElements($state, $state['content'] ?? $incomingContent);
+
+        \Log::info("DesignTemplateGenerator::applyData] DESPUÉS DE APLICAR DATOS", [
+            'state'=>$state
+        ]);
+
+        // Si no hay fieldMappings (es decir, no plantilla), copia los valores de content a elementLayout
+        if (empty($fieldMappings) && isset($state['elementLayout']) && is_array($state['elementLayout'])) {
+            foreach (['title','subtitle','meta','contact','extra'] as $id) {
+                if (isset($state['elementLayout'][$id]) && is_array($state['elementLayout'][$id])) {
+                    $valor = $state['content'][$id] ?? null;
+                    if (is_string($valor) && $valor !== '') {
+                        $state['elementLayout'][$id]['text'] = $valor;
+                    }
+                }
+            }
+        }
+
+        // Log después de aplicar datos
+        $elementLayout = $state['elementLayout'] ?? [];
+        $elementos_texto = [];
+        foreach (['title','subtitle','meta','contact','extra'] as $id) {
+            $elementos_texto[$id] = $elementLayout[$id]['text'] ?? $state['content'][$id] ?? null;
+        }
+        \Log::info('[DesignTemplateGenerator::applyData] RESULTADO', [
+            'state_content_final' => $state['content'] ?? null,
+            'elementos_texto' => $elementos_texto,
+            'elementLayout' => $elementLayout,
+        ]);
 
         return $state;
     }
