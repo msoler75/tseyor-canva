@@ -34,7 +34,7 @@ class DesignAssetController extends Controller
                     'height' => $asset->height,
                     'uploaded_at' => $asset->uploaded_at,
                     'last_used_at' => $asset->last_used_at,
-                    'url' => route('designer.uploads.show', ['path' => $asset->path]),
+                    'url' => $this->versionedUploadRoute($asset->path, $asset->updated_at?->timestamp),
                 ]),
         ]);
     }
@@ -69,7 +69,17 @@ class DesignAssetController extends Controller
 
         return response()->json([
             'asset' => $asset,
-            'url' => route('designer.uploads.show', ['path' => $path]),
+            'url' => $this->versionedUploadRoute($path, $asset->updated_at?->timestamp),
         ], 201);
+    }
+
+    private function versionedUploadRoute(string $path, mixed $version = null): string
+    {
+        $normalizedVersion = is_scalar($version) ? trim((string) $version) : '';
+
+        return route('designer.uploads.show', [
+            'path' => $path,
+            'v' => $normalizedVersion !== '' ? $normalizedVersion : sha1($path),
+        ]);
     }
 }

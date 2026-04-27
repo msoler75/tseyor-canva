@@ -22,8 +22,9 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 class DesignerController extends Controller
 {
 
-    public static function sessionKey() {
-        return 'designer_session_key';
+    public static function sessionKey(): string
+    {
+        return self::SESSION_KEY;
     }
 
     private function resolveRequestedDesign(Request $request): ?Design
@@ -355,10 +356,10 @@ class DesignerController extends Controller
             }
             // Si hay miniatura, añadir thumbnail_url accesible públicamente
             if ($sessionDesign && !empty($sessionDesign['thumbnail_path'])) {
-                $sessionDesign['thumbnail_url'] = route('designer.thumbnails.show', [
-                    'path' => $sessionDesign['thumbnail_path'],
-                    'v' => time(),
-                ]);
+                $sessionDesign['thumbnail_url'] = $this->versionedThumbnailRoute(
+                    $sessionDesign['thumbnail_path'],
+                    $sessionDesign['thumbnail_version'] ?? null,
+                );
                 Log::info('[welcome] Miniatura url generada', ['thumbnail_url' => $sessionDesign['thumbnail_url']]);
             } else {
                 Log::warning('[welcome] No se encontró miniatura para diseño de invitado', ['sessionDesign' => $sessionDesign]);
@@ -532,10 +533,10 @@ class DesignerController extends Controller
                 'designUuid' => $state['currentDesignUuid'] ?? null,
                 'temporal' => true,
                 'thumbnail_url' => !empty($state['thumbnail_path'])
-                    ? route('designer.thumbnails.show', [
-                        'path' => $state['thumbnail_path'],
-                        'v' => $state['thumbnail_version'] ?? uniqid('', true)
-                    ])
+                    ? $this->versionedThumbnailRoute(
+                        $state['thumbnail_path'],
+                        $state['thumbnail_version'] ?? null,
+                    )
                     : null,
             ]);
         }
@@ -654,7 +655,7 @@ class DesignerController extends Controller
             'assetId' => $assetId,
             'label' => $validated['label'] ?? $file->getClientOriginalName(),
             'path' => $path,
-            'url' => route('designer.uploads.show', ['path' => $path]),
+            'url' => $this->versionedUploadRoute($path),
         ]);
     }
 
@@ -702,10 +703,10 @@ class DesignerController extends Controller
             return null;
         }
 
-        return route('designer.thumbnails.show', [
-            'path' => $design->thumbnail_path,
-            'v' => optional($design->updated_at)->timestamp ?? time(),
-        ]);
+        return $this->versionedThumbnailRoute(
+            $design->thumbnail_path,
+            optional($design->updated_at)->timestamp,
+        );
     }
 
     /**
@@ -748,12 +749,39 @@ class DesignerController extends Controller
             'sort_order' => $template->sort_order,
             'base_design_uuid' => $template->baseDesign?->uuid,
             'thumbnail_url' => $template->baseDesign?->thumbnail_path
-                ? route('designer.thumbnails.show', [
-                    'path' => $template->baseDesign->thumbnail_path,
-                    'v' => optional($template->baseDesign->updated_at)->timestamp ?? time(),
-                ])
+                ? $this->versionedThumbnailRoute(
+                    $template->baseDesign->thumbnail_path,
+                    optional($template->baseDesign->updated_at)->timestamp,
+                )
                 : null,
         ];
+    }
+
+    private function versionedThumbnailRoute(string $path, mixed $version = null): string
+    {
+        return route('designer.thumbnails.show', [
+            'path' => $path,
+            'v' => $this->resolveAssetVersion($path, $version),
+        ]);
+    }
+
+    private function versionedUploadRoute(string $path, mixed $version = null): string
+    {
+        return route('designer.uploads.show', [
+            'path' => $path,
+            'v' => $this->resolveAssetVersion($path, $version),
+        ]);
+    }
+
+    private function resolveAssetVersion(string $path, mixed $version = null): string
+    {
+        $normalizedVersion = is_scalar($version) ? trim((string) $version) : '';
+
+        if ($normalizedVersion !== '') {
+            return $normalizedVersion;
+        }
+
+        return sha1($path);
     }
 
     /**

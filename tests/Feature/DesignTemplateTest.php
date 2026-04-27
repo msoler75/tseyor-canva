@@ -5,10 +5,12 @@ namespace Tests\Feature;
 use App\Models\Design;
 use App\Models\DesignTemplate;
 use App\Models\User;
+use App\Services\DemoTemplateFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class DesignTemplateTest extends TestCase
@@ -17,7 +19,7 @@ class DesignTemplateTest extends TestCase
 
     public function test_console_command_creates_three_generic_demo_templates_idempotently(): void
     {
-        Storage::fake('public');
+        Storage::fake('thumbnails');
 
         $this->assertSame(0, Artisan::call('designer:create-demo-templates'));
         $this->assertSame(0, Artisan::call('designer:create-demo-templates'));
@@ -47,7 +49,7 @@ class DesignTemplateTest extends TestCase
             $this->assertArrayHasKey('title', $template->baseDesign->state['elementLayout']);
             $this->assertArrayHasKey('subtitle', $template->baseDesign->state['elementLayout']);
             $this->assertNotNull($template->baseDesign->thumbnail_path);
-            Storage::disk('public')->assertExists($template->baseDesign->thumbnail_path);
+            Storage::disk('thumbnails')->assertExists($template->baseDesign->thumbnail_path);
         }
     }
 
@@ -209,6 +211,25 @@ class DesignTemplateTest extends TestCase
         $this->assertEquals(750.0, $state['elementLayout']['plant']['x']);
         $this->assertSame(10, $state['elementLayout']['plant']['zIndex']);
         $this->assertSame($templateUuid, $generated->selected_template_id);
+    }
+
+    public function test_template_inventory_uses_thumbnail_route_for_demo_templates(): void
+    {
+        Storage::fake('thumbnails');
+
+        app(DemoTemplateFactory::class)->create();
+
+        $admin = User::query()->where('email', 'admin@example.com')->firstOrFail();
+
+        $this->actingAs($admin)
+            ->get('/designer/template-inventory')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Designer/Templates/Index')
+                ->where('templates.0.thumbnail_url', fn ($url) => is_string($url)
+                    && str_contains($url, '/designer/storage/thumbnails/')
+                    && str_contains($url, 'v='))
+            );
     }
 
     /**

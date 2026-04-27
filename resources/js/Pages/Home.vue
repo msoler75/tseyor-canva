@@ -1,5 +1,4 @@
 ﻿<script setup>
-import { onMounted, watch } from 'vue';
 import axios from 'axios';
 import { router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -34,28 +33,6 @@ const props = defineProps({
 const continueSessionDesign = () => {
     router.visit('/designer/editor');
 };
-
-// LOG para depuración de miniatura de diseño temporal
-onMounted(() => {
-    // eslint-disable-next-line no-console
-    console.log('sessionDesign inicial:', props.sessionDesign);
-});
-
-watch(() => props.sessionDesign, (val) => {
-    // eslint-disable-next-line no-console
-    console.log('sessionDesign actualizado:', val);
-}, { deep: true });
-
-// --- LOGS DE DEPURACIÓN ---
-onMounted(() => {
-    // eslint-disable-next-line no-console
-    console.log('sessionDesign inicial:', props.sessionDesign);
-});
-
-watch(() => props.sessionDesign, (val) => {
-    // eslint-disable-next-line no-console
-    console.log('sessionDesign actualizado:', val);
-}, { deep: true });
 
 const page = usePage();
 const state = useDesignerState();
@@ -286,7 +263,7 @@ const deleteDesign = async (design) => {
                         <div class="h-36 w-36 min-w-[9rem] rounded-xl opacity-90 flex items-center justify-center mb-2 bg-base-200/80 border border-base-300">
                             <img
                                 v-if="props.sessionDesign.thumbnail_url || props.sessionDesign.thumbnailDataUrl"
-                                :src="props.sessionDesign.thumbnail_url ? (props.sessionDesign.thumbnail_url + (props.sessionDesign.thumbnail_url.includes('?') ? '&' : '?') + 'v=' + (props.sessionDesign.thumbnail_version || Date.now())) : props.sessionDesign.thumbnailDataUrl"
+                                :src="props.sessionDesign.thumbnail_url || props.sessionDesign.thumbnailDataUrl"
                                 alt="Miniatura diseño temporal"
                                 class="h-full w-full object-contain rounded-xl bg-transparent"
                             />

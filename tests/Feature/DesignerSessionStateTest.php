@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Design;
 use App\Models\DesignTemplate;
 use App\Models\User;
+use App\Http\Controllers\DesignerController;
+use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -167,6 +169,72 @@ class DesignerSessionStateTest extends TestCase
             ->assertJsonPath('design.name', 'Nombre reenviado');
 
         $this->assertDatabaseCount('designs', 1);
+    }
+
+    public function test_guest_create_design_replaces_editor_session_state(): void
+    {
+        $staleState = $this->validDesignerState([
+            'currentDesignUuid' => (string) Str::uuid(),
+            'designTitle' => 'Diseño anterior',
+            'content' => [
+                'title' => 'Diseño anterior',
+                'subtitle' => 'Memoria vieja',
+                'date' => '',
+                'time' => '',
+                'location' => '',
+                'platform' => '',
+                'teacher' => '',
+                'price' => '',
+                'contact' => '',
+                'extra' => '',
+            ],
+        ]);
+
+        $freshUuid = (string) Str::uuid();
+        $freshState = $this->validDesignerState([
+            'currentDesignUuid' => $freshUuid,
+            'selectedTemplateId' => null,
+            'designTitle' => 'Cartel nuevo',
+            'designTitleManual' => true,
+            'content' => [
+                'title' => 'Cartel nuevo',
+                'subtitle' => 'Con datos del asistente',
+                'date' => '27 abril',
+                'time' => '19:00',
+                'location' => 'Plaza Mayor',
+                'platform' => '',
+                'teacher' => '',
+                'price' => 'Gratis',
+                'contact' => 'hola@example.com',
+                'extra' => 'Trae a tus amigos',
+            ],
+        ]);
+
+        $response = $this->withSession([DesignerController::sessionKey() => $staleState])
+            ->postJson('/designer/designs', [
+                'name' => 'Cartel nuevo',
+                'state' => $freshState,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('design.uuid', $freshUuid)
+            ->assertJsonPath('design.state.content.title', 'Cartel nuevo')
+            ->assertJsonPath('design.state.content.subtitle', 'Con datos del asistente')
+            ->assertJsonPath('design.state.selectedTemplateId', null);
+
+        $persistedState = $response->json('design.state');
+
+        $this->withSession([DesignerController::sessionKey() => $persistedState])
+            ->get('/designer/editor')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Designer/EditorPage')
+                ->where('designer.state.currentDesignUuid', $freshUuid)
+                ->where('designer.state.designTitle', 'Cartel nuevo')
+                ->where('designer.state.content.title', 'Cartel nuevo')
+                ->where('designer.state.content.subtitle', 'Con datos del asistente')
+                ->where('designer.state.content.location', 'Plaza Mayor')
+                ->where('designer.state.selectedTemplateId', null)
+            );
     }
 
     public function test_designer_state_is_loaded_from_persisted_design(): void
@@ -341,9 +409,9 @@ class DesignerSessionStateTest extends TestCase
             );
     }
 
-    public function test_designer_upload_endpoint_stores_images_in_session_scoped_public_storage(): void
+    public function test_designer_upload_endpoint_stores_images_in_user_scoped_storage(): void
     {
-        Storage::fake('public');
+        Storage::fake('users');
         $user = User::factory()->create();
 
         $response = $this->actingAs($user)->postJson('/designer/uploads', [
@@ -364,13 +432,42 @@ class DesignerSessionStateTest extends TestCase
 
         $this->assertNotNull($path);
         $this->assertNotNull($assetId);
-        $this->assertStringStartsWith("designer/uploads/users/{$user->id}/", $path);
-        Storage::disk('public')->assertExists($path);
-        $this->assertStringStartsWith(url('/designer/storage/'), $response->json('url'));
+        $this->assertStringStartsWith("{$user->id}/", $path);
+        Storage::disk('users')->assertExists($path);
+        $this->assertStringStartsWith(url('/designer/storage/uploads/'), $response->json('url'));
+        $this->assertStringContainsString('v=', $response->json('url'));
 
         $this->get($response->json('url'))
             ->assertOk()
             ->assertHeader('content-type', 'image/png');
+    }
+
+    public function test_assets_index_returns_versioned_upload_urls(): void
+    {
+        Storage::fake('users');
+        $user = User::factory()->create();
+
+        Storage::disk('users')->put("{$user->id}/asset-demo.png", 'fake-image');
+
+        $asset = $user->designAssets()->create([
+            'uuid' => (string) Str::uuid(),
+            'label' => 'Asset demo',
+            'disk' => 'users',
+            'path' => "{$user->id}/asset-demo.png",
+            'mime_type' => 'image/png',
+            'extension' => 'png',
+            'size_bytes' => 10,
+            'uploaded_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson('/designer/assets')
+            ->assertOk()
+            ->assertJsonPath('assets.0.id', $asset->id)
+            ->assertJsonPath('assets.0.path', "{$user->id}/asset-demo.png")
+            ->assertJsonPath('assets.0.url', fn ($url) => is_string($url)
+                && str_contains($url, '/designer/storage/uploads/')
+                && str_contains($url, 'v='));
     }
 
     public function test_home_hides_designs_used_as_template_bases(): void
@@ -421,6 +518,25 @@ class DesignerSessionStateTest extends TestCase
                 ->component('Home')
                 ->has('designs', 1)
                 ->where('designs.0.name', 'Diseño normal')
+            );
+    }
+
+    public function test_home_exposes_versioned_session_thumbnail_url(): void
+    {
+        $state = $this->validDesignerState([
+            'currentDesignUuid' => (string) Str::uuid(),
+            'thumbnail_path' => 'demo-thumb.svg',
+            'thumbnail_version' => 'thumb-version-123',
+        ]);
+
+        $this->withSession([DesignerController::sessionKey() => $state])
+            ->get('/')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Home')
+                ->where('sessionDesign.thumbnail_url', fn ($url) => is_string($url)
+                    && str_contains($url, '/designer/storage/thumbnails/demo-thumb.svg')
+                    && str_contains($url, 'v=thumb-version-123'))
             );
     }
 
@@ -628,6 +744,127 @@ class DesignerSessionStateTest extends TestCase
             ->assertForbidden();
 
         $this->assertDatabaseCount('designs', 1);
+    }
+
+    public function test_guest_template_generation_is_loaded_in_editor(): void
+    {
+        $admin = User::factory()->create(['name' => 'admin']);
+        $base = Design::query()->create([
+            'user_id' => $admin->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Base pública',
+            'name_manual' => true,
+            'objective' => 'event_presential',
+            'output_type' => 'digital',
+            'format' => 'square',
+            'size_label' => 'Post cuadrado',
+            'surface_width' => 500,
+            'surface_height' => 500,
+            'template_category' => 'modern',
+            'state' => $this->validDesignerState([
+                'designTitle' => 'Base pública',
+                'designTitleManual' => true,
+                'selectedTemplateId' => null,
+                'currentDesignUuid' => null,
+                'content' => [
+                    'title' => 'Título base',
+                    'subtitle' => 'Subtítulo base',
+                    'date' => '',
+                    'time' => '',
+                    'location' => '',
+                    'platform' => '',
+                    'teacher' => '',
+                    'price' => '',
+                    'contact' => '',
+                    'extra' => '',
+                ],
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        $template = DesignTemplate::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $base->id,
+            'title' => 'Plantilla pública',
+            'description' => 'Plantilla para invitado',
+            'category_ids' => ['modern'],
+            'objective_ids' => ['generic', 'event_presential'],
+            'adaptation_mode' => 'proportional',
+            'field_mappings' => [
+                ['sourceField' => 'title', 'targetField' => 'title', 'elementId' => 'title', 'property' => 'text'],
+                ['sourceField' => 'subtitle', 'targetField' => 'subtitle', 'elementId' => 'subtitle', 'property' => 'text'],
+            ],
+            'status' => 'published',
+            'featured' => false,
+            'sort_order' => 0,
+            'published_at' => now(),
+        ]);
+
+        $response = $this->postJson("/designer/design-templates/{$template->uuid}/generate", [
+            'content' => [
+                'title' => 'Cartel invitado',
+                'subtitle' => 'Generado con plantilla',
+                'location' => 'Biblioteca',
+            ],
+            'objective' => 'event_presential',
+            'outputType' => 'digital',
+            'format' => 'square',
+            'size' => 'Post cuadrado',
+            'designSurface' => ['width' => 500, 'height' => 500],
+        ])->assertCreated();
+
+        $state = $response->json('design.state');
+
+        $this->withSession([DesignerController::sessionKey() => $state])
+            ->get('/designer/editor')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Designer/EditorPage')
+                ->where('designer.state.selectedTemplateId', $template->uuid)
+                ->where('designer.state.content.title', 'Cartel invitado')
+                ->where('designer.state.content.subtitle', 'Generado con plantilla')
+                ->where('designer.state.designTitle', 'Plantilla pública personalizado')
+            );
+    }
+
+    public function test_guest_design_is_recovered_after_login_from_editor(): void
+    {
+        $sessionState = $this->validDesignerState([
+            'currentDesignUuid' => (string) Str::uuid(),
+            'selectedTemplateId' => (string) Str::uuid(),
+            'designTitle' => 'Diseño invitado',
+            'content' => [
+                'title' => 'Diseño invitado',
+                'subtitle' => 'Pendiente de recuperar',
+                'date' => '',
+                'time' => '',
+                'location' => 'Centro cultural',
+                'platform' => '',
+                'teacher' => '',
+                'price' => '',
+                'contact' => '',
+                'extra' => '',
+            ],
+        ]);
+
+        $token = JWT::encode([
+            'email' => 'guest-recovered@example.com',
+            'name' => 'Recovered Guest',
+            'image' => '',
+            'exp' => now()->addHour()->timestamp,
+        ], (string) config('jwt.secret'), 'HS256');
+
+        $response = $this->withSession([DesignerController::sessionKey() => $sessionState])
+            ->get('/auth/login?from_editor=1&token='.$token);
+
+        $user = User::query()->where('email', 'guest-recovered@example.com')->firstOrFail();
+        $design = Design::query()->where('user_id', $user->id)->firstOrFail();
+
+        $response->assertRedirect("/designer/designs/{$design->uuid}/edit");
+        $this->assertSame('Diseño invitado', $design->name);
+        $this->assertSame('Diseño invitado', $design->state['content']['title'] ?? null);
+        $this->assertSame('Centro cultural', $design->state['content']['location'] ?? null);
     }
 
     /**

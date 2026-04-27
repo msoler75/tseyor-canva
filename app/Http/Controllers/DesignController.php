@@ -121,7 +121,7 @@ class DesignController extends Controller
                 ...$attributes,
             ];
             \Log::info('[store] Guardando diseño invitado en sesión', ['uuid' => $uuid, 'guestDesign' => $guestDesign]);
-            $request->session()->put('guest_design', $guestDesign);
+            $request->session()->put(DesignerController::sessionKey(), $guestDesign);
             \Log::info('[store] Diseño invitado guardado en sesión', ['uuid' => $uuid]);
 
             return response()->json([

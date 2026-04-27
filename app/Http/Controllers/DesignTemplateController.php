@@ -254,11 +254,30 @@ class DesignTemplateController extends Controller
             'sort_order' => $template->sort_order,
             'base_design_uuid' => $template->baseDesign?->uuid,
             'thumbnail_url' => $template->baseDesign?->thumbnail_path
-                ? route('designer.uploads.show', [
-                    'path' => $template->baseDesign->thumbnail_path,
-                    'v' => optional($template->baseDesign->updated_at)->timestamp ?? time(),
-                ])
+                ? $this->versionedThumbnailRoute(
+                    $template->baseDesign->thumbnail_path,
+                    optional($template->baseDesign->updated_at)->timestamp,
+                )
                 : null,
         ];
+    }
+
+    private function versionedThumbnailRoute(string $path, mixed $version = null): string
+    {
+        return route('designer.thumbnails.show', [
+            'path' => $path,
+            'v' => $this->resolveAssetVersion($path, $version),
+        ]);
+    }
+
+    private function resolveAssetVersion(string $path, mixed $version = null): string
+    {
+        $normalizedVersion = is_scalar($version) ? trim((string) $version) : '';
+
+        if ($normalizedVersion !== '') {
+            return $normalizedVersion;
+        }
+
+        return sha1($path);
     }
 }
