@@ -116,7 +116,7 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
               v-for="tab in selectedPropertyTabs"
               :key="tab.id"
               type="button"
-              class="md:tooltip tooltip-bottom btn h-16 min-w-20 flex-col gap-1 px-2 py-1 md:h-auto md:min-w-0 md:flex-row"
+              class="tooltip tooltip-bottom btn h-16 min-w-20 flex-col gap-1 px-2 py-1 md:h-auto md:min-w-0 md:flex-row"
               :class="[getTabButtonClasses(tab, activePropertyPanel),
                 tab.label?'':'w-20 md:w-10'
               ]"
