@@ -257,16 +257,8 @@ class DesignTemplateGenerator
             'state'=>$state
         ]);
 
-        // Si no hay fieldMappings (es decir, no plantilla), copia los valores de content a elementLayout
         if (empty($fieldMappings) && isset($state['elementLayout']) && is_array($state['elementLayout'])) {
-            foreach (['title','subtitle','meta','contact','extra'] as $id) {
-                if (isset($state['elementLayout'][$id]) && is_array($state['elementLayout'][$id])) {
-                    $valor = $state['content'][$id] ?? null;
-                    if (is_string($valor) && $valor !== '') {
-                        $state['elementLayout'][$id]['text'] = $valor;
-                    }
-                }
-            }
+            $state = $this->applyNonTemplateContentToBaseLayout($state);
         }
 
         // Log después de aplicar datos
@@ -280,6 +272,47 @@ class DesignTemplateGenerator
             'elementos_texto' => $elementos_texto,
             'elementLayout' => $elementLayout,
         ]);
+
+        return $state;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @return array<string, mixed>
+     */
+    private function applyNonTemplateContentToBaseLayout(array $state): array
+    {
+        $content = is_array($state['content'] ?? null) ? $state['content'] : [];
+        $baseTexts = [
+            'title' => trim((string) ($content['title'] ?? '')),
+            'subtitle' => trim((string) ($content['subtitle'] ?? '')),
+            'meta' => implode(' · ', array_filter([
+                trim((string) ($content['date'] ?? '')),
+                trim((string) ($content['time'] ?? '')),
+            ])),
+            'contact' => implode(' · ', array_filter([
+                trim((string) ($content['location'] ?? '')),
+                trim((string) ($content['platform'] ?? '')),
+                trim((string) ($content['contact'] ?? '')),
+            ])),
+            'extra' => implode(' · ', array_filter([
+                trim((string) ($content['teacher'] ?? '')),
+                trim((string) ($content['price'] ?? '')),
+                trim((string) ($content['extra'] ?? '')),
+            ])),
+        ];
+
+        foreach ($baseTexts as $id => $value) {
+            if (! isset($state['elementLayout'][$id]) || ! is_array($state['elementLayout'][$id])) {
+                continue;
+            }
+
+            if ($value !== '') {
+                $state['elementLayout'][$id]['text'] = $value;
+            } else {
+                unset($state['elementLayout'][$id]['text']);
+            }
+        }
 
         return $state;
     }

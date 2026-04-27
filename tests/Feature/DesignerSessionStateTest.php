@@ -219,9 +219,14 @@ class DesignerSessionStateTest extends TestCase
             ->assertJsonPath('design.uuid', $freshUuid)
             ->assertJsonPath('design.state.content.title', 'Cartel nuevo')
             ->assertJsonPath('design.state.content.subtitle', 'Con datos del asistente')
-            ->assertJsonPath('design.state.selectedTemplateId', null);
+            ->assertJsonPath('design.state.selectedTemplateId', null)
+            ->assertJsonPath('design.state.elementLayout.title.text', 'Cartel nuevo');
 
         $persistedState = $response->json('design.state');
+
+        $this->assertSame('Cartel nuevo', session(DesignerController::sessionKey().'.content.title'));
+        $this->assertSame('Con datos del asistente', session(DesignerController::sessionKey().'.content.subtitle'));
+        $this->assertSame('Cartel nuevo', session(DesignerController::sessionKey().'.elementLayout.title.text'));
 
         $this->withSession([DesignerController::sessionKey() => $persistedState])
             ->get('/designer/editor')

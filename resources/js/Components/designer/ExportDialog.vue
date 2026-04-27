@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue';
 import { toCanvasExport, toJpegExport, toPngExport } from '../../utils/useHtml2Image';
 import { useDesignerState } from '../../composables/useDesignerState';
-import { objectiveOptions, objectiveRecommendations } from '../../data/designer';
+import { objectiveOptions, resolveObjectiveSizeOptions } from '../../data/designer';
 import RichTextEditor from './RichTextEditor.vue';
 import {
     BASE_TEXT_ELEMENT_IDS,
@@ -69,8 +69,7 @@ let previewTimer = null;
 let previewRenderSeq = 0;
 
 const resolvedSizeOption = computed(() => {
-    const objectiveRules = objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic;
-    const options = objectiveRules[state.outputType] ?? [];
+    const options = resolveObjectiveSizeOptions(state.objective, state.outputType);
     return options.find((option) => option.label === state.size) ?? null;
 });
 

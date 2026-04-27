@@ -7,7 +7,7 @@ import EditorTopBar from '../../Components/designer/EditorTopBar.vue';
 import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.vue';
 import EditorCanvasStage from '../../Components/designer/EditorCanvasStage.vue';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { filterLabels, objectiveOptions, objectiveRecommendations } from '../../data/designer';
+import { filterLabels, objectiveOptions, objectiveRecommendations, resolveObjectiveSizeOptions } from '../../data/designer';
 import {
   flushDesignerStatePersistence,
   hydrateDesignerStateFromPage,
@@ -1016,8 +1016,7 @@ const activeParagraphLabel = computed(() => {
 
 const getMaxZIndex = () => Object.values(state.elementLayout).reduce((max, layout) => Math.max(max, layout?.zIndex ?? 0), 0);
 const resolvedSizeOption = computed(() => {
-  const objectiveRules = objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic;
-  const options = objectiveRules[state.outputType] ?? [];
+  const options = resolveObjectiveSizeOptions(state.objective, state.outputType);
   return options.find((option) => option.label === state.size) ?? null;
 });
 const selectedSizeDetail = computed(() => resolvedSizeOption.value?.detail ?? '1080 × 1080 px');

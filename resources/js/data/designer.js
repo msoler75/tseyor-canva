@@ -84,6 +84,27 @@ export const filterLabels = {
     informative: 'Informativa',
 };
 
+export const outputTypeOptions = [
+    {
+        id: 'print',
+        title: 'Impresión',
+        description: 'Piezas pensadas para papel, cartelería física o reparto.',
+        helper: 'A4, A3, A2 y formatos imprimibles',
+    },
+    {
+        id: 'digital',
+        title: 'Digital',
+        description: 'Piezas para redes, mensajería, web y pantallas.',
+        helper: 'Posts, stories, banners y miniaturas',
+    },
+    {
+        id: 'both',
+        title: 'Ambos',
+        description: 'Quieres valorar opciones de impresión y digital antes de decidir.',
+        helper: 'Muestra juntos los formatos de ambos canales',
+    },
+];
+
 export const templateCatalog = [
     { id: 'template-1', name: 'Cartel principal', category: 'modern', label: 'Moderna', theme: 'from-indigo-800 via-violet-700 to-fuchsia-600', accent: 'bg-violet-100 text-violet-700', text: 'text-white', light: false },
     { id: 'template-2', name: 'Flier cálido', category: 'promo', label: 'Promocional', theme: 'from-amber-300 via-orange-300 to-rose-400', accent: 'bg-orange-100 text-orange-700', text: 'text-slate-950', light: true },
@@ -301,6 +322,20 @@ export const objectiveRecommendations = {
 
 export function inferFormatFromSizeOption(option) {
     return option?.formatHint ?? null;
+}
+
+export function resolveObjectiveSizeOptions(objective, outputType) {
+    if (!outputType) return [];
+
+    const rules = objectiveRecommendations[objective] ?? objectiveRecommendations.generic;
+    const printOptions = (rules.print ?? []).map((option) => ({ ...option, outputType: 'print' }));
+    const digitalOptions = (rules.digital ?? []).map((option) => ({ ...option, outputType: 'digital' }));
+
+    if (outputType === 'both') {
+        return [...printOptions, ...digitalOptions];
+    }
+
+    return outputType === 'print' ? printOptions : digitalOptions;
 }
 
 

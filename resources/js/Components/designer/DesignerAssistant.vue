@@ -11,6 +11,8 @@ import {
   formatCards,
   objectiveOptions,
   objectiveRecommendations,
+  outputTypeOptions,
+  resolveObjectiveSizeOptions,
   templateFilters,
 } from '../../data/designer';
 import { useDesignerState, resetDesignerState, flushDesignerStatePersistence } from '../../composables/useDesignerState';
@@ -43,19 +45,30 @@ const isFirstStep = computed(() => assistantIndex.value <= 0);
 const isLastStep = computed(() => assistantIndex.value === assistantSteps.value.length - 1);
 
 const objectiveTitle = computed(() => objectiveOptions.find((item) => item.id === state.objective)?.title ?? 'Sin objetivo');
-const sizes = computed(() => {
+const sizes = computed(() => resolveObjectiveSizeOptions(state.objective, state.outputType));
+const groupedSizes = computed(() => {
   if (!state.outputType) return [];
-  const rules = objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic;
-  return rules[state.outputType];
-});
-const selectedSizeId = computed({
-  get: () => sizes.value.find((size) => size.label === state.size)?.id ?? '',
-  set: (sizeId) => {
-    const selected = sizes.value.find((size) => size.id === sizeId);
-    if (selected) {
-      selectSizeOption(selected);
-    }
-  },
+
+  if (state.outputType !== 'both') {
+    return [{
+      id: state.outputType,
+      label: state.outputType === 'print' ? 'Impresión' : 'Digital',
+      options: sizes.value,
+    }];
+  }
+
+  return [
+    {
+      id: 'print',
+      label: 'Impresión',
+      options: sizes.value.filter((size) => size.outputType === 'print'),
+    },
+    {
+      id: 'digital',
+      label: 'Digital',
+      options: sizes.value.filter((size) => size.outputType === 'digital'),
+    },
+  ].filter((group) => group.options.length);
 });
 const fields = computed(() => (objectiveRecommendations[state.objective] ?? objectiveRecommendations.generic).fields);
 const fieldPlaceholders = {
@@ -133,13 +146,17 @@ function scrollToHeader() {
     setTimeout(() => {
         const el = document.getElementById(`header-${assistantStep.value}`);
         if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // nos situamos al comienzo de ese elemento, con un scroll suave
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     }, 100);
 }
 
 function selectSizeOption(option) {
   state.size = option.label;
+  if (state.outputType === 'both' && option.outputType) {
+    state.outputType = option.outputType;
+  }
   if (state.format === 'other' && option.formatHint) {
     state.format = option.formatHint;
   }
@@ -166,7 +183,7 @@ function chooseOutput(o) {
     setTimeout(() => {
       const el = document.getElementById('step-2');
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }, 100);
 }
@@ -178,7 +195,7 @@ function chooseFormat(f) {
     setTimeout(() => {
       const el = document.getElementById('step-3');
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }, 100);
 }
@@ -247,25 +264,20 @@ defineExpose({ assistantStep });
               <div class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 1: Salida</div>
               <div class="mt-3 grid gap-3">
                 <button
+                  v-for="item in outputTypeOptions"
+                  :key="item.id"
                   type="button"
                   class="card rounded-2xl border-2 p-3 text-left"
-                  :class="state.outputType === 'print' ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40'"
-                  @click="chooseOutput('print')"
+                  :class="state.outputType === item.id ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40'"
+                  @click="chooseOutput(item.id)"
                 >
                   <div class="flex items-start justify-between gap-3">
-                    <span class="font-medium">Impresión</span>
-                    <SelectionIndicator :selected="state.outputType === 'print'" />
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  class="card rounded-2xl border-2 p-3 text-left"
-                  :class="state.outputType === 'digital' ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40'"
-                  @click="chooseOutput('digital')"
-                >
-                  <div class="flex items-start justify-between gap-3">
-                    <span class="font-medium">Digital</span>
-                    <SelectionIndicator :selected="state.outputType === 'digital'" />
+                    <div>
+                      <span class="font-medium">{{ item.title }}</span>
+                      <p class="hidden mt-1 text-xs text-base-content/70">{{ item.description }}</p>
+                      <p class="hidden mt-2 text-xs font-medium text-primary">{{ item.helper }}</p>
+                    </div>
+                    <SelectionIndicator :selected="state.outputType === item.id" />
                   </div>
                 </button>
               </div>
@@ -297,21 +309,42 @@ defineExpose({ assistantStep });
           :class="[state.format?'':'blur-xs',
             state.format&&!state.size?'outline-4 outline-red-500':'']">
             <div class="card-body p-5">
-              <div class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 3: Tamaño</div>
+              <div class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 3: Tamano</div>
               <div class="mt-3 flex flex-col items-start justify-start gap-3">
-                <label class="w-full">
-                  <select
-                    v-model="selectedSizeId"
-                    class="select select-bordered w-full rounded-2xl bg-base-100"
-                    :disabled="!state.format"
-                  >
-                    <option disabled value="">Selecciona un tamaño recomendado</option>
-                    <option v-for="size in sizes" :key="size.id" :value="size.id">
-                      {{ size.label }} · {{ size.detail }}
-                    </option>
-                  </select>
-                </label>
-                <div v-if="state.size" class="rounded-2xl border border-primary/30 bg-primary/10 px-3 py-2 text-left">
+                <div
+                  v-for="group in groupedSizes"
+                  :key="group.id"
+                  class="w-full space-y-2"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <p class="text-sm font-semibold text-base-content">{{ group.label }}</p>
+                    <span v-if="state.outputType === 'both'" class="text-xs text-base-content/60">
+                      Al elegir, se fijara la salida correspondiente
+                    </span>
+                  </div>
+                  <div class="grid w-full gap-2">
+                    <button
+                      v-for="size in group.options"
+                      :key="size.id"
+                      type="button"
+                      class="rounded-2xl border px-4 py-3 text-left transition"
+                      :disabled="!state.format"
+                      :class="state.size === size.label
+                        ? 'border-primary bg-primary/10'
+                        : 'border-base-300 bg-base-100 hover:border-primary/40 disabled:opacity-50'"
+                      @click="selectSizeOption(size)"
+                    >
+                      <div class="flex items-start justify-between gap-3">
+                        <div>
+                          <p class="font-medium text-base-content">{{ size.label }}</p>
+                          <p class="text-sm text-base-content/70">{{ size.detail }}</p>
+                        </div>
+                        <SelectionIndicator :selected="state.size === size.label" />
+                      </div>
+                    </button>
+                  </div>
+                </div>
+                <div v-if="0 && state.size" class="rounded-2xl border border-primary/30 bg-primary/10 px-3 py-2 text-left">
                   <p class="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Seleccionado</p>
                   <p class="mt-1 text-sm font-medium text-base-content">{{ state.size }}</p>
                 </div>

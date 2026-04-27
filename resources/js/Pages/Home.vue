@@ -421,7 +421,7 @@ const deleteDesign = async (design) => {
         </section>
 
         <dialog v-if="assistantOpen" class="modal modal-open backdrop-blur-sm" style="z-index:90;">
-            <div class="modal-box w-full max-w-3xl p-0 overflow-visible bg-base-100 rounded-[30px] shadow-2xl border border-base-300">
+            <div class="modal-box w-full max-w-lg lg:max-w-5xl p-0 overflow-visible bg-base-100 rounded-[30px] shadow-2xl border border-base-300">
                 <DesignerAssistant
                     :step="assistantStep"
                     :show-footer="true"

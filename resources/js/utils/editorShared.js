@@ -101,13 +101,15 @@ export function buildBorderCss(layout = {}, { defaultColor = '#ffffff', fallback
 }
 
 export function buildEditorElements(state) {
-  const metaText = [state.content?.date, state.content?.time].filter(Boolean).join(' · ');
+  const metaText = [state.content?.date, state.content?.time].filter(Boolean).join(' ? ');
+  const contactText = [state.content?.location, state.content?.platform, state.content?.contact].filter(Boolean).join(' ? ');
+  const extraText = [state.content?.teacher, state.content?.price, state.content?.extra].filter(Boolean).join(' ? ');
   const baseTextElements = [
     { id: 'title', type: 'text', label: 'Titulo', text: state.content?.title ?? '' },
     { id: 'subtitle', type: 'text', label: 'Subtitulo', text: state.content?.subtitle ?? '' },
     { id: 'meta', type: 'text', label: 'Fecha / hora', text: metaText },
-    { id: 'contact', type: 'text', label: 'Contacto', text: state.content?.contact ?? '' },
-    { id: 'extra', type: 'text', label: 'Texto adicional', text: state.content?.extra ?? '' },
+    { id: 'contact', type: 'text', label: 'Contacto', text: contactText },
+    { id: 'extra', type: 'text', label: 'Texto adicional', text: extraText },
   ];
 
   const customElements = Object.entries(state.customElements ?? {}).map(([id, element]) => ({
