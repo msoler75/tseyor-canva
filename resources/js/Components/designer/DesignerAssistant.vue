@@ -146,10 +146,39 @@ function scrollToHeader() {
     setTimeout(() => {
         const el = document.getElementById(`header-${assistantStep.value}`);
         if (el) {
-            // nos situamos al comienzo de ese elemento, con un scroll suave
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // nos situamos al comienzo de ese elemento, con un scroll suave
+      scrollToElement(el);
         }
     }, 100);
+}
+
+function getScrollParent(node) {
+  while (node && node !== document.body) {
+    const style = getComputedStyle(node);
+    if (/(auto|scroll)/.test(style.overflowY || '')) return node;
+    node = node.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+function scrollToElement(el) {
+  try {
+    const scroller = getScrollParent(el.parentElement);
+    if (!scroller) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
+    const elRect = el.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    const scrollerStyle = getComputedStyle(scroller);
+    const paddingTop = parseFloat(scrollerStyle.paddingTop) || 0;
+
+    const top = elRect.top - scrollerRect.top + scroller.scrollTop - paddingTop;
+    scroller.scrollTo({ top, behavior: 'smooth' });
+  } catch (e) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 function selectSizeOption(option) {
@@ -183,7 +212,7 @@ function chooseOutput(o) {
     setTimeout(() => {
       const el = document.getElementById('step-2');
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        scrollToElement(el);
       }
     }, 100);
 }
@@ -195,7 +224,7 @@ function chooseFormat(f) {
     setTimeout(() => {
       const el = document.getElementById('step-3');
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        scrollToElement(el);
       }
     }, 100);
 }
