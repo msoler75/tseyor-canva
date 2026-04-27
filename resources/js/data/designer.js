@@ -68,7 +68,7 @@ export const formatCards = [
     { id: 'vertical', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-y-80 rotate-90', title: 'Cartel vertical', description: 'El más habitual para imprimir y colgar.', shape: 'h-36 w-24', gradient: 'from-violet-600 to-fuchsia-500' },
     { id: 'horizontal', icon: 'ph:rectangle-duotone', iconClass:'transform scale-x-110 scale-y-80 ', title: 'Cartel horizontal', description: 'Útil para cabeceras y banners.', shape: 'h-24 w-36', gradient: 'from-cyan-500 to-sky-400' },
     { id: 'square', icon: 'ph:square-duotone', title: 'Cuadrado', description: 'Perfecto para redes o piezas cuadradas.', shape: 'h-28 w-28', gradient: 'from-amber-400 to-orange-500' },
-    { id: 'other', icon: 'ph:question-duotone', title: 'No lo sé', description: 'No tienes claro el formato y quieres decidirlo más adelante.', shape: 'h-28 w-28', gradient: 'from-slate-300 to-slate-400' },
+    { id: 'other', icon: 'ph:question-duotone', title: 'Personalizado', description: 'Quieres definir manualmente el formato y sus dimensiones.', shape: 'h-28 w-28', gradient: 'from-slate-300 to-slate-400' },
 ];
 
 export const templateFilters = ['all', 'modern', 'minimal', 'promo', 'elegant', 'corporate', 'youth', 'informative'];
@@ -93,16 +93,10 @@ export const outputTypeOptions = [
     },
     {
         id: 'digital',
-        title: 'Digital',
+        title: 'Redes Sociales/web',
         description: 'Piezas para redes, mensajería, web y pantallas.',
         helper: 'Posts, stories, banners y miniaturas',
-    },
-    {
-        id: 'both',
-        title: 'Ambos',
-        description: 'Quieres valorar opciones de impresión y digital antes de decidir.',
-        helper: 'Muestra juntos los formatos de ambos canales',
-    },
+    }
 ];
 
 export const templateCatalog = [
@@ -324,16 +318,75 @@ export function inferFormatFromSizeOption(option) {
     return option?.formatHint ?? null;
 }
 
-export function resolveObjectiveSizeOptions(objective, outputType) {
+function parseDimensionLabel(detail) {
+    const match = String(detail ?? '').match(/(\d+(?:,\d+)?)\s*[×x]\s*(\d+(?:,\d+)?)\s*(cm|px)/i);
+
+    if (!match) {
+        return null;
+    }
+
+    return {
+        width: match[1],
+        height: match[2],
+        unit: match[3].toLowerCase(),
+    };
+}
+
+function formatDimensionLabel(width, height, unit) {
+    return `${width} × ${height} ${unit}`;
+}
+
+function adaptPrintOptionToFormat(option, format) {
+    const parsed = parseDimensionLabel(option.detail);
+
+    if (!parsed) {
+        return option;
+    }
+
+    if (format === 'horizontal') {
+        return {
+            ...option,
+            detail: formatDimensionLabel(parsed.height, parsed.width, parsed.unit),
+            formatHint: 'horizontal',
+        };
+    }
+
+    if (format === 'square') {
+        const side = Number(String(parsed.width).replace(',', '.')) <= Number(String(parsed.height).replace(',', '.'))
+            ? parsed.width
+            : parsed.height;
+
+        return {
+            ...option,
+            detail: formatDimensionLabel(side, side, parsed.unit),
+            formatHint: 'square',
+        };
+    }
+
+    return {
+        ...option,
+        detail: formatDimensionLabel(parsed.width, parsed.height, parsed.unit),
+        formatHint: 'vertical',
+    };
+}
+
+function filterDigitalOptionsByFormat(options, format) {
+    if (!format || format === 'other') {
+        return options;
+    }
+
+    return options.filter((option) => option.formatHint === format);
+}
+
+export function resolveObjectiveSizeOptions(objective, outputType, format = null) {
     if (!outputType) return [];
 
     const rules = objectiveRecommendations[objective] ?? objectiveRecommendations.generic;
-    const printOptions = (rules.print ?? []).map((option) => ({ ...option, outputType: 'print' }));
-    const digitalOptions = (rules.digital ?? []).map((option) => ({ ...option, outputType: 'digital' }));
-
-    if (outputType === 'both') {
-        return [...printOptions, ...digitalOptions];
-    }
+    const printOptions = (rules.print ?? [])
+        .map((option) => adaptPrintOptionToFormat(option, format))
+        .map((option) => ({ ...option, outputType: 'print' }));
+    const digitalOptions = filterDigitalOptionsByFormat((rules.digital ?? []), format)
+        .map((option) => ({ ...option, outputType: 'digital' }));
 
     return outputType === 'print' ? printOptions : digitalOptions;
 }

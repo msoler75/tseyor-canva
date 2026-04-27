@@ -14,7 +14,7 @@ final class DesignerStateRules
             "{$prefix}.darkMode" => ['required', 'boolean'],
             "{$prefix}.mode" => ['required', 'string', 'in:guided,direct'],
             "{$prefix}.objective" => ['nullable', 'string'],
-            "{$prefix}.outputType" => ['nullable', 'string', 'in:print,digital,both'],
+            "{$prefix}.outputType" => ['nullable', 'string', 'in:print,digital'],
             "{$prefix}.format" => ['nullable', 'string'],
             "{$prefix}.size" => ['nullable', 'string'],
             "{$prefix}.templateCategory" => ['nullable', 'string'],

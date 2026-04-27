@@ -69,11 +69,11 @@ let previewTimer = null;
 let previewRenderSeq = 0;
 
 const resolvedSizeOption = computed(() => {
-    const options = resolveObjectiveSizeOptions(state.objective, state.outputType);
+    const options = resolveObjectiveSizeOptions(state.objective, state.outputType, state.format);
     return options.find((option) => option.label === state.size) ?? null;
 });
 
-const selectedSizeDetail = computed(() => resolvedSizeOption.value?.detail ?? '1080 × 1080 px');
+const selectedSizeDetail = computed(() => resolvedSizeOption.value?.detail ?? state.size ?? '1080 ? 1080 px');
 const baseCanvasDimensions = computed(() => {
     const parsed = applyFormatToDimensions(parseSizeDetail(selectedSizeDetail.value), state.format);
     if (parsed?.width > 0 && parsed?.height > 0) {

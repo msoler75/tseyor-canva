@@ -30,6 +30,8 @@ const emit = defineEmits(['close', 'finish']);
 const state = useDesignerState();
 const page = usePage();
 const remoteTemplates = ref([]);
+const customWidth = ref('');
+const customHeight = ref('');
 const allAssistantSteps = [
   { id: 'objective', label: 'Objetivo' },
   { id: 'format', label: 'Formato' },
@@ -45,17 +47,9 @@ const isFirstStep = computed(() => assistantIndex.value <= 0);
 const isLastStep = computed(() => assistantIndex.value === assistantSteps.value.length - 1);
 
 const objectiveTitle = computed(() => objectiveOptions.find((item) => item.id === state.objective)?.title ?? 'Sin objetivo');
-const sizes = computed(() => resolveObjectiveSizeOptions(state.objective, state.outputType));
+const sizes = computed(() => resolveObjectiveSizeOptions(state.objective, state.outputType, state.format));
 const groupedSizes = computed(() => {
   if (!state.outputType) return [];
-
-  if (state.outputType !== 'both') {
-    return [{
-      id: state.outputType,
-      label: state.outputType === 'print' ? 'Impresión' : 'Digital',
-      options: sizes.value,
-    }];
-  }
 
   return [
     {
@@ -65,7 +59,7 @@ const groupedSizes = computed(() => {
     },
     {
       id: 'digital',
-      label: 'Digital',
+      label: 'Redes sociales/Web',
       options: sizes.value.filter((size) => size.outputType === 'digital'),
     },
   ].filter((group) => group.options.length);
@@ -130,6 +124,7 @@ const canApplyCurrentStep = computed(() => {
   if (assistantStep.value === 'format') return Boolean(state.outputType && state.format && state.size);
   return true;
 });
+const usingCustomFormat = computed(() => state.format === 'other');
 
 function goNext() {
   if (!canGoNext.value || isLastStep.value) return;
@@ -183,12 +178,28 @@ function scrollToElement(el) {
 
 function selectSizeOption(option) {
   state.size = option.label;
-  if (state.outputType === 'both' && option.outputType) {
-    state.outputType = option.outputType;
-  }
   if (state.format === 'other' && option.formatHint) {
     state.format = option.formatHint;
   }
+}
+
+function syncCustomSizeState() {
+  const width = Number(customWidth.value);
+  const height = Number(customHeight.value);
+
+  if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+    const normalizedWidth = Math.round(width);
+    const normalizedHeight = Math.round(height);
+    state.size = `${normalizedWidth} × ${normalizedHeight} px`;
+    state.designSurface = {
+      width: normalizedWidth,
+      height: normalizedHeight,
+    };
+    return;
+  }
+
+  state.size = null;
+  state.designSurface = null;
 }
 function finishAndOpenEditor() {
   const selectedTemplate = availableTemplates.value.find((template) => template.id === state.selectedTemplateId) ?? null;
@@ -204,10 +215,19 @@ watch(assistantSteps, (steps) => {
   }
 }, { immediate: true });
 
+watch([customWidth, customHeight], () => {
+  if (usingCustomFormat.value) {
+    syncCustomSizeState();
+  }
+});
+
 
 function chooseOutput(o) {
     state.outputType = o;
     state.size = null
+    if (!usingCustomFormat.value) {
+      state.designSurface = null;
+    }
     // scroll para que el elemento #step-2 se vea (mover scroll)
     setTimeout(() => {
       const el = document.getElementById('step-2');
@@ -220,6 +240,13 @@ function chooseOutput(o) {
 function chooseFormat(f) {
     state.format = f;
     state.size = null
+    if (f === 'other') {
+      customWidth.value = String(Number(state.designSurface?.width ?? 0) || 1080);
+      customHeight.value = String(Number(state.designSurface?.height ?? 0) || 1080);
+      syncCustomSizeState();
+    } else {
+      state.designSurface = null;
+    }
     // scroll para que el elemento #step-3 se vea (mover scroll)
     setTimeout(() => {
       const el = document.getElementById('step-3');
@@ -340,39 +367,61 @@ defineExpose({ assistantStep });
             <div class="card-body p-5">
               <div class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 3: Tamano</div>
               <div class="mt-3 flex flex-col items-start justify-start gap-3">
-                <div
-                  v-for="group in groupedSizes"
-                  :key="group.id"
-                  class="w-full space-y-2"
-                >
-                  <div class="flex items-center justify-between gap-2">
-                    <p class="text-sm font-semibold text-base-content">{{ group.label }}</p>
-                    <span v-if="state.outputType === 'both'" class="text-xs text-base-content/60">
-                      Al elegir, se fijara la salida correspondiente
-                    </span>
-                  </div>
-                  <div class="grid w-full gap-2">
-                    <button
-                      v-for="size in group.options"
-                      :key="size.id"
-                      type="button"
-                      class="rounded-2xl border px-4 py-3 text-left transition"
-                      :disabled="!state.format"
-                      :class="state.size === size.label
-                        ? 'border-primary bg-primary/10'
-                        : 'border-base-300 bg-base-100 hover:border-primary/40 disabled:opacity-50'"
-                      @click="selectSizeOption(size)"
-                    >
-                      <div class="flex items-start justify-between gap-3">
-                        <div>
-                          <p class="font-medium text-base-content">{{ size.label }}</p>
-                          <p class="text-sm text-base-content/70">{{ size.detail }}</p>
-                        </div>
-                        <SelectionIndicator :selected="state.size === size.label" />
-                      </div>
-                    </button>
-                  </div>
+                <div v-if="usingCustomFormat" class="grid w-full gap-3 sm:grid-cols-2">
+                  <label class="rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-left">
+                    <span class="text-sm font-semibold text-base-content">Ancho (px)</span>
+                    <input
+                      v-model="customWidth"
+                      type="number"
+                      min="1"
+                      step="1"
+                      inputmode="numeric"
+                      class="input input-bordered mt-2 w-full"
+                      placeholder="Ej. 1080"
+                    />
+                  </label>
+                  <label class="rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-left">
+                    <span class="text-sm font-semibold text-base-content">Alto (px)</span>
+                    <input
+                      v-model="customHeight"
+                      type="number"
+                      min="1"
+                      step="1"
+                      inputmode="numeric"
+                      class="input input-bordered mt-2 w-full"
+                      placeholder="Ej. 1350"
+                    />
+                  </label>
                 </div>
+                <template v-else>
+                  <div
+                    v-for="group in groupedSizes"
+                    :key="group.id"
+                    class="w-full space-y-2"
+                  >
+                    <div class="grid w-full gap-2">
+                      <button
+                        v-for="size in group.options"
+                        :key="size.id"
+                        type="button"
+                        class="rounded-2xl border px-4 py-3 text-left transition"
+                        :disabled="!state.format"
+                        :class="state.size === size.label
+                          ? 'border-primary bg-primary/10'
+                          : 'border-base-300 bg-base-100 hover:border-primary/40 disabled:opacity-50'"
+                        @click="selectSizeOption(size)"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p class="font-medium text-base-content">{{ size.label }}</p>
+                            <p class="text-sm text-base-content/70">{{ size.detail }}</p>
+                          </div>
+                          <SelectionIndicator :selected="state.size === size.label" />
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                </template>
                 <div v-if="0 && state.size" class="rounded-2xl border border-primary/30 bg-primary/10 px-3 py-2 text-left">
                   <p class="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Seleccionado</p>
                   <p class="mt-1 text-sm font-medium text-base-content">{{ state.size }}</p>
@@ -435,15 +484,6 @@ defineExpose({ assistantStep });
             <h4 class="mt-5 text-lg font-semibold text-base-content">Plantilla vacía</h4>
             <p class="mt-2 max-w-xs text-sm leading-6 text-base-content/70">
               Empieza desde cero, manteniendo objetivo, formato y datos.
-            </p>
-          </article>
-          <article
-            v-if="!filteredTemplates.length"
-            class="md:col-span-2 xl:col-span-3 rounded-[28px] border border-dashed border-base-300 bg-base-100/80 p-6 text-center"
-          >
-            <h4 class="text-lg font-semibold text-base-content">No hay plantillas para este filtro</h4>
-            <p class="mt-2 text-sm text-base-content/70">
-              Prueba con “Todas” o publica una plantilla con objetivo <strong>generic</strong> para que aparezca en cualquier objetivo.
             </p>
           </article>
         </div>
