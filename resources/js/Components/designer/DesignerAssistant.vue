@@ -19,7 +19,6 @@ import { useDesignerState, resetDesignerState, flushDesignerStatePersistence } f
 
 const props = defineProps({
   step: { type: String, default: 'objective' },
-  onFinish: Function, // callback opcional para cuando termina
   showFooter: { type: Boolean, default: true },
   showClose: { type: Boolean, default: true },
   showStepNavigation: { type: Boolean, default: true },
@@ -204,7 +203,14 @@ function syncCustomSizeState() {
 function finishAndOpenEditor() {
   const selectedTemplate = availableTemplates.value.find((template) => template.id === state.selectedTemplateId) ?? null;
   emit('finish', { selectedTemplate});
-  if (props.onFinish) props.onFinish();
+}
+
+function selectTemplate(template) {
+  state.selectedTemplateId = template.id;
+
+  // Emitir finish siempre; la página padre decide si debe generar/aplicar
+  const selectedTemplate = availableTemplates.value.find((t) => t.id === template.id) ?? null;
+  emit('finish', { selectedTemplate });
 }
 watch(() => props.step, (val) => {
   if (val && assistantSteps.value.some(s => s.id === val)) assistantStep.value = val;
@@ -473,7 +479,7 @@ defineExpose({ assistantStep });
             :meta-line="metaLine"
             :contact-line="venueLine"
             :selected="state.selectedTemplateId === template.id"
-            @click="state.selectedTemplateId = template.id"
+            @click="selectTemplate(template)"
           />
           <article
             class="flex min-h-85 cursor-pointer flex-col items-center justify-center rounded-[28px] border border-dashed border-base-300 bg-base-100/80 p-6 text-center transition hover:border-primary/60"

@@ -16,6 +16,8 @@ let currentHydratedDesignUuid = null;
 let currentRequestIsAuthenticated = false;
 let persistenceMeta = {};
 
+const nextRevision = (value) => Number(value ?? 0) + 1;
+
 function normalizeUploadedAssetUrl(value) {
     if (typeof value !== 'string' || !value) {
         return value;
@@ -42,51 +44,56 @@ function normalizeUploadedAssetUrl(value) {
 }
 
 
-/**
- * Obtiene el estado reactivo del diseñador.
- * @param {Object} [opts]
- * @param {boolean} [opts.forceRehydrate] - Si es true, fuerza la rehidratación desde los props actuales.
- * @param {Object} [opts.overrideState] - Si se pasa, se usa como estado fuente en vez de los props.
- */
-export function useDesignerState(opts = {}) {
-    const page = usePage();
-    const sessionState = opts.overrideState !== undefined
-        ? opts.overrideState
-        : (page.props.designer?.state ?? null);
-    const saveEndpoint = page.props.designer?.endpoints?.save ?? '/designer/state';
-    const incomingDesignUuid = sessionState?.currentDesignUuid ?? page.props.designer?.currentDesign?.uuid ?? null;
-    currentSaveEndpoint = saveEndpoint;
-    currentRequestIsAuthenticated = Boolean(page.props.auth?.user);
+function replaceDesignerState(nextState, incomingDesignUuid = null) {
+    const fresh = buildInitialState(nextState);
 
-    const shouldForce = opts.forceRehydrate === true;
-
-    if (!designerState || shouldForce) {
-        // Si ya existe, limpiar y rehidratar
-        if (designerState && shouldForce) {
-            Object.keys(designerState).forEach((key) => {
-                delete designerState[key];
-            });
-            Object.assign(designerState, buildInitialState(sessionState));
-        } else {
-            designerState = reactive(buildInitialState(sessionState));
-        }
-        currentHydratedDesignUuid = designerState.currentDesignUuid ?? incomingDesignUuid;
-    } else if (incomingDesignUuid && incomingDesignUuid !== currentHydratedDesignUuid) {
-        const fresh = buildInitialState(sessionState);
+    if (!designerState) {
+        designerState = reactive(fresh);
+    } else {
         Object.keys(designerState).forEach((key) => {
             delete designerState[key];
         });
         Object.assign(designerState, fresh);
-        currentHydratedDesignUuid = designerState.currentDesignUuid ?? incomingDesignUuid;
     }
+
+    currentHydratedDesignUuid = designerState.currentDesignUuid ?? incomingDesignUuid;
+
+    return designerState;
+}
+
+function syncDesignerRuntimeFromPage(page) {
+    currentSaveEndpoint = page.props.designer?.endpoints?.save ?? '/designer/state';
+    currentRequestIsAuthenticated = Boolean(page.props.auth?.user);
 
     if (!persistenceBootstrapped) {
         persistenceBootstrapped = true;
-        bootstrapPersistence(saveEndpoint);
+        bootstrapPersistence(currentSaveEndpoint);
+    }
+}
+
+/**
+ * Devuelve el singleton reactivo del dise?ador.
+ *
+ * Los props de Inertia son solo un snapshot de arranque/persistencia.
+ * No deben volver a imponerse sobre el estado vivo salvo hidrataci?n expl?cita
+ * desde hydrateDesignerStateFromPage() o forceRehydrate.
+ */
+export function useDesignerState(opts = {}) {
+    const page = usePage();
+    syncDesignerRuntimeFromPage(page);
+
+    if (opts.forceRehydrate === true || !designerState) {
+        const sessionState = opts.overrideState !== undefined
+            ? opts.overrideState
+            : (page.props.designer?.state ?? null);
+        const incomingDesignUuid = sessionState?.currentDesignUuid ?? page.props.designer?.currentDesign?.uuid ?? null;
+
+        return replaceDesignerState(sessionState, incomingDesignUuid);
     }
 
     return designerState;
 }
+
 
 
 /**
@@ -99,10 +106,6 @@ export function hydrateDesignerStateFromPage() {
     const state = useDesignerState({ forceRehydrate: true });
     const designUuid = page.props.designer?.currentDesign?.uuid ?? null;
     const savedTheme = readThemePreference();
-
-    // LOG: Estado recibido al hidratar
-    // eslint-disable-next-line no-console
-    console.log('[hydrateDesignerStateFromPage] props.designer.state:', page.props.designer?.state);
 
     // --- Sincronización de textos entre content y elementLayout tras hidratar (DRY) ---
     if (state && state.content && state.elementLayout) {
@@ -117,10 +120,6 @@ export function hydrateDesignerStateFromPage() {
     if (savedTheme !== null) {
         state.darkMode = savedTheme;
     }
-
-    // LOG: Estado final tras hidratar
-    // eslint-disable-next-line no-console
-    console.log('[hydrateDesignerStateFromPage] state:', state);
 
     return state;
 }
@@ -165,10 +164,6 @@ function buildInitialState(sessionState) {
         elementLayout: structuredClone(initialDesignerState.elementLayout),
     };
 
-    // LOG: Estado recibido en buildInitialState
-    // eslint-disable-next-line no-console
-    console.log('[buildInitialState] sessionState:', sessionState);
-
     if (!sessionState) {
         base.darkMode = savedTheme ?? false;
         return base;
@@ -186,16 +181,13 @@ function buildInitialState(sessionState) {
         ...sessionState,
         darkMode: savedTheme ?? (typeof sessionState.darkMode === 'boolean' ? sessionState.darkMode : false),
         designTitleManual: Boolean(sessionState.designTitleManual),
+        stateRevision: Number(sessionState.stateRevision ?? 0) || 0,
         content: normalizedContent,
         elementLayout: mergedElementLayout,
         customElements: normalizeCustomElements(sessionState.customElements, mergedElementLayout),
         userUploadedImages: normalizeUserUploadedImages(sessionState.userUploadedImages),
         designSurface: normalizeDesignSurface(sessionState.designSurface),
     };
-
-    // LOG: Estado devuelto por buildInitialState
-    // eslint-disable-next-line no-console
-    console.log('[buildInitialState] result:', result);
 
     return result;
 }
@@ -414,6 +406,11 @@ async function persistStateSnapshot(saveEndpoint, snapshot) {
         payload.thumbnailDataUrl = snapshot.thumbnailDataUrl;
     }
 
+    snapshot.stateRevision = nextRevision(snapshot.stateRevision);
+    if (designerState) {
+      designerState.stateRevision = snapshot.stateRevision;
+    }
+
     queuedSave = { saveEndpoint, snapshot, meta: { ...persistenceMeta } };
 
     if (saveInFlight) {
@@ -437,6 +434,9 @@ async function persistStateSnapshot(saveEndpoint, snapshot) {
                 designerState.currentDesignUuid = response.data.designUuid;
                 currentHydratedDesignUuid = response.data.designUuid;
             }
+            if (designerState && Number.isFinite(Number(response?.data?.stateRevision))) {
+                designerState.stateRevision = Number(response.data.stateRevision);
+            }
 
             if (next.meta?.thumbnailDataUrl && persistenceMeta.thumbnailDataUrl === next.meta.thumbnailDataUrl) {
                 persistenceMeta.thumbnailDataUrl = null;
@@ -456,6 +456,7 @@ export async function flushDesignerStatePersistence() {
     saveTimer = null;
 
     const snapshot = JSON.parse(JSON.stringify(designerState));
+    snapshot.stateRevision = Number(snapshot.stateRevision ?? 0);
     // Copiar la miniatura más reciente generada (si existe) al snapshot antes de guardar
     if (persistenceMeta.thumbnailDataUrl) {
         snapshot.thumbnailDataUrl = persistenceMeta.thumbnailDataUrl;
@@ -463,13 +464,7 @@ export async function flushDesignerStatePersistence() {
             snapshot.thumbnailHash = persistenceMeta.thumbnailHash;
         }
     }
-    // LOG: Estado a guardar
-    // eslint-disable-next-line no-console
-    console.log('[flushDesignerStatePersistence] snapshot a guardar:', snapshot);
-    const resp = await persistStateSnapshot(currentSaveEndpoint, snapshot);
-    // LOG: Respuesta del backend tras guardar
-    // eslint-disable-next-line no-console
-    console.log('[flushDesignerStatePersistence] respuesta backend:', resp);
+    await persistStateSnapshot(currentSaveEndpoint, snapshot);
 }
 
 export function setDesignerThumbnailDataUrl(dataUrl, hash) {
@@ -480,20 +475,47 @@ export function setDesignerThumbnailDataUrl(dataUrl, hash) {
 // Sincroniza los campos title, subtitle, meta, contact, extra entre content y elementLayout
 function syncContentAndElementLayout(content, elementLayout) {
     for (const key of ['title','subtitle','meta','contact','extra']) {
-        if (
-            elementLayout[key] &&
-            typeof elementLayout[key].text === 'string' &&
-            elementLayout[key].text !== '' &&
-            (!content[key] || content[key] === '')
-        ) {
-            content[key] = elementLayout[key].text;
+        const derivedText = resolveTextValue(key, content);
+        const layoutText = typeof elementLayout[key]?.text === 'string' ? elementLayout[key].text.trim() : '';
+
+        if (derivedText !== '') {
+            content[key] = derivedText;
+            if (!elementLayout[key]) {
+                elementLayout[key] = {};
+            }
+            elementLayout[key].text = derivedText;
+            continue;
         }
-        if (
-            content[key] && content[key] !== '' &&
-            elementLayout[key] &&
-            (typeof elementLayout[key].text !== 'string' || elementLayout[key].text === '')
-        ) {
-            elementLayout[key].text = content[key];
+
+        if (layoutText !== '') {
+            content[key] = layoutText;
+            if (!elementLayout[key]) {
+                elementLayout[key] = {};
+            }
+            elementLayout[key].text = layoutText;
+            continue;
         }
+
+        content[key] = content[key] ?? '';
+        if (elementLayout[key]) {
+            delete elementLayout[key].text;
+        }
+    }
+}
+
+function resolveTextValue(key, content) {
+    switch (key) {
+        case 'title':
+        case 'subtitle':
+        case 'contact':
+        case 'extra':
+            return String(content?.[key] ?? '').trim();
+        case 'meta':
+            return [content?.date, content?.time]
+                .map((value) => String(value ?? '').trim())
+                .filter(Boolean)
+                .join(' · ');
+        default:
+            return String(content?.[key] ?? '').trim();
     }
 }

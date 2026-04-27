@@ -140,6 +140,7 @@ const assignRichEditorRef = (id, element) => {
             </div>
             <template v-if="item.type === 'text'">
               <RichTextEditor
+                :key="`${item.id}-${state.templateRevision ?? 0}`"
                 :ref="(el) => assignRichEditorRef(item.id, el)"
                 :paragraph-styles="state.elementLayout[item.id].paragraphStyles ?? []"
                 :text="item.text ?? ''"

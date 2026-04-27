@@ -15,6 +15,14 @@ use Inertia\Response;
 
 class DesignTemplateController extends Controller
 {
+    /**
+     * @param  int ...$values
+     */
+    private function nextRevision(int ...$values): int
+    {
+        return (max($values) ?: 0) + 1;
+    }
+
     public function inventory(Request $request): Response
     {
         $user = $request->user();
@@ -104,6 +112,7 @@ class DesignTemplateController extends Controller
         }
 
         $validated = $request->validate([
+            'designerState' => ['nullable', 'array'],
             'content' => ['nullable', 'array'],
             'content.*' => ['nullable', 'string', 'max:5000'],
             'objective' => ['nullable', 'string', 'max:120'],
@@ -114,25 +123,60 @@ class DesignTemplateController extends Controller
             'designSurface' => ['nullable', 'array'],
             'designSurface.width' => ['nullable', 'numeric', 'min:1'],
             'designSurface.height' => ['nullable', 'numeric', 'min:1'],
+            'stateRevision' => ['nullable', 'integer', 'min:0'],
+            'templateRevision' => ['nullable', 'integer', 'min:0'],
             'targetDesignUuid' => ['nullable', 'string', 'max:36'],
         ]);
 
         // Invitado: generar estado y guardar en sesión
         if (!$user) {
+            $sessionState = is_array($validated['designerState'] ?? null)
+                ? $validated['designerState']
+                : $request->session()->get('designer.state');
             $baseDesign = $template->baseDesign;
-            $generatorClass = get_class($generator);
-            // Generar el estado igual que el generador, pero sin guardar en BD
+            $currentState = is_array($sessionState) ? $sessionState : [];
+            // Aplicar siempre la base visual de la plantilla elegida. El estado
+            // temporal del invitado solo aporta datos vigentes (texto/revisión),
+            // no la maqueta visual anterior; si no, cambiar de plantilla acaba
+            // regenerando el mismo diseño.
             $state = $baseDesign->state ?? [];
+
+            \Log::debug('[DesignTemplateController::generate] guest base state selected', [
+                'template_uuid' => $template->uuid,
+                'has_session_state' => is_array($sessionState),
+                'session_title' => is_array($sessionState) ? ($sessionState['content']['title'] ?? null) : null,
+                'base_title' => $baseDesign->state['content']['title'] ?? ($baseDesign->state['elementLayout']['title']['text'] ?? null),
+                'incoming_title' => $validated['content']['title'] ?? null,
+            ]);
+
             $targetSurface = $generator->normalizeSurface($validated['designSurface'] ?? null)
+                ?? $generator->normalizeSurface($currentState['designSurface'] ?? null)
                 ?? $generator->normalizeSurface($state['designSurface'] ?? null)
                 ?? $generator->surfaceFromDesign($baseDesign);
             if ($targetSurface) {
                 $state = $generator->adaptStateToSurface($state, $generator->surfaceFromState($state, $baseDesign), $targetSurface);
             }
             $state = $generator->applyData($state, $validated, $template->field_mappings ?? []);
+            \Log::debug('[DesignTemplateController::generate] guest state after applyData', [
+                'template_uuid' => $template->uuid,
+                'content_title' => $state['content']['title'] ?? null,
+                'layout_title' => $state['elementLayout']['title']['text'] ?? null,
+                'state_revision' => $state['stateRevision'] ?? null,
+                'template_revision' => $state['templateRevision'] ?? null,
+            ]);
             $uuid = (string) Str::uuid();
             $state['currentDesignUuid'] = $uuid;
             $state['selectedTemplateId'] = $template->uuid;
+            $state['stateRevision'] = $this->nextRevision(
+                (int) ($currentState['stateRevision'] ?? 0),
+                (int) ($validated['stateRevision'] ?? 0),
+                (int) ($state['stateRevision'] ?? 0)
+            );
+            $state['templateRevision'] = $this->nextRevision(
+                (int) ($currentState['templateRevision'] ?? 0),
+                (int) ($validated['templateRevision'] ?? 0),
+                (int) ($state['templateRevision'] ?? 0)
+            );
             $state['designSurface'] = $targetSurface ?? ($state['designSurface'] ?? null);
             $state['objective'] = $validated['objective'] ?? ($state['objective'] ?? null);
             $state['outputType'] = $validated['outputType'] ?? ($state['outputType'] ?? null);

@@ -410,10 +410,79 @@ class DesignerSessionStateTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Designer/EditorPage')
-                ->where('designer.state.content.title', null)
+                ->where('designer.state.content.title', '')
             );
     }
 
+
+    public function test_stale_save_requests_do_not_overwrite_newer_state(): void
+    {
+        $user = User::factory()->create();
+
+        $design = Design::query()->create([
+            'user_id' => $user->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Revision test',
+            'name_manual' => true,
+            'objective' => 'event',
+            'output_type' => 'digital',
+            'format' => 'square',
+            'size_label' => 'Post cuadrado',
+            'state' => [
+                'darkMode' => false,
+                'mode' => 'guided',
+                'stateRevision' => 2,
+                'objective' => 'event',
+                'outputType' => 'digital',
+                'format' => 'square',
+                'size' => 'Post cuadrado',
+                'templateCategory' => 'all',
+                'selectedTemplateId' => null,
+                'autosaveMessage' => 'Guardado autom?tico',
+                'selectedElementId' => 'title',
+                'designTitle' => 'Revision test',
+                'designTitleManual' => true,
+                'currentDesignUuid' => null,
+                'designSurface' => ['width' => 500, 'height' => 500],
+                'content' => [
+                    'title' => 'Texto nuevo',
+                    'subtitle' => '',
+                    'date' => '',
+                    'time' => '',
+                    'location' => '',
+                    'platform' => '',
+                    'teacher' => '',
+                    'price' => '',
+                    'contact' => '',
+                    'extra' => '',
+                ],
+                'elementLayout' => [
+                    'background' => ['backgroundColor' => '#ffffff'],
+                    'title' => ['x' => 50, 'y' => 50, 'w' => 200, 'fontSize' => 40, 'zIndex' => 20, 'text' => 'Texto nuevo'],
+                ],
+                'customElements' => [],
+                'userUploadedImages' => [],
+            ],
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        $staleState = $design->state;
+        $staleState['stateRevision'] = 1;
+        $staleState['content']['title'] = 'Texto viejo';
+        $staleState['elementLayout']['title']['text'] = 'Texto viejo';
+        $staleState['currentDesignUuid'] = $design->uuid;
+
+        $this->actingAs($user)
+            ->putJson('/designer/state', ['state' => $staleState])
+            ->assertOk()
+            ->assertJsonPath('ignored', true);
+
+        $fresh = $design->fresh();
+        $this->assertSame('Texto nuevo', $fresh->state['content']['title']);
+        $this->assertSame('Texto nuevo', $fresh->state['elementLayout']['title']['text']);
+        $this->assertSame(2, $fresh->state['stateRevision']);
+    }
     public function test_designer_upload_endpoint_stores_images_in_user_scoped_storage(): void
     {
         Storage::fake('users');
@@ -831,6 +900,256 @@ class DesignerSessionStateTest extends TestCase
                 ->where('designer.state.content.subtitle', 'Generado con plantilla')
                 ->where('designer.state.designTitle', 'Plantilla pública personalizado')
             );
+    }
+
+    public function test_guest_second_template_generation_keeps_current_texts_in_session_state(): void
+    {
+        $admin = User::factory()->create(['name' => 'admin']);
+
+        $baseA = Design::query()->create([
+            'user_id' => $admin->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Base A',
+            'name_manual' => true,
+            'objective' => 'event_presential',
+            'output_type' => 'digital',
+            'format' => 'square',
+            'size_label' => 'Post cuadrado',
+            'surface_width' => 500,
+            'surface_height' => 500,
+            'template_category' => 'modern',
+            'state' => $this->validDesignerState([
+                'designTitle' => 'Base A',
+                'designTitleManual' => true,
+                'content' => [
+                    'title' => 'Texto base A',
+                    'subtitle' => '',
+                    'date' => '',
+                    'time' => '',
+                    'location' => '',
+                    'platform' => '',
+                    'teacher' => '',
+                    'price' => '',
+                    'contact' => '',
+                    'extra' => '',
+                ],
+                'elementLayout' => [
+                    'background' => ['backgroundColor' => '#ffffff'],
+                    'title' => ['x' => 20, 'y' => 60, 'w' => 280, 'fontSize' => 42, 'zIndex' => 10, 'text' => 'Texto base A'],
+                ],
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        $templateA = DesignTemplate::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $baseA->id,
+            'title' => 'Plantilla A',
+            'description' => 'Primera plantilla',
+            'category_ids' => ['modern'],
+            'objective_ids' => ['generic'],
+            'adaptation_mode' => 'proportional',
+            'field_mappings' => [
+                ['sourceField' => 'title', 'targetField' => 'title', 'elementId' => 'title', 'property' => 'text'],
+            ],
+            'status' => 'published',
+            'featured' => false,
+            'sort_order' => 0,
+            'published_at' => now(),
+        ]);
+
+        $baseB = Design::query()->create([
+            'user_id' => $admin->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Base B',
+            'name_manual' => true,
+            'objective' => 'event_presential',
+            'output_type' => 'digital',
+            'format' => 'square',
+            'size_label' => 'Post cuadrado',
+            'surface_width' => 500,
+            'surface_height' => 500,
+            'template_category' => 'modern',
+            'state' => $this->validDesignerState([
+                'designTitle' => 'Base B',
+                'designTitleManual' => true,
+                'content' => [
+                    'title' => 'Texto base B',
+                    'subtitle' => '',
+                    'date' => '',
+                    'time' => '',
+                    'location' => '',
+                    'platform' => '',
+                    'teacher' => '',
+                    'price' => '',
+                    'contact' => '',
+                    'extra' => '',
+                ],
+                'elementLayout' => [
+                    'background' => ['backgroundColor' => '#7c3aed'],
+                    'title' => ['x' => 120, 'y' => 90, 'w' => 220, 'fontSize' => 30, 'zIndex' => 10, 'text' => 'Texto base B'],
+                ],
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        $templateB = DesignTemplate::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $baseB->id,
+            'title' => 'Plantilla B',
+            'description' => 'Segunda plantilla',
+            'category_ids' => ['modern'],
+            'objective_ids' => ['generic'],
+            'adaptation_mode' => 'proportional',
+            'field_mappings' => [
+                ['sourceField' => 'title', 'targetField' => 'title', 'elementId' => 'title', 'property' => 'text'],
+            ],
+            'status' => 'published',
+            'featured' => false,
+            'sort_order' => 0,
+            'published_at' => now(),
+        ]);
+
+        $firstResponse = $this->postJson("/designer/design-templates/{$templateA->uuid}/generate", [
+            'content' => [
+                'title' => 'Título actual',
+            ],
+            'objective' => 'event_presential',
+            'outputType' => 'digital',
+            'format' => 'square',
+            'size' => 'Post cuadrado',
+            'designSurface' => ['width' => 500, 'height' => 500],
+        ])->assertCreated();
+
+        $sessionState = $firstResponse->json('design.state');
+        $sessionState['content']['title'] = 'Título actual';
+        $sessionState['elementLayout']['title']['text'] = 'Título actual';
+        $sessionState['stateRevision'] = 2;
+        $sessionState['templateRevision'] = 1;
+
+        $secondResponse = $this->withSession([
+            DesignerController::sessionKey() => $sessionState,
+        ])->postJson("/designer/design-templates/{$templateB->uuid}/generate", [
+            'content' => [
+                'title' => 'Título actual',
+            ],
+            'objective' => 'event_presential',
+            'outputType' => 'digital',
+            'format' => 'square',
+            'size' => 'Post cuadrado',
+            'designSurface' => ['width' => 500, 'height' => 500],
+        ])->assertCreated();
+
+        $secondState = $secondResponse->json('design.state');
+
+        $this->assertSame('Título actual', $secondState['content']['title'] ?? null);
+        $this->assertSame('Título actual', $secondState['elementLayout']['title']['text'] ?? null);
+        $this->assertSame('#7c3aed', $secondState['elementLayout']['background']['backgroundColor'] ?? null);
+        $this->assertSame(120, $secondState['elementLayout']['title']['x'] ?? null);
+        $this->assertGreaterThan(1, (int) ($secondState['templateRevision'] ?? 0));
+    }
+
+    public function test_guest_template_generation_prefers_client_snapshot_over_stale_session_state(): void
+    {
+        $admin = User::factory()->create(['name' => 'admin']);
+
+        $base = Design::query()->create([
+            'user_id' => $admin->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Base snapshot',
+            'name_manual' => true,
+            'objective' => 'event_presential',
+            'output_type' => 'digital',
+            'format' => 'square',
+            'size_label' => 'Post cuadrado',
+            'surface_width' => 500,
+            'surface_height' => 500,
+            'template_category' => 'modern',
+            'state' => $this->validDesignerState([
+                'designTitle' => 'Base snapshot',
+                'designTitleManual' => true,
+                'content' => [
+                    'title' => 'Título base',
+                    'subtitle' => '',
+                    'date' => '',
+                    'time' => '',
+                    'location' => '',
+                    'platform' => '',
+                    'teacher' => '',
+                    'price' => '',
+                    'contact' => '',
+                    'extra' => '',
+                ],
+            ]),
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        $template = DesignTemplate::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $base->id,
+            'title' => 'Plantilla snapshot',
+            'description' => 'Prueba snapshot',
+            'category_ids' => ['modern'],
+            'objective_ids' => ['generic'],
+            'adaptation_mode' => 'proportional',
+            'field_mappings' => [
+                ['sourceField' => 'title', 'targetField' => 'title', 'elementId' => 'title', 'property' => 'text'],
+            ],
+            'status' => 'published',
+            'featured' => false,
+            'sort_order' => 0,
+            'published_at' => now(),
+        ]);
+
+        $staleSession = $this->validDesignerState([
+            'currentDesignUuid' => (string) Str::uuid(),
+            'selectedTemplateId' => null,
+            'designTitle' => 'Estado viejo',
+            'content' => [
+                'title' => 'Título original',
+                'subtitle' => '',
+                'date' => '',
+                'time' => '',
+                'location' => '',
+                'platform' => '',
+                'teacher' => '',
+                'price' => '',
+                'contact' => '',
+                'extra' => '',
+            ],
+            'elementLayout' => [
+                'background' => ['backgroundColor' => '#ffffff'],
+                'title' => ['x' => 50, 'y' => 50, 'w' => 200, 'fontSize' => 40, 'zIndex' => 20, 'text' => 'Título original'],
+            ],
+        ]);
+
+        $clientSnapshot = $staleSession;
+        $clientSnapshot['content']['title'] = 'Título actual';
+        $clientSnapshot['elementLayout']['title']['text'] = 'Título actual';
+        $clientSnapshot['stateRevision'] = 4;
+        $clientSnapshot['templateRevision'] = 2;
+
+        $response = $this->withSession([
+            DesignerController::sessionKey() => $staleSession,
+        ])->postJson("/designer/design-templates/{$template->uuid}/generate", [
+            'designerState' => $clientSnapshot,
+            'content' => [
+                'title' => 'Título actual',
+            ],
+            'objective' => 'event_presential',
+            'outputType' => 'digital',
+            'format' => 'square',
+            'size' => 'Post cuadrado',
+            'designSurface' => ['width' => 500, 'height' => 500],
+        ])->assertCreated();
+
+        $state = $response->json('design.state');
+
+        $this->assertSame('Título actual', $state['content']['title'] ?? null);
+        $this->assertSame('Título actual', $state['elementLayout']['title']['text'] ?? null);
     }
 
     public function test_guest_design_is_recovered_after_login_from_editor(): void

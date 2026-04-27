@@ -284,6 +284,14 @@ class DesignerController extends Controller
 
     private const SESSION_KEY = 'designer.state';
 
+    /**
+     * @param  int ...$values
+     */
+    private function nextRevision(int ...$values): int
+    {
+        return (max($values) ?: 0) + 1;
+    }
+
     public function __construct(
         private readonly JwtService $jwtService,
     ) {}
@@ -419,7 +427,7 @@ class DesignerController extends Controller
             $designerState = $request->session()->get(self::SESSION_KEY) ?: null;
         }
 
-        // Refuerzo de coherencia: sincronizar content <-> elementLayout
+        // Compatibilidad: normalizar estados antiguos sin pisar texto vigente
         if (is_array($designerState)) {
             $content = $designerState['content'] ?? [];
             $elementLayout = $designerState['elementLayout'] ?? [];
@@ -499,8 +507,22 @@ class DesignerController extends Controller
             ], 422);
         }
 
+        $incomingRevision = (int) ($state['stateRevision'] ?? 0);
+
         if (! Auth::check()) {
             // Usuario no autenticado: guardar el diseño en sesión
+            $existingState = $request->session()->get(self::SESSION_KEY, []);
+            $existingRevision = (int) ($existingState['stateRevision'] ?? 0);
+            if ($incomingRevision < $existingRevision) {
+                return response()->json([
+                    'saved' => true,
+                    'ignored' => true,
+                    'designUuid' => $existingState['currentDesignUuid'] ?? null,
+                    'stateRevision' => $existingRevision,
+                ]);
+            }
+
+            $state['stateRevision'] = $this->nextRevision($existingRevision, $incomingRevision);
             if (!empty($validated['thumbnailDataUrl'])) {
                 $sessionId = trim((string) $request->session()->getId()) ?: 'guest';
                 $uuid = $sessionId;
@@ -532,6 +554,7 @@ class DesignerController extends Controller
                 'saved' => true,
                 'designUuid' => $state['currentDesignUuid'] ?? null,
                 'temporal' => true,
+                'stateRevision' => $state['stateRevision'] ?? null,
                 'thumbnail_url' => !empty($state['thumbnail_path'])
                     ? $this->versionedThumbnailRoute(
                         $state['thumbnail_path'],
@@ -571,6 +594,17 @@ class DesignerController extends Controller
                     : 'No tienes permiso para autoguardar este diseño.',
             ], 409);
         } else {
+            $existingRevision = (int) ($design->state['stateRevision'] ?? 0);
+            if ($incomingRevision < $existingRevision) {
+                return response()->json([
+                    'saved' => true,
+                    'ignored' => true,
+                    'designUuid' => $design->uuid,
+                    'stateRevision' => $existingRevision,
+                ]);
+            }
+
+            $state['stateRevision'] = $this->nextRevision($existingRevision, $incomingRevision);
             $state['currentDesignUuid'] = $design->uuid;
 
             $design->fill([
@@ -601,6 +635,7 @@ class DesignerController extends Controller
         return response()->json([
             'saved' => true,
             'designUuid' => $state['currentDesignUuid'] ?? null,
+            'stateRevision' => $state['stateRevision'] ?? null,
         ]);
     }
 

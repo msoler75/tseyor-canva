@@ -14,6 +14,7 @@ import {
   resetDesignerState,
   setDesignerThumbnailDataUrl,
   toggleDesignerDarkMode,
+  useDesignerState,
 } from '../../composables/useDesignerState';
 import { useEditorHistory } from '../../composables/useEditorHistory';
 import { useEditorStyles } from '../../composables/useEditorStyles';
@@ -35,6 +36,9 @@ const page = usePage();
 // Siempre reset y rehidratar al montar
 resetDesignerState();
 const state = hydrateDesignerStateFromPage();
+// stateRevision protege la persistencia frente a estados viejos;
+// templateRevision fuerza el remonte visual del editor rico al reaplicar plantillas.
+const bumpRevision = (value) => Number(value ?? 0) + 1;
 const isMobileEditor = ref(false);
 let editorViewportQuery = null;
 
@@ -66,6 +70,11 @@ const templateForm = reactive({
 const assistantOpen = ref(false);
 const assistantStep = ref('objective');
 const openAssistant = (step = 'objective', resetCurrentDesign = true) => {
+  try {
+    commitTextEdit();
+  } catch (_) {
+    // no-op: abrir el asistente no debe depender del estado interno del editor rico
+  }
   state.mode = 'guided';
   if (resetCurrentDesign) {
     state.templateCategory = 'all';
@@ -75,6 +84,7 @@ const openAssistant = (step = 'objective', resetCurrentDesign = true) => {
   assistantStep.value = step;
   assistantOpen.value = true;
 };
+
 const closeAssistant = () => {
   assistantOpen.value = false;
 };
@@ -1564,13 +1574,11 @@ const generateThumbnailAndThen = (cb) => {
         const hash = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(dataUrl));
         const hashArray = Array.from(new Uint8Array(hash));
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        console.log('[Miniatura] Generada', { length: dataUrl.length, hash: hashHex });
         setDesignerThumbnailDataUrl(dataUrl, hashHex);
         if (typeof cb === 'function') {
           await cb();
         }
       } catch (error) {
-        console.error('No se pudo generar la miniatura del diseño', error);
         if (typeof cb === 'function') {
           await cb(); // Aun con error, intentar guardar
         }
@@ -2888,6 +2896,11 @@ const onRichEditorSelectionChange = (id, { paragraphIndex, selectedIndexes }) =>
 };
 
 const onRichEditorTextUpdate = (id, newText) => {
+    // Solo aceptar texto emitido por el editor que está en edición activa.
+    // Los RichTextEditor no editables también pueden emitir update al remontarse,
+    // perder foco o reconstruir su documento interno; aceptar esos eventos puede
+    // restaurar versiones antiguas justo al abrir el asistente.
+    if (editingElementId.value !== id) return;
     if (!state.elementLayout[id]) return;
   const normalizedText = newText == null ? '' : String(newText);
 
@@ -2897,16 +2910,21 @@ const onRichEditorTextUpdate = (id, newText) => {
         case 'contact':
         case 'extra':
       state.content[id] = normalizedText;
+      state.elementLayout[id].text = normalizedText;
             break;
         case 'meta': {
       const parts = normalizedText.split('\n');
             state.content.date = (parts[0] ?? '').trim();
             state.content.time = (parts[1] ?? '').trim();
+            state.elementLayout[id].text = normalizedText;
             break;
         }
         default:
           if (state.customElements?.[id]?.type === 'text') {
       state.customElements[id].text = normalizedText;
+          }
+          if (state.elementLayout[id] && typeof state.elementLayout[id] === 'object') {
+            state.elementLayout[id].text = normalizedText;
           }
     }
 };
@@ -3010,9 +3028,9 @@ const commitTextEdit = () => {
     const id = editingElementId.value;
     const editorRef = richEditorRefs.value[id];
 
-    if (editorRef?.getPlainText) {
-      onRichEditorTextUpdate(id, editorRef.getPlainText());
-    }
+    // El texto ya se sincroniza en vivo desde @update:text. Volver a leerlo
+    // aquí puede reintroducir contenido viejo si TipTap conserva un documento
+    // interno desfasado al abrir controles externos como el asistente.
 
     if (editorRef?.getParagraphStyles) {
       onRichEditorStylesUpdate(id, editorRef.getParagraphStyles());
@@ -3079,10 +3097,8 @@ let pendingFlush = false;
 const flushDesignerStateWithThumbnail = async () => {
   if (pendingFlush) return;
   pendingFlush = true;
-  console.log('[Guardado] Solicitado');
   generateThumbnailAndThen(async () => {
     pendingFlush = false;
-    console.log('[Guardado] Ejecutando flushDesignerStatePersistence');
     try {
       await flushDesignerStatePersistence();
     } catch (error) {
@@ -3540,15 +3556,25 @@ const handleAssistantFinish = async ({ selectedTemplate } = {}) => {
     ? selectedTemplate
     : persistedTemplates.value.find((template) => template.id === state.selectedTemplateId || template.uuid === state.selectedTemplateId);
 
-  if (!persistedTemplate?.uuid || !authUser.value) {
+  if (!persistedTemplate?.uuid) {
     closeAssistant();
     return;
   }
 
   try {
+    try {
+      commitTextEdit();
+    } catch (_) {
+      // no-op: si el editor rico todavía no está listo, continuamos igualmente
+    }
     const targetSurface = currentCanvasDimensions();
+    state.stateRevision = bumpRevision(state.stateRevision);
+    state.templateRevision = bumpRevision(state.templateRevision);
     const response = await axios.post(`/designer/design-templates/${persistedTemplate.uuid}/generate`, {
+      designerState: JSON.parse(JSON.stringify(state)),
       content: JSON.parse(JSON.stringify(state.content ?? {})),
+      stateRevision: state.stateRevision,
+      templateRevision: state.templateRevision,
       objective: state.objective,
       outputType: state.outputType,
       format: state.format,
@@ -3558,13 +3584,20 @@ const handleAssistantFinish = async ({ selectedTemplate } = {}) => {
       targetDesignUuid: isTemplateBaseEditor.value ? null : currentDesignUuid.value,
     });
     const uuid = response.data?.design?.uuid;
+    const returnedState = response.data?.design?.state ?? null;
+    if (returnedState) {
+      // Forzar rehidratación del estado del diseñador con el state devuelto por el backend
+      useDesignerState({ forceRehydrate: true, overrideState: returnedState });
+      state.currentDesignUuid = uuid;
+      closeAssistant();
+      return;
+    }
     if (uuid) {
       state.currentDesignUuid = uuid;
       window.location.href = `/designer/editor?design=${uuid}`;
       return;
     }
   } catch (error) {
-    console.error('Failed to generate design from template', error);
     window.alert(error.response?.data?.message || 'No se pudo generar el diseño desde la plantilla.');
   }
 
@@ -3618,6 +3651,7 @@ watch(
   },
   { immediate: true }
 );
+
 </script>
 
 <template>

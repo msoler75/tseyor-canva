@@ -407,6 +407,8 @@ export const initialDesignerState = {
     designTitle: 'Diseño sin título',
     designTitleManual: false,
     currentDesignUuid: null,
+    stateRevision: 0,
+    templateRevision: 0,
     designSurface: null,
     content: {
         title: '',

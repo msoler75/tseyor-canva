@@ -30,6 +30,14 @@ class DesignTemplateGenerator
     ];
 
     /**
+     * @param  int ...$values
+     */
+    private function nextRevision(int ...$values): int
+    {
+        return (max($values) ?: 0) + 1;
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>|null  $targetSurface
      */
@@ -37,18 +45,183 @@ class DesignTemplateGenerator
     {
         /** @var Design $baseDesign */
         $baseDesign = $template->baseDesign;
-        $state = $baseDesign->state ?? [];
+        $baseState = $baseDesign->state ?? [];
+        $state = $baseState;
         $targetSurface = $this->normalizeSurface($targetSurface)
             ?? $this->normalizeSurface(Arr::get($data, 'designSurface'))
             ?? $this->surfaceFromDesign($baseDesign);
 
         if ($targetSurface) {
-            $state = $this->adaptStateToSurface($state, $this->surfaceFromState($state, $baseDesign), $targetSurface);
+            $adaptedVisualState = $this->adaptStateToSurface($state, $this->surfaceFromState($state, $baseDesign), $targetSurface);
+        } else {
+            $adaptedVisualState = $state;
         }
 
-        $state = $this->applyData($state, $data, $template->field_mappings ?? []);
+        // If we are applying to an existing design, merge visuals from the template
+        // into the existing design state while preserving existing textual content.
+        if ($targetDesign) {
+            $existing = $targetDesign->fresh()->state ?? [];
+
+            // base for merged state is the existing design
+            $merged = is_array($existing) ? $existing : [];
+            $merged['elementLayout'] = is_array($merged['elementLayout'] ?? null) ? $merged['elementLayout'] : [];
+            $merged['customElements'] = is_array($merged['customElements'] ?? null) ? $merged['customElements'] : [];
+            $merged['content'] = is_array($merged['content'] ?? null) ? $merged['content'] : [];
+
+            // Merge visual layouts: copy template layout properties but preserve textual fields
+            foreach (($adaptedVisualState['elementLayout'] ?? []) as $id => $layout) {
+                if ($id === 'background') {
+                    $merged['elementLayout']['background'] = $layout;
+                    continue;
+                }
+
+                // ensure existing layout exists
+                $existingLayout = $merged['elementLayout'][$id] ?? [];
+
+                // copy layout but avoid overwriting text content with stale template values.
+                $copied = $layout;
+                if (in_array($id, self::BASE_TEXT_ELEMENT_IDS, true)) {
+                    $currentContentText = array_key_exists($id, $merged['content'])
+                        ? $merged['content'][$id]
+                        : ($existingLayout['text'] ?? null);
+
+                    if ($currentContentText !== null && $currentContentText !== '') {
+                        $copied['text'] = $currentContentText;
+                    } else {
+                        unset($copied['text']);
+                    }
+                } else {
+                    // non-base elements: if existing has text and element is text-type, preserve
+                    if (($merged['customElements'][$id]['type'] ?? null) === 'text') {
+                        $existingText = $merged['customElements'][$id]['text'] ?? null;
+                        if ($existingText !== null && $existingText !== '') {
+                            $copied['text'] = $existingText;
+                        } else {
+                            if (! isset($copied['text'])) {
+                                unset($copied['text']);
+                            }
+                        }
+                    }
+                }
+
+                $merged['elementLayout'][$id] = $copied;
+            }
+
+            // Merge custom elements: copy visuals and properties but preserve existing text where present
+            $mergedCustom = $merged['customElements'] ?? [];
+            foreach (($adaptedVisualState['customElements'] ?? []) as $elId => $el) {
+                $existingEl = $mergedCustom[$elId] ?? [];
+                $copiedEl = $el;
+                if (($el['type'] ?? null) === 'text') {
+                    $existingText = $existingEl['text'] ?? null;
+                    if ($existingText !== null && $existingText !== '') {
+                        $copiedEl['text'] = $existingText;
+                    } else {
+                        if (! isset($copiedEl['text'])) {
+                            unset($copiedEl['text']);
+                        }
+                    }
+                }
+                $mergedCustom[$elId] = $copiedEl;
+            }
+            $merged['customElements'] = $mergedCustom;
+
+            // Apply incoming assistant content onto merged content (preserve other existing content)
+            $incomingContent = is_array($data['content'] ?? null) ? $data['content'] : [];
+            foreach ($incomingContent as $field => $value) {
+                if (is_scalar($value) || $value === null) {
+                    $merged['content'][$field] = $value === null ? '' : (string) $value;
+                }
+            }
+
+            // Apply field mappings: only apply values if provided by incoming content or fallback
+            $appliedBaseMappings = [];
+            foreach ($template->field_mappings ?? [] as $mapping) {
+                if (! is_array($mapping)) continue;
+                $sourceField = (string) ($mapping['sourceField'] ?? $mapping['fieldName'] ?? '');
+                if ($sourceField === '') continue;
+
+                $value = $incomingContent[$sourceField] ?? $data[$sourceField] ?? null;
+                if ($value === null && array_key_exists('fallback', $mapping)) {
+                    $value = $mapping['fallback'];
+                }
+                if ($value === null) continue;
+                $value = is_scalar($value) ? (string) $value : '';
+
+                $targetField = (string) ($mapping['targetField'] ?? '');
+                if ($targetField !== '') {
+                    $merged['content'][$targetField] = $value;
+                }
+
+                $elementId = (string) ($mapping['elementId'] ?? '');
+                if ($elementId !== '') {
+                    $merged = $this->applyValueToElement($merged, $elementId, (string) ($mapping['property'] ?? 'text'), $value);
+                    if (in_array($elementId, self::BASE_TEXT_ELEMENT_IDS, true)) {
+                        $appliedBaseMappings[$elementId] = true;
+                    }
+                }
+            }
+
+            // Ensure merged 'content' reflects any preserved element texts so
+            // subsequent template applications don't accidentally revert values.
+            // Prefer explicit incoming content; otherwise use existing element texts.
+            $mergedContent = $merged['content'] ?? [];
+
+            // Sync base text element texts into content when content key is empty
+            foreach (self::BASE_TEXT_ELEMENT_IDS as $baseId) {
+                $elText = $merged['elementLayout'][$baseId]['text'] ?? null;
+                if (($mergedContent[$baseId] ?? '') === '' && $elText !== null && $elText !== '') {
+                    $mergedContent[$baseId] = $elText;
+                }
+            }
+
+            // Sync custom text elements into content when content key is empty
+            foreach (($merged['customElements'] ?? []) as $customId => $customEl) {
+                if (! is_array($customEl)) continue;
+                if (($customEl['type'] ?? null) === 'text') {
+                    $existing = $mergedContent[$customId] ?? '';
+                    $text = $customEl['text'] ?? null;
+                    if ($existing === '' && $text !== null && $text !== '') {
+                        $mergedContent[$customId] = $text;
+                    }
+                }
+            }
+
+            $merged['content'] = $mergedContent;
+
+            // If incoming content or field mappings provided values for base text
+            // elements, update the elementLayout texts so visuals reflect them.
+            foreach (self::BASE_TEXT_ELEMENT_IDS as $baseId) {
+                if (array_key_exists($baseId, $incomingContent) || ! empty($appliedBaseMappings[$baseId] ?? null)) {
+                    if (! isset($merged['elementLayout'][$baseId]) || ! is_array($merged['elementLayout'][$baseId])) {
+                        $merged['elementLayout'][$baseId] = [];
+                    }
+
+                    if (($merged['content'][$baseId] ?? '') !== '') {
+                        $merged['elementLayout'][$baseId]['text'] = $merged['content'][$baseId];
+                    } else {
+                        unset($merged['elementLayout'][$baseId]['text']);
+                    }
+                }
+            }
+
+            // Propagate content to matching elements (custom elements that map to fields)
+            $merged = $this->applyContentToMatchingElements($merged, $merged['content'] ?? []);
+
+            $state = $merged;
+        } else {
+            // No existing target design: apply incoming data normally to the adapted template state
+            $state = $this->applyData($adaptedVisualState, $data, $template->field_mappings ?? []);
+        }
 
         $uuid = $targetDesign?->uuid ?? (string) Str::uuid();
+        $existingRevision = (int) ($targetDesign?->state['stateRevision'] ?? 0);
+        $incomingRevision = (int) ($data['stateRevision'] ?? $state['stateRevision'] ?? 0);
+        $state['stateRevision'] = $this->nextRevision($existingRevision, $incomingRevision);
+        $state['templateRevision'] = $this->nextRevision(
+            (int) ($targetDesign?->state['templateRevision'] ?? 0),
+            (int) ($data['templateRevision'] ?? $state['templateRevision'] ?? 0)
+        );
         $state['currentDesignUuid'] = $uuid;
         $state['selectedTemplateId'] = $template->uuid;
         $state['designSurface'] = $targetSurface ?? ($state['designSurface'] ?? null);
@@ -200,12 +373,6 @@ class DesignTemplateGenerator
      */
     public function applyData(array $state, array $data, array $fieldMappings): array
     {
-        \Log::info('[DesignTemplateGenerator::applyData] INICIO', [
-            'state_content_inicial' => $state['content'] ?? null,
-            'data_content' => $data['content'] ?? null,
-            'fieldMappings' => $fieldMappings,
-        ]);
-
         $content = is_array($state['content'] ?? null) ? $state['content'] : [];
         $incomingContent = is_array($data['content'] ?? null) ? $data['content'] : [];
 
@@ -247,31 +414,11 @@ class DesignTemplateGenerator
             }
         }
 
-        \Log::info("DesignTemplateGenerator::applyData] ANTES DE APLICAR DATOS", [
-            'state'=>$state
-        ]);
-
         $state = $this->applyContentToMatchingElements($state, $state['content'] ?? $incomingContent);
-
-        \Log::info("DesignTemplateGenerator::applyData] DESPUÉS DE APLICAR DATOS", [
-            'state'=>$state
-        ]);
 
         if (empty($fieldMappings) && isset($state['elementLayout']) && is_array($state['elementLayout'])) {
             $state = $this->applyNonTemplateContentToBaseLayout($state);
         }
-
-        // Log después de aplicar datos
-        $elementLayout = $state['elementLayout'] ?? [];
-        $elementos_texto = [];
-        foreach (['title','subtitle','meta','contact','extra'] as $id) {
-            $elementos_texto[$id] = $elementLayout[$id]['text'] ?? $state['content'][$id] ?? null;
-        }
-        \Log::info('[DesignTemplateGenerator::applyData] RESULTADO', [
-            'state_content_final' => $state['content'] ?? null,
-            'elementos_texto' => $elementos_texto,
-            'elementLayout' => $elementLayout,
-        ]);
 
         return $state;
     }
@@ -488,14 +635,23 @@ class DesignTemplateGenerator
 
         if (in_array($elementId, ['title', 'subtitle', 'contact', 'extra'], true)) {
             $state['content'][$elementId] = $value;
+            if (isset($state['elementLayout'][$elementId]) && is_array($state['elementLayout'][$elementId])) {
+                $state['elementLayout'][$elementId]['text'] = $value;
+            }
         } elseif ($elementId === 'meta') {
             $parts = preg_split('/\s*[·|]\s*/u', $value, 2);
             $state['content']['date'] = trim((string) ($parts[0] ?? $value));
             if (isset($parts[1])) {
                 $state['content']['time'] = trim((string) $parts[1]);
             }
+            if (isset($state['elementLayout']['meta']) && is_array($state['elementLayout']['meta'])) {
+                $state['elementLayout']['meta']['text'] = $value;
+            }
         } elseif (($state['customElements'][$elementId]['type'] ?? null) === 'text') {
             $state['customElements'][$elementId]['text'] = $value;
+            if (isset($state['elementLayout'][$elementId]) && is_array($state['elementLayout'][$elementId])) {
+                $state['elementLayout'][$elementId]['text'] = $value;
+            }
         }
 
         return $state;

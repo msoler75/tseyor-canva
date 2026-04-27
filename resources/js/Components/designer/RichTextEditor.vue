@@ -124,8 +124,14 @@ const editor = useEditor({
         },
     },
     onUpdate({ editor: ed }) {
-        suppressWatch = true;
         const { text, styles } = extractFromDoc(ed.state.doc);
+
+        if (!props.editable) {
+            emit('update:paragraphStyles', styles);
+            return;
+        }
+
+        suppressWatch = true;
         emit('update:text', text);
         emit('update:paragraphStyles', styles);
         suppressWatch = false;
