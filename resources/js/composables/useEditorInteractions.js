@@ -21,6 +21,7 @@ export const useEditorInteractions = ({
   selectedParagraphIndex,
   preserveEditorSelectionUntil,
   suppressElementClickUntil,
+  suppressCanvasClickUntil,
   editingElementId,
   zoomScale,
   orderedLayerIds,
@@ -369,6 +370,7 @@ export const useEditorInteractions = ({
       const rect = canvasRef.value.getBoundingClientRect();
       selectionMarquee.currentX = event.clientX - rect.left;
       selectionMarquee.currentY = event.clientY - rect.top;
+      selectionMarquee.dragged = true;
       updateSelectionMarqueePreview();
       if (event.cancelable) event.preventDefault();
       return;
@@ -732,6 +734,15 @@ export const useEditorInteractions = ({
 
   const endDrag = (event) => {
     if (selectionMarquee.active && selectionMarquee.pointerId === event.pointerId) {
+      if (canvasRef.value) {
+        const rect = canvasRef.value.getBoundingClientRect();
+        selectionMarquee.currentX = event.clientX - rect.left;
+        selectionMarquee.currentY = event.clientY - rect.top;
+        updateSelectionMarqueePreview();
+      }
+      if (selectionMarquee.dragged && suppressCanvasClickUntil) {
+        suppressCanvasClickUntil.value = Date.now() + 300;
+      }
       finalizeSelectionMarquee();
       setDragDocumentState(false);
       return;
@@ -818,14 +829,6 @@ export const useEditorInteractions = ({
 
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest('[data-editor-element="true"]') || target?.closest('[data-editor-control="true"]')) return;
-
-    if (event.detail === 2 && target?.closest('[data-editor-canvas="true"]')) {
-      selectedGroupId.value = null;
-      multiSelectionIds.value = [];
-      state.selectedElementId = 'background';
-      activePropertyPanel.value = null;
-      return;
-    }
 
     clearSelection();
     startSelectionMarquee(event);

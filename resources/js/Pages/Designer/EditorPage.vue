@@ -245,6 +245,7 @@ const dragIntent = reactive({
   startY: 0,
 });
 const suppressElementClickUntil = ref(0);
+const suppressCanvasClickUntil = ref(0);
 const preserveEditorSelectionUntil = ref(0);
 const multiSelectionIds = ref([]);
 const marqueePreviewIds = ref([]);
@@ -253,6 +254,7 @@ const groupedElements = reactive({});
 const selectionMarquee = reactive({
   active: false,
   pointerId: null,
+  dragged: false,
   startX: 0,
   startY: 0,
   currentX: 0,
@@ -2929,6 +2931,7 @@ const {
   selectedParagraphIndex,
   preserveEditorSelectionUntil,
   suppressElementClickUntil,
+  suppressCanvasClickUntil,
   editingElementId,
   zoomScale,
   orderedLayerIds,
@@ -3563,6 +3566,7 @@ const handleAssistantFinish = async ({ selectedTemplate } = {}) => {
 };
 
 const handleCanvasClick = (event) => {
+  if (Date.now() < suppressCanvasClickUntil.value) return;
   if (event.target.closest('[data-editor-element="true"]') || event.target.closest('[data-editor-control="true"]')) return;
   selectBackgroundWithoutOpeningPanel();
 };

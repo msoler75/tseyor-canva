@@ -1,6 +1,7 @@
 import { computed } from 'vue';
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+const SELECTION_MARQUEE_CLICK_THRESHOLD = 3;
 
 export const useEditorSelection = ({
   state,
@@ -101,6 +102,7 @@ export const useEditorSelection = ({
   const clearSelectionMarquee = () => {
     selectionMarquee.active = false;
     selectionMarquee.pointerId = null;
+    selectionMarquee.dragged = false;
     selectionMarquee.startX = 0;
     selectionMarquee.startY = 0;
     selectionMarquee.currentX = 0;
@@ -124,6 +126,7 @@ export const useEditorSelection = ({
     const rect = canvasRef.value.getBoundingClientRect();
     selectionMarquee.active = true;
     selectionMarquee.pointerId = event.pointerId;
+    selectionMarquee.dragged = false;
     selectionMarquee.startX = event.clientX - rect.left;
     selectionMarquee.startY = event.clientY - rect.top;
     selectionMarquee.currentX = selectionMarquee.startX;
@@ -134,6 +137,14 @@ export const useEditorSelection = ({
   };
 
   const updateSelectionMarqueePreview = () => {
+    const movedDistance = Math.hypot(
+      selectionMarquee.currentX - selectionMarquee.startX,
+      selectionMarquee.currentY - selectionMarquee.startY,
+    );
+    if (movedDistance > SELECTION_MARQUEE_CLICK_THRESHOLD) {
+      selectionMarquee.dragged = true;
+    }
+
     const left = Math.min(selectionMarquee.startX, selectionMarquee.currentX);
     const top = Math.min(selectionMarquee.startY, selectionMarquee.currentY);
     const right = Math.max(selectionMarquee.startX, selectionMarquee.currentX);
@@ -158,7 +169,8 @@ export const useEditorSelection = ({
   };
 
   const finalizeSelectionMarquee = () => {
-    const picked = [...new Set(marqueePreviewIds.value)];
+    const picked = [...new Set(marqueePreviewIds.value)]
+      .filter((id) => id !== 'background');
     clearSelectionMarquee();
 
     if (!picked.length) {
