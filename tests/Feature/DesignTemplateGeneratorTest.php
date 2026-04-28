@@ -168,4 +168,89 @@ class DesignTemplateGeneratorTest extends TestCase
         $this->assertGreaterThan(1, (int) ($fresh->state['templateRevision'] ?? 0));
         $this->assertGreaterThan(1, (int) ($fresh->state['stateRevision'] ?? 0));
     }
+
+    public function test_template_switch_replaces_old_visual_layer_but_keeps_text_elements(): void
+    {
+        $user = User::factory()->create();
+
+        $baseDesign = Design::create([
+            'user_id' => $user->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Visual template',
+            'state' => [
+                'elementLayout' => [
+                    'background' => [
+                        'backgroundColor' => '#111827',
+                        'backgroundImageSrc' => null,
+                    ],
+                    'title' => ['x' => 20, 'y' => 30, 'text' => 'Template title', 'color' => '#f8fafc'],
+                    'template-shape' => ['x' => 80, 'y' => 90, 'w' => 60, 'h' => 60, 'backgroundColor' => '#38bdf8'],
+                    'template-image' => ['x' => 150, 'y' => 160, 'w' => 120, 'h' => 80],
+                ],
+                'customElements' => [
+                    'template-shape' => ['id' => 'template-shape', 'type' => 'shape', 'shapeKind' => 'circle'],
+                    'template-image' => ['id' => 'template-image', 'type' => 'image', 'src' => '/template.png'],
+                ],
+                'content' => [],
+                'userUploadedImages' => [],
+            ],
+        ]);
+
+        $template = DesignTemplate::create([
+            'uuid' => (string) Str::uuid(),
+            'base_design_id' => $baseDesign->id,
+            'title' => 'Visual template',
+            'status' => 'published',
+            'category_ids' => ['generic'],
+            'objective_ids' => ['generic'],
+            'field_mappings' => [],
+        ]);
+
+        $targetDesign = Design::create([
+            'user_id' => $user->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Target design',
+            'state' => [
+                'elementLayout' => [
+                    'background' => [
+                        'backgroundColor' => '#ffffff',
+                        'backgroundImageSrc' => '/old-background.png',
+                    ],
+                    'title' => ['x' => 5, 'y' => 5, 'text' => 'Old title', 'color' => '#0f172a'],
+                    'old-shape' => ['x' => 10, 'y' => 10, 'w' => 40, 'h' => 40],
+                    'old-image' => ['x' => 50, 'y' => 50, 'w' => 80, 'h' => 80],
+                    'user-text' => ['x' => 70, 'y' => 70, 'w' => 180, 'text' => 'Texto libre'],
+                ],
+                'customElements' => [
+                    'old-shape' => ['id' => 'old-shape', 'type' => 'shape', 'shapeKind' => 'rectangle'],
+                    'old-image' => ['id' => 'old-image', 'type' => 'image', 'src' => '/old.png'],
+                    'user-text' => ['id' => 'user-text', 'type' => 'text', 'text' => 'Texto libre'],
+                ],
+                'content' => [
+                    'title' => 'User title',
+                ],
+                'userUploadedImages' => [
+                    ['id' => 'old-upload', 'src' => '/old-upload.png'],
+                ],
+            ],
+        ]);
+
+        $generator = new DesignTemplateGenerator();
+        $design = $generator->generate($template->fresh('baseDesign'), $user, ['content' => ['title' => 'User title']], null, $targetDesign);
+        $state = $design->fresh()->state;
+
+        $this->assertSame('#111827', $state['elementLayout']['background']['backgroundColor'] ?? null);
+        $this->assertNull($state['elementLayout']['background']['backgroundImageSrc'] ?? null);
+        $this->assertArrayNotHasKey('old-shape', $state['elementLayout']);
+        $this->assertArrayNotHasKey('old-image', $state['elementLayout']);
+        $this->assertArrayNotHasKey('old-shape', $state['customElements']);
+        $this->assertArrayNotHasKey('old-image', $state['customElements']);
+        $this->assertSame([], $state['userUploadedImages'] ?? null);
+        $this->assertArrayHasKey('template-shape', $state['customElements']);
+        $this->assertArrayHasKey('template-image', $state['customElements']);
+        $this->assertSame('User title', $state['elementLayout']['title']['text'] ?? null);
+        $this->assertSame(20, $state['elementLayout']['title']['x'] ?? null);
+        $this->assertArrayHasKey('user-text', $state['customElements']);
+        $this->assertSame('Texto libre', $state['customElements']['user-text']['text'] ?? null);
+    }
 }

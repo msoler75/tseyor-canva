@@ -62,21 +62,32 @@ class DesignTemplateGenerator
         if ($targetDesign) {
             $existing = $targetDesign->fresh()->state ?? [];
 
-            // base for merged state is the existing design
+            // Base metadata/content comes from the existing design, but the visual
+            // layer must come from the new template. Otherwise old shapes/images
+            // from a previous/manual design survive a template switch.
             $merged = is_array($existing) ? $existing : [];
-            $merged['elementLayout'] = is_array($merged['elementLayout'] ?? null) ? $merged['elementLayout'] : [];
-            $merged['customElements'] = is_array($merged['customElements'] ?? null) ? $merged['customElements'] : [];
-            $merged['content'] = is_array($merged['content'] ?? null) ? $merged['content'] : [];
+            $existingLayouts = is_array($merged['elementLayout'] ?? null) ? $merged['elementLayout'] : [];
+            $existingCustomElements = is_array($merged['customElements'] ?? null) ? $merged['customElements'] : [];
+            $templateLayouts = is_array($adaptedVisualState['elementLayout'] ?? null) ? $adaptedVisualState['elementLayout'] : [];
+            $templateCustomElements = is_array($adaptedVisualState['customElements'] ?? null) ? $adaptedVisualState['customElements'] : [];
 
-            // Merge visual layouts: copy template layout properties but preserve textual fields
-            foreach (($adaptedVisualState['elementLayout'] ?? []) as $id => $layout) {
+            $merged['elementLayout'] = [];
+            $merged['customElements'] = [];
+            $merged['content'] = is_array($merged['content'] ?? null) ? $merged['content'] : [];
+            $merged['userUploadedImages'] = is_array($adaptedVisualState['userUploadedImages'] ?? null)
+                ? $adaptedVisualState['userUploadedImages']
+                : [];
+
+            // Replace visual layouts with the template layouts, preserving only
+            // textual content values. Old non-text custom layouts are deliberately
+            // not carried over.
+            foreach ($templateLayouts as $id => $layout) {
                 if ($id === 'background') {
                     $merged['elementLayout']['background'] = $layout;
                     continue;
                 }
 
-                // ensure existing layout exists
-                $existingLayout = $merged['elementLayout'][$id] ?? [];
+                $existingLayout = is_array($existingLayouts[$id] ?? null) ? $existingLayouts[$id] : [];
 
                 // copy layout but avoid overwriting text content with stale template values.
                 $copied = $layout;
@@ -92,8 +103,8 @@ class DesignTemplateGenerator
                     }
                 } else {
                     // non-base elements: if existing has text and element is text-type, preserve
-                    if (($merged['customElements'][$id]['type'] ?? null) === 'text') {
-                        $existingText = $merged['customElements'][$id]['text'] ?? null;
+                    if (($templateCustomElements[$id]['type'] ?? null) === 'text') {
+                        $existingText = $existingCustomElements[$id]['text'] ?? ($existingLayout['text'] ?? null);
                         if ($existingText !== null && $existingText !== '') {
                             $copied['text'] = $existingText;
                         } else {
@@ -107,10 +118,12 @@ class DesignTemplateGenerator
                 $merged['elementLayout'][$id] = $copied;
             }
 
-            // Merge custom elements: copy visuals and properties but preserve existing text where present
-            $mergedCustom = $merged['customElements'] ?? [];
-            foreach (($adaptedVisualState['customElements'] ?? []) as $elId => $el) {
-                $existingEl = $mergedCustom[$elId] ?? [];
+            // Replace custom visuals with the template set. Old shapes/images are
+            // removed; text elements are the only pre-existing custom elements
+            // allowed to survive a template switch.
+            $mergedCustom = [];
+            foreach ($templateCustomElements as $elId => $el) {
+                $existingEl = is_array($existingCustomElements[$elId] ?? null) ? $existingCustomElements[$elId] : [];
                 $copiedEl = $el;
                 if (($el['type'] ?? null) === 'text') {
                     $existingText = $existingEl['text'] ?? null;
@@ -123,6 +136,17 @@ class DesignTemplateGenerator
                     }
                 }
                 $mergedCustom[$elId] = $copiedEl;
+            }
+
+            foreach ($existingCustomElements as $elId => $el) {
+                if (! is_array($el) || ($el['type'] ?? null) !== 'text' || isset($mergedCustom[$elId])) {
+                    continue;
+                }
+
+                $mergedCustom[$elId] = $el;
+                if (isset($existingLayouts[$elId]) && is_array($existingLayouts[$elId]) && ! isset($merged['elementLayout'][$elId])) {
+                    $merged['elementLayout'][$elId] = $existingLayouts[$elId];
+                }
             }
             $merged['customElements'] = $mergedCustom;
 
