@@ -6,6 +6,7 @@ import { objectiveOptions, resolveObjectiveSizeOptions } from '../../data/design
 import RichTextEditor from './RichTextEditor.vue';
 import {
     BASE_TEXT_ELEMENT_IDS,
+    SHAPE_CLIP_PATHS,
     applyFormatToDimensions,
     buildCanvasBackgroundStyle,
     buildCoverImageStyle,
@@ -189,22 +190,7 @@ const svgMaskIds = (id) => {
     };
 };
 
-const exportShapeClipPaths = {
-    diamond: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
-    parallelogram: 'polygon(20% 0%, 100% 0%, 80% 100%, 0% 100%)',
-    trapezoid: 'polygon(15% 0%, 85% 0%, 100% 100%, 0% 100%)',
-    'triangle-up': 'polygon(50% 0%, 100% 100%, 0% 100%)',
-    'triangle-right-angle': 'polygon(0% 0%, 100% 100%, 0% 100%)',
-    pentagon: 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)',
-    hexagon: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)',
-    octagon: 'polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)',
-    'star-5': 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
-    'star-4': 'polygon(50% 0%, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0% 50%, 40% 40%)',
-    'star-6': 'polygon(50% 0%, 58% 17%, 79% 7%, 71% 26%, 93% 25%, 82% 43%, 100% 50%, 82% 57%, 93% 75%, 71% 74%, 79% 93%, 58% 83%, 50% 100%, 42% 83%, 21% 93%, 29% 74%, 7% 75%, 18% 57%, 0% 50%, 18% 43%, 7% 25%, 29% 26%, 21% 7%, 42% 17%)',
-    'star-burst': 'polygon(50% 0%, 60% 22%, 82% 18%, 78% 40%, 100% 50%, 78% 60%, 82% 82%, 60% 78%, 50% 100%, 40% 78%, 18% 82%, 22% 60%, 0% 50%, 22% 40%, 18% 18%, 40% 22%)',
-    'arrow-right': 'polygon(0% 25%, 60% 25%, 60% 0%, 100% 50%, 60% 100%, 60% 75%, 0% 75%)',
-};
-
+const exportShapeClipPaths = SHAPE_CLIP_PATHS;
 const polygonPointsFromClipPath = (shapeKind) => {
     const clipPath = exportShapeClipPaths[shapeKind];
     const match = clipPath?.match(/^polygon\((.+)\)$/i);
@@ -361,10 +347,10 @@ function neonColorOverride(id) {
     return neonColorOverrideFromLayout(state.elementLayout[id] ?? {});
 }
 function shapeStyle(item) {
-    return buildShapeStyle(state.elementLayout[item.id] ?? {}, item.shapeKind);
+    return buildShapeStyle(state.elementLayout[item.id] ?? {}, item.shapeKind, exportShapeClipPaths);
 }
 function shapeRenderModel(item) {
-    return buildShapeRenderModel(state.elementLayout[item.id] ?? {}, item.shapeKind);
+    return buildShapeRenderModel(state.elementLayout[item.id] ?? {}, item.shapeKind, exportShapeClipPaths);
 }
 function shapeUsesSvgTransparency(id) {
     return hasAdvancedTransparency(state.elementLayout[id] ?? {});
