@@ -100,7 +100,7 @@ const resolveTargetSurface = (snapshot) => {
         : (snapshot.format === 'square' ? { width: 500, height: 500 } : { width: 368, height: 620 });
 };
 
-const finishAndOpenEditor = async ({ selectedTemplate } = {}) => {
+const finishAndOpenEditor = async ({ selectedTemplate, designerState } = {}) => {
     // Permitir acceso al editor como invitado. El alert solo se mostrará en descarga/exportación o al crear un segundo diseño temporal.
 
     if (isCreatingDesign.value) return;
@@ -108,7 +108,7 @@ const finishAndOpenEditor = async ({ selectedTemplate } = {}) => {
     isCreatingDesign.value = true;
     assistantOpen.value = false;
 
-    const snapshot = JSON.parse(JSON.stringify(state));
+    const snapshot = JSON.parse(JSON.stringify(designerState ?? state));
     snapshot.currentDesignUuid = snapshot.currentDesignUuid || newDesignUuid();
     snapshot.designTitle = resolveInitialDesignName(snapshot);
 

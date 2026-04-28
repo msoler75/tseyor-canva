@@ -1181,6 +1181,40 @@ const currentCanvasDimensions = () => ({
   width: editorCanvasDimensions.value.width,
   height: editorCanvasDimensions.value.height,
 });
+const canvasDimensionsForDesignerState = (snapshot = {}) => {
+  const options = resolveObjectiveSizeOptions(snapshot.objective, snapshot.outputType, snapshot.format);
+  const option = options.find((item) => item.label === snapshot.size) ?? null;
+  const parsed = applyFormatToDimensions(parseSizeDetail(option?.detail ?? snapshot.size ?? '1080 × 1080 px'), snapshot.format);
+
+  if (parsed?.width > 0 && parsed?.height > 0) {
+    const ratio = parsed.width / parsed.height;
+    if (ratio >= 0.95 && ratio <= 1.05) {
+      return { width: 500, height: 500 };
+    }
+
+    if (ratio > 1) {
+      return {
+        width: BASE_CANVAS_LONG_SIDE,
+        height: Math.max(300, Math.min(BASE_CANVAS_LONG_SIDE, Math.round(BASE_CANVAS_LONG_SIDE / ratio))),
+      };
+    }
+
+    return {
+      width: Math.max(300, Math.min(BASE_CANVAS_LONG_SIDE, Math.round(BASE_CANVAS_LONG_SIDE * ratio))),
+      height: BASE_CANVAS_LONG_SIDE,
+    };
+  }
+
+  if (snapshot.format === 'horizontal') {
+    return { width: BASE_CANVAS_LONG_SIDE, height: BASE_CANVAS_SHORT_SIDE };
+  }
+
+  if (snapshot.format === 'square') {
+    return { width: 500, height: 500 };
+  }
+
+  return { width: BASE_CANVAS_SHORT_SIDE, height: BASE_CANVAS_LONG_SIDE };
+};
 const getCanvasBounds = () => ({
   width: canvasRef.value?.clientWidth ?? editorCanvasDimensions.value.width,
   height: canvasRef.value?.clientHeight ?? editorCanvasDimensions.value.height,
@@ -3512,12 +3546,19 @@ const saveTemplateForm = async () => {
   }
 };
 
-const handleAssistantFinish = async ({ selectedTemplate } = {}) => {
+const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) => {
+  const assistantState = designerState
+    ? JSON.parse(JSON.stringify(designerState))
+    : JSON.parse(JSON.stringify(state));
   const persistedTemplate = selectedTemplate?.uuid
     ? selectedTemplate
-    : persistedTemplates.value.find((template) => template.id === state.selectedTemplateId || template.uuid === state.selectedTemplateId);
+    : persistedTemplates.value.find((template) => template.id === assistantState.selectedTemplateId || template.uuid === assistantState.selectedTemplateId);
 
   if (!persistedTemplate?.uuid) {
+    assistantState.currentDesignUuid = currentDesignUuid.value;
+    assistantState.stateRevision = bumpRevision(state.stateRevision);
+    assistantState.templateRevision = state.templateRevision;
+    useDesignerState({ forceRehydrate: true, overrideState: assistantState });
     closeAssistant();
     return;
   }
@@ -3528,19 +3569,19 @@ const handleAssistantFinish = async ({ selectedTemplate } = {}) => {
     } catch (_) {
       // no-op: si el editor rico todavía no está listo, continuamos igualmente
     }
-    const targetSurface = currentCanvasDimensions();
-    state.stateRevision = bumpRevision(state.stateRevision);
-    state.templateRevision = bumpRevision(state.templateRevision);
+    const targetSurface = canvasDimensionsForDesignerState(assistantState);
+    assistantState.stateRevision = bumpRevision(state.stateRevision);
+    assistantState.templateRevision = bumpRevision(state.templateRevision);
     const response = await axios.post(`/designer/design-templates/${persistedTemplate.uuid}/generate`, {
-      designerState: JSON.parse(JSON.stringify(state)),
-      content: JSON.parse(JSON.stringify(state.content ?? {})),
-      stateRevision: state.stateRevision,
-      templateRevision: state.templateRevision,
-      objective: state.objective,
-      outputType: state.outputType,
-      format: state.format,
-      size: state.size,
-      designTitle: state.designTitle,
+      designerState: assistantState,
+      content: JSON.parse(JSON.stringify(assistantState.content ?? {})),
+      stateRevision: assistantState.stateRevision,
+      templateRevision: assistantState.templateRevision,
+      objective: assistantState.objective,
+      outputType: assistantState.outputType,
+      format: assistantState.format,
+      size: assistantState.size,
+      designTitle: assistantState.designTitle,
       designSurface: targetSurface,
       targetDesignUuid: isTemplateBaseEditor.value ? null : currentDesignUuid.value,
     });

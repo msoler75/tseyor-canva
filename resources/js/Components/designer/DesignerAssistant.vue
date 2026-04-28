@@ -1,6 +1,6 @@
 <script setup>
 import axios from 'axios';
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, reactive, computed, onMounted, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import ChoiceCard from './ChoiceCard.vue';
 import SelectionIndicator from './SelectionIndicator.vue';
@@ -15,7 +15,7 @@ import {
   resolveObjectiveSizeOptions,
   templateFilters,
 } from '../../data/designer';
-import { useDesignerState, resetDesignerState, flushDesignerStatePersistence } from '../../composables/useDesignerState';
+import { useDesignerState } from '../../composables/useDesignerState';
 
 const props = defineProps({
   step: { type: String, default: 'objective' },
@@ -26,7 +26,15 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'finish']);
-const state = useDesignerState();
+const liveState = useDesignerState();
+const cloneState = (value) => JSON.parse(JSON.stringify(value ?? {}));
+const state = reactive(cloneState(liveState));
+state.content = state.content && typeof state.content === 'object' ? state.content : {};
+state.elementLayout = state.elementLayout && typeof state.elementLayout === 'object' ? state.elementLayout : {};
+state.customElements = state.customElements && typeof state.customElements === 'object' && !Array.isArray(state.customElements)
+  ? state.customElements
+  : {};
+state.userUploadedImages = Array.isArray(state.userUploadedImages) ? state.userUploadedImages : [];
 const page = usePage();
 const remoteTemplates = ref([]);
 const customWidth = ref('');
@@ -202,7 +210,10 @@ function syncCustomSizeState() {
 }
 function finishAndOpenEditor() {
   const selectedTemplate = availableTemplates.value.find((template) => template.id === state.selectedTemplateId) ?? null;
-  emit('finish', { selectedTemplate});
+  emit('finish', {
+    selectedTemplate,
+    designerState: cloneState(state),
+  });
 }
 
 function selectTemplate(template) {
