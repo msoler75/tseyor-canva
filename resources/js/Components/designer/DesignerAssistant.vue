@@ -206,11 +206,9 @@ function finishAndOpenEditor() {
 }
 
 function selectTemplate(template) {
+  // Sólo marcar la plantilla seleccionada.
+  // La aplicación real (emit 'finish') se realiza al pulsar el botón "Aplicar".
   state.selectedTemplateId = template.id;
-
-  // Emitir finish siempre; la página padre decide si debe generar/aplicar
-  const selectedTemplate = availableTemplates.value.find((t) => t.id === template.id) ?? null;
-  emit('finish', { selectedTemplate });
 }
 watch(() => props.step, (val) => {
   if (val && assistantSteps.value.some(s => s.id === val)) assistantStep.value = val;
