@@ -183,12 +183,6 @@ const assignRichEditorRef = (id, element) => {
             </template>
             <template v-else>
               <div class="relative h-full w-full">
-                <div class="h-full w-full" :style="shapeRenderModel(item).outerStyle"></div>
-                <div
-                  v-if="shapeRenderModel(item).innerStyle"
-                  class="pointer-events-none absolute inset-0"
-                  :style="shapeRenderModel(item).innerStyle"
-                ></div>
                 <svg
                   v-if="shapeRenderModel(item).svgStroke"
                   class="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
@@ -206,6 +200,12 @@ const assignRichEditorRef = (id, element) => {
                     vector-effect="non-scaling-stroke"
                   />
                 </svg>
+                <div class="relative h-full w-full" :style="shapeRenderModel(item).outerStyle"></div>
+                <div
+                  v-if="shapeRenderModel(item).innerStyle"
+                  class="pointer-events-none absolute inset-0"
+                  :style="shapeRenderModel(item).innerStyle"
+                ></div>
               </div>
             </template>
           </div>

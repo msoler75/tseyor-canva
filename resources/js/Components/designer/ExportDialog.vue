@@ -233,11 +233,6 @@ const shapeSvgSolidColor = (id) => {
         : '#ffffff';
 };
 
-const shapeSvgStroke = (id) => {
-    const layout = state.elementLayout[id] ?? {};
-    return layout.border ? (layout.contourColor || '#ffffff') : 'none';
-};
-
 const shapeSvgStrokeColor = (id) => {
     const layout = state.elementLayout[id] ?? {};
     return layout.contourColor || '#ffffff';
@@ -254,16 +249,20 @@ const shapeSvgStrokeWidth = (id) => {
 
 const shapeHasBorder = (id) => Boolean(state.elementLayout[id]?.border);
 
-const shapeInnerTransform = (id) => {
+const shapeSvgStrokeDasharray = (id) => {
     const layout = state.elementLayout[id] ?? {};
-    if (!layout.border) return '';
-    const width = Math.max(1, Number(layout.w ?? 160));
-    const height = Math.max(1, Number(layout.h ?? 140));
-    const borderWidth = Math.max(1, Number(layout.contourWidth || 1));
-    const scaleX = Math.max(0.02, (width - (borderWidth * 2)) / width);
-    const scaleY = Math.max(0.02, (height - (borderWidth * 2)) / height);
-    return `translate(50 50) scale(${scaleX} ${scaleY}) translate(-50 -50)`;
+    if (!layout.border) return null;
+    const strokeWidth = shapeSvgStrokeWidth(id);
+    if (layout.borderStyle === 'dashed') return `${strokeWidth * 4} ${strokeWidth * 2}`;
+    if (layout.borderStyle === 'dotted') return `0 ${strokeWidth * 2.2}`;
+    return null;
 };
+
+const shapeSvgStrokeLinecap = (id) => (
+    state.elementLayout[id]?.borderStyle === 'dotted' ? 'round' : 'butt'
+);
+
+const shapeInnerTransform = () => '';
 
 const imageCornerRadii = (id) => {
     const layout = state.elementLayout[id] ?? {};
@@ -808,12 +807,22 @@ watch(() => state.elementLayout, () => {
                         cy="50"
                         rx="50"
                         ry="50"
-                        :fill="`url(#${svgMaskIds(item.id).strokeGradient})`"
+                        fill="none"
+                        :stroke="`url(#${svgMaskIds(item.id).strokeGradient})`"
+                        :stroke-width="shapeSvgStrokeWidth(item.id)"
+                        :stroke-dasharray="shapeSvgStrokeDasharray(item.id)"
+                        :stroke-linecap="shapeSvgStrokeLinecap(item.id)"
+                        stroke-linejoin="round"
                       />
                       <polygon
                         v-else-if="shapeHasBorder(item.id) && polygonPointsFromClipPath(item.shapeKind)"
                         :points="polygonPointsFromClipPath(item.shapeKind)"
-                        :fill="`url(#${svgMaskIds(item.id).strokeGradient})`"
+                        fill="none"
+                        :stroke="`url(#${svgMaskIds(item.id).strokeGradient})`"
+                        :stroke-width="shapeSvgStrokeWidth(item.id)"
+                        :stroke-dasharray="shapeSvgStrokeDasharray(item.id)"
+                        :stroke-linecap="shapeSvgStrokeLinecap(item.id)"
+                        stroke-linejoin="round"
                       />
                       <rect
                         v-else-if="shapeHasBorder(item.id)"
@@ -822,7 +831,12 @@ watch(() => state.elementLayout, () => {
                         width="100"
                         height="100"
                         :rx="item.shapeKind === 'rectangle-outline' ? 0 : 8"
-                        :fill="`url(#${svgMaskIds(item.id).strokeGradient})`"
+                        fill="none"
+                        :stroke="`url(#${svgMaskIds(item.id).strokeGradient})`"
+                        :stroke-width="shapeSvgStrokeWidth(item.id)"
+                        :stroke-dasharray="shapeSvgStrokeDasharray(item.id)"
+                        :stroke-linecap="shapeSvgStrokeLinecap(item.id)"
+                        stroke-linejoin="round"
                       />
 
                       <ellipse
@@ -853,11 +867,11 @@ watch(() => state.elementLayout, () => {
                     </svg>
                   </div>
                   <div v-else class="relative h-full w-full" :style="exportElementContentStyle(item.id)">
-                    <div class="h-full w-full" :style="shapeRenderModel(item).outerStyle"></div>
-                    <div v-if="shapeRenderModel(item).innerStyle" class="pointer-events-none absolute inset-0" :style="shapeRenderModel(item).innerStyle"></div>
                     <svg v-if="shapeRenderModel(item).svgStroke" class="pointer-events-none absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
                       <polygon :points="shapeRenderModel(item).svgStroke.points" fill="none" :stroke="shapeRenderModel(item).svgStroke.stroke" :stroke-width="shapeRenderModel(item).svgStroke.strokeWidth" :stroke-dasharray="shapeRenderModel(item).svgStroke.dasharray" :stroke-linecap="shapeRenderModel(item).svgStroke.linecap" :stroke-linejoin="shapeRenderModel(item).svgStroke.linejoin" vector-effect="non-scaling-stroke" />
                     </svg>
+                    <div class="relative h-full w-full" :style="shapeRenderModel(item).outerStyle"></div>
+                    <div v-if="shapeRenderModel(item).innerStyle" class="pointer-events-none absolute inset-0" :style="shapeRenderModel(item).innerStyle"></div>
                   </div>
                 </template>
               </div>

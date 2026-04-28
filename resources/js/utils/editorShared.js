@@ -88,7 +88,7 @@ export function buildTransparencyMaskStyle(layout = {}, {
   };
 }
 
-export function buildBorderCss(layout = {}, { defaultColor = '#ffffff', fallbackWhenDisabled = '0' } = {}) {
+export function buildOutlineCss(layout = {}, { defaultColor = '#ffffff', fallbackWhenDisabled = '0' } = {}) {
   if (!layout.border) {
     return fallbackWhenDisabled;
   }
@@ -98,6 +98,18 @@ export function buildBorderCss(layout = {}, { defaultColor = '#ffffff', fallback
   const color = layout.contourColor || defaultColor;
 
   return `${width}px ${style} ${color}`;
+}
+
+export function buildOutlineStyle(layout = {}, options = {}) {
+  return {
+    border: '0',
+    outline: buildOutlineCss(layout, options),
+    outlineOffset: '0px',
+  };
+}
+
+export function buildBorderCss(layout = {}, options = {}) {
+  return buildOutlineCss(layout, options);
 }
 
 export function buildEditorElements(state) {
@@ -455,7 +467,8 @@ export function buildShapeStyleFromKind(shapeKind, base, shapeClipPaths = {}) {
       ...base,
       borderRadius: '22px',
       background: 'transparent',
-      border: base.border === '0' ? '8px solid currentColor' : base.border,
+      border: '0',
+      outline: (base.outline === '0' || (base.outline == null && base.border === '0')) ? '8px solid currentColor' : base.outline,
     };
   }
   if (shapeKind === 'rectangle-outline') {
@@ -486,7 +499,7 @@ export function buildShapeStyle(layout = {}, shapeKind, shapeClipPaths = {}) {
     height: '100%',
     background: fill,
     boxShadow: buildVisualShadow(layout),
-    border: buildBorderCss(layout, { defaultColor: '#ffffff', fallbackWhenDisabled: '0' }),
+    ...buildOutlineStyle(layout, { defaultColor: '#ffffff', fallbackWhenDisabled: '0' }),
   };
 
   return buildShapeStyleFromKind(shapeKind, base, shapeClipPaths);
@@ -517,7 +530,7 @@ export function buildShapeRenderModel(layout = {}, shapeKind, shapeClipPaths = {
         .join(' ')
     : null;
 
-  if ((layout.borderStyle === 'dashed' || layout.borderStyle === 'dotted') && points) {
+  if (points) {
     return {
       outerStyle: buildShapeStyleFromKind(shapeKind, {
         width: '100%',
@@ -525,6 +538,7 @@ export function buildShapeRenderModel(layout = {}, shapeKind, shapeClipPaths = {
         background: fill,
         boxShadow: buildVisualShadow(layout),
         border: '0',
+        outline: '0',
       }, shapeClipPaths),
       innerStyle: null,
       svgStroke: {
@@ -533,38 +547,16 @@ export function buildShapeRenderModel(layout = {}, shapeKind, shapeClipPaths = {
         strokeWidth: borderWidth,
         dasharray: layout.borderStyle === 'dashed'
           ? `${borderWidth * 4} ${borderWidth * 2}`
-          : `0 ${borderWidth * 2.2}`,
+          : (layout.borderStyle === 'dotted' ? `0 ${borderWidth * 2.2}` : null),
         linecap: layout.borderStyle === 'dotted' ? 'round' : 'butt',
         linejoin: 'round',
       },
     };
   }
 
-  const width = Math.max(1, Number(layout.w || 1));
-  const height = Math.max(1, Number(layout.h || 1));
-  const scaleX = Math.max(0.1, (width - (borderWidth * 2)) / width);
-  const scaleY = Math.max(0.1, (height - (borderWidth * 2)) / height);
-
-  const outerStyle = buildShapeStyleFromKind(shapeKind, {
-    width: '100%',
-    height: '100%',
-    background: layout.contourColor || '#ffffff',
-    boxShadow: buildVisualShadow(layout),
-    border: '0',
-  }, shapeClipPaths);
-
-  const innerStyle = buildShapeStyleFromKind(shapeKind, {
-    width: '100%',
-    height: '100%',
-    background: fill,
-    border: '0',
-    transform: `scale(${scaleX}, ${scaleY})`,
-    transformOrigin: 'center center',
-  }, shapeClipPaths);
-
   return {
-    outerStyle,
-    innerStyle,
+    outerStyle: buildShapeStyle(layout, shapeKind, shapeClipPaths),
+    innerStyle: null,
     svgStroke: null,
   };
 }
@@ -586,7 +578,7 @@ export function buildImageFrameStyle(layout = {}) {
     backgroundColor: hasAdvancedTransparency
       ? 'transparent'
       : (layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : 'rgba(255,255,255,0.2)'),
-    border: buildBorderCss(layout, { defaultColor: '#ffffff', fallbackWhenDisabled: '0' }),
+    ...buildOutlineStyle(layout, { defaultColor: '#ffffff', fallbackWhenDisabled: '0' }),
     boxShadow: buildVisualShadow(layout),
   };
 }
