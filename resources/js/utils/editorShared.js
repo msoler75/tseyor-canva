@@ -508,12 +508,25 @@ export function buildShapeStyleFromKind(shapeKind, base, shapeClipPaths = {}) {
     return { ...base, borderRadius: '9999px' };
   }
   if (shapeKind === 'frame-rounded') {
+    const frameWidth = 8;
+    const frameColor = base.frameColor || base.background || 'currentColor';
+    const frameShadow = `inset 0 0 0 ${frameWidth}px ${frameColor}`;
+    const frameBorderShadow = base.outline && base.outline !== '0'
+      ? `inset 0 0 0 ${frameWidth + Math.max(1, Number(base.outlineWidth || 1))}px ${base.outlineColor || '#ffffff'}`
+      : null;
+    const boxShadow = [
+      base.boxShadow && base.boxShadow !== 'none' ? base.boxShadow : null,
+      frameShadow,
+      frameBorderShadow,
+    ].filter(Boolean).join(', ');
+
     return {
       ...base,
       borderRadius: '22px',
       background: 'transparent',
+      boxShadow,
       border: '0',
-      outline: (base.outline === '0' || (base.outline == null && base.border === '0')) ? '8px solid currentColor' : base.outline,
+      outline: base.outline || '0',
     };
   }
   if (shapeKind === 'rectangle-outline') {
@@ -535,14 +548,23 @@ export function buildShapeStyleFromKind(shapeKind, base, shapeClipPaths = {}) {
 }
 
 export function buildShapeStyle(layout = {}, shapeKind, shapeClipPaths = {}) {
-  const fill = layout.fillMode === 'gradient'
+  const outlineWidth = Math.max(1, Number(layout.contourWidth || 1));
+  const outlineColor = layout.contourColor || '#ffffff';
+  const fill = shapeKind === 'frame-rounded'
+    ? (layout.backgroundColor && layout.backgroundColor !== 'transparent'
+      ? layout.backgroundColor
+      : (layout.contourColor || '#38bdf8'))
+    : (layout.fillMode === 'gradient'
     ? `linear-gradient(${layout.gradientAngle || 135}deg, ${layout.gradientStart || '#0ea5e9'}, ${layout.gradientEnd || '#8b5cf6'})`
-    : (layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : '#ffffff');
+    : (layout.backgroundColor && layout.backgroundColor !== 'transparent' ? layout.backgroundColor : '#ffffff'));
 
   const base = {
     width: '100%',
     height: '100%',
     background: fill,
+    frameColor: fill,
+    outlineWidth,
+    outlineColor,
     boxShadow: buildVisualShadow(layout),
     ...buildOutlineStyle(layout, { defaultColor: '#ffffff', fallbackWhenDisabled: '0' }),
   };

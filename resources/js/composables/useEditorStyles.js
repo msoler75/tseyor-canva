@@ -284,17 +284,22 @@ export const useEditorStyles = ({
     applyVisualEffectPreset(selectedElement.value, nextEffectId);
   };
 
-  const toComplementaryColor = (value, fallback = '#7c3aed') => {
-    const normalized = normalizePickerColor(value, fallback);
-    const r = 255 - Number.parseInt(normalized.slice(1, 3), 16);
-    const g = 255 - Number.parseInt(normalized.slice(3, 5), 16);
-    const b = 255 - Number.parseInt(normalized.slice(5, 7), 16);
-    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  const isVeryDarkColor = (value) => {
+    const normalized = normalizePickerColor(value, '');
+    if (!normalized) return false;
+    const r = Number.parseInt(normalized.slice(1, 3), 16) / 255;
+    const g = Number.parseInt(normalized.slice(3, 5), 16) / 255;
+    const b = Number.parseInt(normalized.slice(5, 7), 16) / 255;
+    const toLinear = (channel) => (channel <= 0.03928
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4);
+    const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+    return luminance < 0.18;
   };
 
   const getInitialBorderColor = () => {
     if (!selectedElement.value) return '#ffffff';
-    if (selectedElementType?.value === 'image') return '#facc15';
+    if (selectedElementType?.value === 'image') return '#000000';
 
     const shapeBaseColor = selectedElement.value.fillMode === 'gradient'
       ? (selectedElement.value.gradientStart || '#0ea5e9')
@@ -302,7 +307,7 @@ export const useEditorStyles = ({
         ? selectedElement.value.backgroundColor
         : '#0ea5e9');
 
-    return toComplementaryColor(shapeBaseColor, '#7c3aed');
+    return isVeryDarkColor(shapeBaseColor) ? '#ffffff' : '#000000';
   };
 
   const activateBorderStyle = (style = 'solid') => {
@@ -313,7 +318,17 @@ export const useEditorStyles = ({
     selectedElement.value.borderStyle = style;
     selectedElement.value.contourWidth = Math.max(1, Number(selectedElement.value.contourWidth || 2));
 
-    if (!wasEnabled && (!selectedElement.value.contourColor || selectedElement.value.contourColor === '#ffffff')) {
+    const shapeBaseColor = selectedElement.value.fillMode === 'gradient'
+      ? selectedElement.value.gradientStart
+      : selectedElement.value.backgroundColor;
+    const currentColor = normalizePickerColor(selectedElement.value.contourColor || '', '');
+    const fillColor = normalizePickerColor(shapeBaseColor || '', '');
+    const shouldUseInitialColor = !currentColor
+      || currentColor === '#ffffff'
+      || (currentColor === '#000000' && isVeryDarkColor(shapeBaseColor))
+      || (fillColor && currentColor.toLowerCase() === fillColor.toLowerCase());
+
+    if (!wasEnabled && shouldUseInitialColor) {
       selectedElement.value.contourColor = getInitialBorderColor();
     }
   };

@@ -66,6 +66,7 @@ const props = defineProps({
   swapShapeGradientStops: Function,
   setTextEffect: Function,
   setVisualEffect: Function,
+  activateBorderStyle: Function,
   setSelectedColor: Function,
   changeLayer: Function,
   toggleSelectedImageFlip: Function,
@@ -127,6 +128,7 @@ const {
   swapShapeGradientStops,
   setTextEffect,
   setVisualEffect,
+  activateBorderStyle,
   setSelectedColor,
   changeLayer,
   toggleSelectedImageFlip,
@@ -1196,9 +1198,9 @@ const endPanelCloseDrag = () => {
 
                   <div class="flex flex-wrap gap-2">
                     <button type="button" class="btn btn-sm rounded-full" :class="!selectedElement.border ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = false">Sin borde</button>
-                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && (selectedElement.borderStyle || 'solid') === 'solid' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'solid'">Sólido</button>
-                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dashed' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dashed'">Dashed</button>
-                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dotted' ? 'btn-primary' : 'btn-outline'" @click="selectedElement.border = true; selectedElement.borderStyle = 'dotted'">Dotted</button>
+                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && (selectedElement.borderStyle || 'solid') === 'solid' ? 'btn-primary' : 'btn-outline'" @click="activateBorderStyle('solid')">Sólido</button>
+                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dashed' ? 'btn-primary' : 'btn-outline'" @click="activateBorderStyle('dashed')">Dashed</button>
+                    <button type="button" class="btn btn-sm rounded-full" :class="selectedElement.border && selectedElement.borderStyle === 'dotted' ? 'btn-primary' : 'btn-outline'" @click="activateBorderStyle('dotted')">Dotted</button>
                   </div>
 
                   <template v-if="selectedElement.border">

@@ -770,6 +770,7 @@ const {
   setSelectedColor,
   setTextEffect,
   setVisualEffect,
+  activateBorderStyle,
   textEffectPreviewStyle,
   visualEffectPreviewStyle,
   applyGradientPreset,
@@ -791,6 +792,7 @@ const {
 } = useEditorStyles({
   state,
   selectedElement,
+  selectedElementType,
   hasTextSelection,
   textEffectOptions,
   getParagraphStyleFields: () => paragraphStyleFields,
@@ -2495,19 +2497,18 @@ const addShapeElement = (shapeKind) => {
   if (!shape) return;
 
   const isRectangle = shapeKind === 'rectangle' || shapeKind === 'rectangle-outline';
-  const isRoundedFrame = shapeKind === 'frame-rounded';
   const layout = buildDefaultLayout({
     // El rectángulo base nace cuadrado; luego el usuario puede deformarlo libremente.
     w: isRectangle ? 140 : 140,
     h: isRectangle ? 140 : 140,
     x: getInsertX(140),
     y: 150,
-    backgroundColor: isRoundedFrame ? 'transparent' : '#38bdf8',
-    opacity: 90,
+    backgroundColor: '#38bdf8',
+    opacity: 100,
     shadow: true,
-    border: isRoundedFrame,
-    contourWidth: isRoundedFrame ? 10 : 0,
-    contourColor: '#38bdf8',
+    border: false,
+    contourWidth: 0,
+    contourColor: '#000000',
   });
   placeInsideCanvas(layout);
 
@@ -3937,6 +3938,7 @@ watch(
             :swap-shape-gradient-stops="swapShapeGradientStops"
             :set-text-effect="setTextEffect"
             :set-visual-effect="setVisualEffect"
+            :activate-border-style="activateBorderStyle"
             :set-selected-color="setSelectedColor"
             :change-layer="changeLayer"
             :toggle-selected-image-flip="toggleSelectedImageFlip"
