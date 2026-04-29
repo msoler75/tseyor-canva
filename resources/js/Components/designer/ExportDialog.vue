@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue';
 import { toCanvasExport, toJpegExport, toPngExport } from '../../utils/useHtml2Image';
 import { useDesignerState } from '../../composables/useDesignerState';
-import { isHorizontalFormat, objectiveOptions, resolveObjectiveSizeOptions } from '../../data/designer';
+import { brochurePrintPairForPhysicalPage, isBrochureFormat, isHorizontalFormat, objectiveOptions, resolveObjectiveSizeOptions } from '../../data/designer';
 import RichTextEditor from './RichTextEditor.vue';
 import {
     BASE_TEXT_ELEMENT_IDS,
@@ -68,6 +68,7 @@ const documentPages = computed(() => (Array.isArray(state.pages) && state.pages.
     }]
 ));
 const hasMultiplePages = computed(() => documentPages.value.length > 1);
+const isBrochureExport = computed(() => isBrochureFormat(state.format));
 // Genera un SVG transparente con las dimensiones deseadas y lo convierte a data-uri
 function svgPlaceholder(width, height) {
   // SVG sin width/height, solo viewBox, para que el <img> lo escale igual que la imagen real
@@ -520,6 +521,61 @@ const renderCurrentPreviewNode = async (format) => {
     }
 };
 
+const loadImageFromDataUrl = (dataUrl) => new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = dataUrl;
+});
+
+const drawBrochurePanel = (context, sourceImages, brochurePageNumber, destinationX, width, height) => {
+    const sourceSpreadIndex = brochurePageNumber === (sourceImages.length * 2)
+        ? 0
+        : Math.floor(brochurePageNumber / 2);
+    const sourceIsLeftPanel = brochurePageNumber === (sourceImages.length * 2)
+        || brochurePageNumber % 2 === 0;
+    const sourceX = sourceIsLeftPanel ? 0 : width;
+    context.drawImage(sourceImages[sourceSpreadIndex], sourceX, 0, width, height, destinationX, 0, width, height);
+};
+
+const renderBrochurePrintPages = async (format) => {
+    const pages = documentPages.value;
+    const renderedPages = [];
+
+    for (const page of pages) {
+        renderedPages.push(await withRenderedPage(page, () => renderCurrentPreviewNode(format)));
+    }
+
+    if (renderedPages.length <= 2) {
+        return renderedPages;
+    }
+
+    const sourceImages = await Promise.all(renderedPages.map((dataUrl) => loadImageFromDataUrl(dataUrl)));
+    const { width, height } = targetDimensions.value;
+    const panelWidth = Math.floor(width / 2);
+    const outputMime = format === 'jpg' ? 'image/jpeg' : 'image/png';
+
+    return pages.map((_, pageIndex) => {
+        const [leftBrochurePage, rightBrochurePage] = brochurePrintPairForPhysicalPage(pageIndex, pages.length);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+
+        if (format === 'jpg') {
+            context.fillStyle = '#ffffff';
+            context.fillRect(0, 0, width, height);
+        }
+
+        drawBrochurePanel(context, sourceImages, leftBrochurePage, 0, panelWidth, height);
+        drawBrochurePanel(context, sourceImages, rightBrochurePage, panelWidth, panelWidth, height);
+
+        return format === 'jpg'
+            ? canvas.toDataURL(outputMime, jpgQuality.value)
+            : canvas.toDataURL(outputMime);
+    });
+};
+
 let crcTable = null;
 const getCrcTable = () => {
     if (crcTable) return crcTable;
@@ -700,22 +756,36 @@ async function downloadImage() {
     const { width, height } = targetDimensions.value;
     try {
         const pages = documentPages.value;
+        const exportPages = isBrochureExport.value
+            ? await renderBrochurePrintPages(selectedExportFormat.value === 'pdf' ? 'jpg' : selectedExportFormat.value)
+            : null;
 
         if (selectedExportFormat.value === 'pdf') {
             const jpegPages = [];
-            for (const page of pages) {
-                jpegPages.push(await withRenderedPage(page, () => renderCurrentPreviewNode('jpg')));
+            if (exportPages) {
+                jpegPages.push(...exportPages);
+            } else {
+                for (const page of pages) {
+                    jpegPages.push(await withRenderedPage(page, () => renderCurrentPreviewNode('jpg')));
+                }
             }
             downloadBlob(createPdfBlob(jpegPages, width, height), fileName.value);
-            exportSuccess.value = `PDF generado con ${pages.length} página${pages.length === 1 ? '' : 's'}.`;
+            exportSuccess.value = `PDF generado con ${jpegPages.length} página${jpegPages.length === 1 ? '' : 's'}${isBrochureExport.value ? ' impuestas para folleto' : ''}.`;
             return;
         }
 
-        if (pages.length > 1) {
+        if (pages.length > 1 || exportPages) {
             const files = [];
             let index = 1;
-            for (const page of pages) {
-                const dataUrl = await withRenderedPage(page, () => renderCurrentPreviewNode(selectedExportFormat.value));
+            const renderedPages = exportPages ?? [];
+
+            if (!renderedPages.length) {
+                for (const page of pages) {
+                    renderedPages.push(await withRenderedPage(page, () => renderCurrentPreviewNode(selectedExportFormat.value)));
+                }
+            }
+
+            for (const dataUrl of renderedPages) {
                 files.push({
                     name: `${baseFileName.value}-pagina-${String(index).padStart(2, '0')}.${selectedExportFormat.value}`,
                     bytes: dataUrlToBytes(dataUrl),
@@ -723,7 +793,7 @@ async function downloadImage() {
                 index += 1;
             }
             downloadBlob(createZipBlob(files), fileName.value);
-            exportSuccess.value = `ZIP generado con ${files.length} imágenes ${selectedExportFormat.value.toUpperCase()}.`;
+            exportSuccess.value = `ZIP generado con ${files.length} imágenes ${selectedExportFormat.value.toUpperCase()}${isBrochureExport.value ? ' impuestas para folleto' : ''}.`;
             return;
         }
 

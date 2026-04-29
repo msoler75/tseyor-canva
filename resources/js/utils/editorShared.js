@@ -776,7 +776,7 @@ export function parseSizeDetail(detail) {
 export function applyFormatToDimensions(dimensions, format) {
   const width = Number(dimensions?.width ?? 0);
   const height = Number(dimensions?.height ?? 0);
-  const horizontalFormats = new Set(['horizontal', 'diptych', 'triptych']);
+    const horizontalFormats = new Set(['horizontal', 'diptych', 'triptych', 'brochure']);
 
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     return dimensions;

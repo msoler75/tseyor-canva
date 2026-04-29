@@ -69,11 +69,12 @@ export const formatCards = [
     { id: 'horizontal', icon: 'ph:rectangle-duotone', iconClass:'transform scale-x-110 scale-y-80 ', title: 'Horizontal', description: 'Útil para cabeceras y banners.', shape: 'h-24 w-36', gradient: 'from-cyan-500 to-sky-400' },
     { id: 'diptych', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-x-110 scale-y-80', title: 'Díptico', description: 'Diseño horizontal dividido en dos paneles.', shape: 'h-24 w-36', gradient: 'from-teal-500 to-cyan-400', outputTypes: ['print'] },
     { id: 'triptych', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-x-110 scale-y-80', title: 'Tríptico', description: 'Diseño horizontal dividido en tres paneles.', shape: 'h-24 w-36', gradient: 'from-blue-500 to-indigo-500', outputTypes: ['print'] },
+    { id: 'brochure', icon: 'ph:book-open-text-duotone', iconClass: 'transform scale-x-110 scale-y-80', title: 'Folleto', description: 'Librito horizontal: dos páginas físicas y cuatro páginas de folleto.', shape: 'h-24 w-36', gradient: 'from-emerald-500 to-teal-500', outputTypes: ['print'] },
     { id: 'square', icon: 'ph:square-duotone', title: 'Cuadrado', description: 'Perfecto para redes o piezas cuadradas.', shape: 'h-28 w-28', gradient: 'from-amber-400 to-orange-500' },
     { id: 'other', icon: 'ph:question-duotone', title: 'Personalizado', description: 'Quieres definir manualmente el formato y sus dimensiones.', shape: 'h-28 w-28', gradient: 'from-slate-300 to-slate-400' },
 ];
 
-export const horizontalPrintFoldFormats = ['diptych', 'triptych'];
+export const horizontalPrintFoldFormats = ['diptych', 'triptych', 'brochure'];
 
 export function isHorizontalFormat(format) {
     return format === 'horizontal' || horizontalPrintFoldFormats.includes(format);
@@ -81,8 +82,40 @@ export function isHorizontalFormat(format) {
 
 export function foldGuidePositionsForFormat(format) {
     if (format === 'diptych') return [50];
+    if (format === 'brochure') return [50];
     if (format === 'triptych') return [100 / 3, 200 / 3];
     return [];
+}
+
+export function isBrochureFormat(format) {
+    return format === 'brochure';
+}
+
+export function brochurePagePairForPhysicalPage(physicalPageIndex, physicalPageCount) {
+    const totalBrochurePages = Math.max(0, Number(physicalPageCount) || 0) * 2;
+    const index = Math.max(0, Number(physicalPageIndex) || 0);
+
+    if (!totalBrochurePages) {
+        return [1, 2];
+    }
+
+    return index === 0
+        ? [totalBrochurePages, 1]
+        : [index * 2, (index * 2) + 1];
+}
+
+export function brochurePrintPairForPhysicalPage(physicalPageIndex, physicalPageCount) {
+    const totalBrochurePages = Math.max(0, Number(physicalPageCount) || 0) * 2;
+    const index = Math.max(0, Number(physicalPageIndex) || 0);
+    const sheet = Math.floor(index / 2);
+
+    if (!totalBrochurePages) {
+        return [1, 2];
+    }
+
+    return index % 2 === 0
+        ? [totalBrochurePages - (sheet * 2), 1 + (sheet * 2)]
+        : [2 + (sheet * 2), totalBrochurePages - 1 - (sheet * 2)];
 }
 
 export const templateFilters = ['all', 'modern', 'minimal', 'promo', 'elegant', 'corporate', 'youth', 'informative'];

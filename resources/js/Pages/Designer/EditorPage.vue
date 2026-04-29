@@ -7,7 +7,7 @@ import EditorTopBar from '../../Components/designer/EditorTopBar.vue';
 import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.vue';
 import EditorCanvasStage from '../../Components/designer/EditorCanvasStage.vue';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { filterLabels, initialDesignerState, isHorizontalFormat, objectiveOptions, objectiveRecommendations, resolveObjectiveSizeOptions } from '../../data/designer';
+import { brochurePagePairForPhysicalPage, filterLabels, foldGuidePositionsForFormat, initialDesignerState, isBrochureFormat, isHorizontalFormat, objectiveOptions, objectiveRecommendations, resolveObjectiveSizeOptions } from '../../data/designer';
 import {
   flushDesignerStatePersistence,
   hydrateDesignerStateFromPage,
@@ -119,11 +119,41 @@ const createBlankPage = () => ({
   elementLayout: clonePlain(initialDesignerState.elementLayout),
   customElements: {},
 });
+const createBlankPages = (count) => Array.from({ length: Math.max(0, count) }, () => createBlankPage());
+const isBrochureDocument = (snapshot = state) => isBrochureFormat(snapshot?.format);
+const minimumDocumentPageCount = (snapshot = state) => (isBrochureDocument(snapshot) ? 2 : 1);
+const normalizeBrochurePages = (snapshot = state) => {
+  if (!isBrochureDocument(snapshot)) return snapshot;
+
+  const pages = Array.isArray(snapshot.pages) && snapshot.pages.length
+    ? snapshot.pages
+    : [{
+        id: snapshot.activePageId ?? createPageId(),
+        content: clonePlain(snapshot.content ?? initialDesignerState.content),
+        elementLayout: clonePlain(snapshot.elementLayout ?? initialDesignerState.elementLayout),
+        customElements: clonePlain(snapshot.customElements ?? {}),
+      }];
+
+  while (pages.length < 2) {
+    pages.push(createBlankPage());
+  }
+
+  if (pages.length % 2 !== 0) {
+    pages.push(createBlankPage());
+  }
+
+  snapshot.pages = pages;
+  snapshot.activePageId = snapshot.activePageId && pages.some((page) => page.id === snapshot.activePageId)
+    ? snapshot.activePageId
+    : pages[0].id;
+
+  return snapshot;
+};
 const ensureDocumentPages = (hydrateActivePage = false) => {
   if (!Array.isArray(state.pages) || !state.pages.length) {
     const firstId = state.activePageId ?? createPageId();
     state.activePageId = firstId;
-    state.pages = [clonePageFromState(firstId)];
+    state.pages = [clonePageFromState(firstId), ...createBlankPages(minimumDocumentPageCount() - 1)];
     return;
   }
 
@@ -139,8 +169,10 @@ const ensureDocumentPages = (hydrateActivePage = false) => {
   if (!state.pages.length) {
     const firstId = createPageId();
     state.activePageId = firstId;
-    state.pages = [clonePageFromState(firstId)];
+    state.pages = [clonePageFromState(firstId), ...createBlankPages(minimumDocumentPageCount() - 1)];
   }
+
+  normalizeBrochurePages(state);
 
   if (!state.activePageId || !state.pages.some((page) => page.id === state.activePageId)) {
     state.activePageId = state.pages[0].id;
@@ -234,8 +266,14 @@ const addDocumentPage = async ({ afterPageId = state.activePageId, duplicate = f
     ? clonePlain(state.pages.find((page) => page.id === afterPageId) ?? clonePageFromState())
     : createBlankPage();
   source.id = createPageId();
+  const pagesToInsert = [source];
+  if (isBrochureDocument()) {
+    const extraPage = duplicate ? clonePlain(source) : createBlankPage();
+    extraPage.id = createPageId();
+    pagesToInsert.push(extraPage);
+  }
   const insertAfterIndex = Math.max(0, state.pages.findIndex((page) => page.id === afterPageId));
-  state.pages.splice(insertAfterIndex + 1, 0, source);
+  state.pages.splice(insertAfterIndex + 1, 0, ...pagesToInsert);
   refreshDocumentPageList();
   documentRevision.value += 1;
   await nextTick();
@@ -265,15 +303,19 @@ const moveDocumentPage = async (pageId, direction) => {
 };
 const deleteDocumentPage = async (pageId) => {
   ensureDocumentPages();
-  if (state.pages.length <= 1) return;
+  if (state.pages.length <= minimumDocumentPageCount()) return;
   const pageIndex = state.pages.findIndex((page) => page.id === pageId);
   if (pageIndex === -1) return;
-  const nextPage = state.pages[pageIndex + 1] ?? state.pages[pageIndex - 1];
-  state.pages.splice(pageIndex, 1);
+  const deleteStart = isBrochureDocument() ? Math.floor(pageIndex / 2) * 2 : pageIndex;
+  const deleteCount = isBrochureDocument() ? Math.min(2, state.pages.length - deleteStart) : 1;
+  const deletedIds = state.pages.slice(deleteStart, deleteStart + deleteCount).map((page) => page.id);
+  const nextPage = state.pages[deleteStart + deleteCount] ?? state.pages[deleteStart - 1];
+  state.pages.splice(deleteStart, deleteCount);
+  normalizeBrochurePages(state);
   refreshDocumentPageList();
   documentRevision.value += 1;
-  if (pageId === state.activePageId) {
-    await switchToPage(nextPage.id);
+  if (deletedIds.includes(state.activePageId)) {
+    await switchToPage(nextPage?.id ?? state.pages[0]?.id);
   }
   flushDesignerStateWithThumbnail();
 };
@@ -809,6 +851,23 @@ const documentPages = computed(() => {
   return documentPageList.value;
 });
 const hasMultiplePages = computed(() => documentPages.value.length > 1);
+const physicalPageLabel = (pageIndex) => (
+  isBrochureDocument()
+    ? `Página física ${pageIndex + 1} · folleto ${brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length).join('-')}`
+    : `Página ${pageIndex + 1}`
+);
+const brochurePanelLabels = (pageIndex) => brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length)
+  .map((pageNumber) => `Página de folleto ${pageNumber}`);
+const addPageButtonLabel = computed(() => (
+  isBrochureDocument()
+    ? '+ Añadir 2 páginas físicas (4 páginas de folleto)'
+    : '+ Añadir una página'
+));
+const deletePageTip = computed(() => (
+  isBrochureDocument()
+    ? 'Eliminar este pliego (2 páginas físicas)'
+    : 'Eliminar página'
+));
 const pageMetaLine = (content = {}) => [content.date, content.time].filter(Boolean).join(' · ');
 const readonlyPageElements = (pageState) => {
   const content = pageState?.content ?? {};
@@ -1288,7 +1347,7 @@ const canvasZoomStyle = computed(() => ({
 }));
 const zoomScale = computed(() => Math.max(0.25, zoomLevel.value / 100));
 const pageViewportStyle = computed(() => ({
-  height: `${Math.ceil((editorCanvasDimensions.value.height + 42) * zoomScale.value)}px`,
+  height: `${Math.ceil((editorCanvasDimensions.value.height + (isBrochureDocument() ? 74 : 42)) * zoomScale.value)}px`,
 }));
 const pageChromeStyle = computed(() => ({
   ...canvasFrameStyle.value,
@@ -3860,10 +3919,13 @@ const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) =
     : persistedTemplates.value.find((template) => template.id === assistantState.selectedTemplateId || template.uuid === assistantState.selectedTemplateId);
 
   if (!persistedTemplate?.uuid) {
+    normalizeBrochurePages(assistantState);
     assistantState.currentDesignUuid = currentDesignUuid.value;
     assistantState.stateRevision = bumpRevision(state.stateRevision);
     assistantState.templateRevision = state.templateRevision;
     useDesignerState({ forceRehydrate: true, overrideState: assistantState });
+    ensureDocumentPages(true);
+    refreshDocumentPageList();
     closeAssistant();
     return;
   }
@@ -3893,8 +3955,11 @@ const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) =
     const uuid = response.data?.design?.uuid;
     const returnedState = response.data?.design?.state ?? null;
     if (returnedState) {
+      normalizeBrochurePages(returnedState);
       // Forzar rehidratación del estado del diseñador con el state devuelto por el backend
       useDesignerState({ forceRehydrate: true, overrideState: returnedState });
+      ensureDocumentPages(true);
+      refreshDocumentPageList();
       state.currentDesignUuid = uuid;
       closeAssistant();
       return;
@@ -4319,7 +4384,7 @@ watch(
               >
                 <div class="absolute top-0 left-1/2 origin-top" :style="pageChromeStyle">
                 <div class="relative z-50 mb-3 flex w-full items-center justify-between text-sm font-semibold text-slate-500 dark:text-slate-300" @pointerdown.stop>
-                  <span>{{ hasMultiplePages ? `Página ${pageIndex + 1}` : '' }}</span>
+                  <span>{{ hasMultiplePages ? physicalPageLabel(pageIndex) : '' }}</span>
                   <div class="relative z-50 flex items-center gap-1">
                     <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover página hacia arriba">
                       <button
@@ -4355,7 +4420,7 @@ watch(
                         <Icon icon="ph:file-plus" class="h-4 w-4" />
                       </button>
                     </span>
-                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom" data-tip="Eliminar página">
+                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom" :data-tip="deletePageTip">
                       <button type="button" class="btn btn-ghost btn-xs text-error" aria-label="Eliminar página" @click.stop.prevent="deleteDocumentPage(documentPage.id)">
                         <Icon icon="ph:trash" class="h-4 w-4" />
                       </button>
@@ -4456,6 +4521,13 @@ watch(
                       draggable="false"
                     />
                     <div
+                      v-for="position in foldGuidePositionsForFormat(state.format)"
+                      :key="`readonly-fold-guide-${documentPage.id}-${position}`"
+                      class="pointer-events-none absolute top-0 bottom-0 z-[60] w-0 -translate-x-1/2 border-l border-dashed border-white/75 mix-blend-difference"
+                      :style="{ left: `${position}%` }"
+                      aria-hidden="true"
+                    ></div>
+                    <div
                       v-for="item in readonlyPageElements(documentPage)"
                       :key="item.id"
                       :style="readonlyPageElementStyle(documentPage, item.id)"
@@ -4466,12 +4538,25 @@ watch(
                     </div>
                   </div>
                 </button>
+                <div
+                  v-if="isBrochureDocument()"
+                  class="mt-2 grid grid-cols-2 gap-2 text-center text-xs font-semibold text-slate-500 dark:text-slate-300"
+                  @pointerdown.stop
+                >
+                  <span
+                    v-for="label in brochurePanelLabels(pageIndex)"
+                    :key="`${documentPage.id}-${label}`"
+                    class="rounded-full border border-base-300 bg-base-100/90 px-3 py-1 shadow-sm"
+                  >
+                    {{ label }}
+                  </span>
+                </div>
                 </div>
               </section>
 
               <div class="relative w-full" :style="addPageButtonViewportStyle">
                 <button type="button" class="btn btn-outline btn-primary absolute top-0 left-1/2 origin-top" :style="pageChromeStyle" @pointerdown.stop @click.stop.prevent="addDocumentPage()">
-                + Añadir una página
+                {{ addPageButtonLabel }}
               </button>
             </div>
           </div>
