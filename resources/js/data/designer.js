@@ -65,8 +65,8 @@ export const objectiveOptions = [
 ];
 
 export const formatCards = [
-    { id: 'vertical', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-y-80 rotate-90', title: 'Cartel vertical', description: 'El más habitual para imprimir y colgar.', shape: 'h-36 w-24', gradient: 'from-violet-600 to-fuchsia-500' },
-    { id: 'horizontal', icon: 'ph:rectangle-duotone', iconClass:'transform scale-x-110 scale-y-80 ', title: 'Cartel horizontal', description: 'Útil para cabeceras y banners.', shape: 'h-24 w-36', gradient: 'from-cyan-500 to-sky-400' },
+    { id: 'vertical', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-y-80 rotate-90', title: 'Vertical', description: 'El más habitual para imprimir y colgar.', shape: 'h-36 w-24', gradient: 'from-violet-600 to-fuchsia-500' },
+    { id: 'horizontal', icon: 'ph:rectangle-duotone', iconClass:'transform scale-x-110 scale-y-80 ', title: 'Horizontal', description: 'Útil para cabeceras y banners.', shape: 'h-24 w-36', gradient: 'from-cyan-500 to-sky-400' },
     { id: 'diptych', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-x-110 scale-y-80', title: 'Díptico', description: 'Diseño horizontal dividido en dos paneles.', shape: 'h-24 w-36', gradient: 'from-teal-500 to-cyan-400', outputTypes: ['print'] },
     { id: 'triptych', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-x-110 scale-y-80', title: 'Tríptico', description: 'Diseño horizontal dividido en tres paneles.', shape: 'h-24 w-36', gradient: 'from-blue-500 to-indigo-500', outputTypes: ['print'] },
     { id: 'square', icon: 'ph:square-duotone', title: 'Cuadrado', description: 'Perfecto para redes o piezas cuadradas.', shape: 'h-28 w-28', gradient: 'from-amber-400 to-orange-500' },
@@ -103,7 +103,7 @@ export const outputTypeOptions = [
         id: 'print',
         title: 'Impresión',
         description: 'Piezas pensadas para papel, cartelería física o reparto.',
-        helper: 'A4, A3, A2 y formatos imprimibles',
+        helper: 'A4, A3, A2, Carta, Oficio y formatos imprimibles',
     },
     {
         id: 'digital',
@@ -111,6 +111,14 @@ export const outputTypeOptions = [
         description: 'Piezas para redes, mensajería, web y pantallas.',
         helper: 'Posts, stories, banners y miniaturas',
     }
+];
+
+const chileanPrintSizes = [
+  { id: 'carta-cl', label: 'Carta', detail: '21,6 × 27,9 cm', formatHint: 'vertical' },
+  { id: 'oficio-cl', label: 'Oficio', detail: '21,6 × 33 cm', formatHint: 'vertical' },
+  { id: 'doble-carta-cl', label: 'Doble Carta', detail: '27,9 × 43,2 cm', formatHint: 'horizontal' },
+  { id: 'doble-oficio-cl', label: 'Doble Oficio', detail: '33 × 48 cm', formatHint: 'horizontal' },
+  { id: 'legal-cl', label: 'Legal', detail: '21,6 × 35,6 cm', formatHint: 'vertical' },
 ];
 
 export const templateCatalog = [
@@ -396,7 +404,7 @@ export function resolveObjectiveSizeOptions(objective, outputType, format = null
     if (!outputType) return [];
 
     const rules = objectiveRecommendations[objective] ?? objectiveRecommendations.generic;
-    const printOptions = (rules.print ?? [])
+    const printOptions = [...(rules.print ?? []), ...chileanPrintSizes]
         .map((option) => adaptPrintOptionToFormat(option, format))
         .map((option) => ({ ...option, outputType: 'print' }));
     const digitalOptions = filterDigitalOptionsByFormat((rules.digital ?? []), format)
