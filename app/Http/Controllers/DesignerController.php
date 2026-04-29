@@ -429,11 +429,7 @@ class DesignerController extends Controller
 
         // Compatibilidad: normalizar estados antiguos sin pisar texto vigente
         if (is_array($designerState)) {
-            $content = $designerState['content'] ?? [];
-            $elementLayout = $designerState['elementLayout'] ?? [];
-            \App\Support\DesignerStateSync::syncContentAndElementLayout($content, $elementLayout);
-            $designerState['content'] = $content;
-            $designerState['elementLayout'] = $elementLayout;
+            $designerState = $this->normalizeDocumentState($designerState);
         }
 
         Log::info('[editor] Estado enviado a EditorPage', ['designerState' => $designerState]);
@@ -506,6 +502,7 @@ class DesignerController extends Controller
                 'message' => 'El estado recibido esta incompleto y no se ha guardado.',
             ], 422);
         }
+        $state = $this->normalizeDocumentState($state);
 
         $incomingRevision = (int) ($state['stateRevision'] ?? 0);
 
@@ -830,6 +827,48 @@ class DesignerController extends Controller
             && is_array($state['elementLayout']['background'] ?? null)
             && is_array($state['elementLayout']['title'] ?? null)
             && (! isset($state['customElements']) || is_array($state['customElements']))
+            && (! isset($state['pages']) || is_array($state['pages']))
             && (! isset($state['userUploadedImages']) || is_array($state['userUploadedImages']));
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @return array<string, mixed>
+     */
+    private function normalizeDocumentState(array $state): array
+    {
+        $pages = is_array($state['pages'] ?? null) && count($state['pages']) > 0
+            ? array_values($state['pages'])
+            : [[
+                'id' => $state['activePageId'] ?? 'page-1',
+                'content' => $state['content'] ?? [],
+                'elementLayout' => $state['elementLayout'] ?? [],
+                'customElements' => $state['customElements'] ?? [],
+            ]];
+
+        $pages = array_map(function (mixed $page, int $index): array {
+            $page = is_array($page) ? $page : [];
+            $content = is_array($page['content'] ?? null) ? $page['content'] : [];
+            $elementLayout = is_array($page['elementLayout'] ?? null) ? $page['elementLayout'] : [];
+            \App\Support\DesignerStateSync::syncContentAndElementLayout($content, $elementLayout);
+
+            return [
+                'id' => (string) ($page['id'] ?? 'page-'.($index + 1)),
+                'content' => $content,
+                'elementLayout' => $elementLayout,
+                'customElements' => is_array($page['customElements'] ?? null) ? $page['customElements'] : [],
+            ];
+        }, $pages, array_keys($pages));
+
+        $activePageId = (string) ($state['activePageId'] ?? ($pages[0]['id'] ?? 'page-1'));
+        $activePage = collect($pages)->firstWhere('id', $activePageId) ?? $pages[0];
+
+        $state['activePageId'] = $activePage['id'];
+        $state['pages'] = $pages;
+        $state['content'] = $activePage['content'];
+        $state['elementLayout'] = $activePage['elementLayout'];
+        $state['customElements'] = $activePage['customElements'];
+
+        return $state;
     }
 }

@@ -67,9 +67,23 @@ export const objectiveOptions = [
 export const formatCards = [
     { id: 'vertical', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-y-80 rotate-90', title: 'Cartel vertical', description: 'El más habitual para imprimir y colgar.', shape: 'h-36 w-24', gradient: 'from-violet-600 to-fuchsia-500' },
     { id: 'horizontal', icon: 'ph:rectangle-duotone', iconClass:'transform scale-x-110 scale-y-80 ', title: 'Cartel horizontal', description: 'Útil para cabeceras y banners.', shape: 'h-24 w-36', gradient: 'from-cyan-500 to-sky-400' },
+    { id: 'diptych', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-x-110 scale-y-80', title: 'Díptico', description: 'Diseño horizontal dividido en dos paneles.', shape: 'h-24 w-36', gradient: 'from-teal-500 to-cyan-400', outputTypes: ['print'] },
+    { id: 'triptych', icon: 'ph:rectangle-duotone', iconClass: 'transform scale-x-110 scale-y-80', title: 'Tríptico', description: 'Diseño horizontal dividido en tres paneles.', shape: 'h-24 w-36', gradient: 'from-blue-500 to-indigo-500', outputTypes: ['print'] },
     { id: 'square', icon: 'ph:square-duotone', title: 'Cuadrado', description: 'Perfecto para redes o piezas cuadradas.', shape: 'h-28 w-28', gradient: 'from-amber-400 to-orange-500' },
     { id: 'other', icon: 'ph:question-duotone', title: 'Personalizado', description: 'Quieres definir manualmente el formato y sus dimensiones.', shape: 'h-28 w-28', gradient: 'from-slate-300 to-slate-400' },
 ];
+
+export const horizontalPrintFoldFormats = ['diptych', 'triptych'];
+
+export function isHorizontalFormat(format) {
+    return format === 'horizontal' || horizontalPrintFoldFormats.includes(format);
+}
+
+export function foldGuidePositionsForFormat(format) {
+    if (format === 'diptych') return [50];
+    if (format === 'triptych') return [100 / 3, 200 / 3];
+    return [];
+}
 
 export const templateFilters = ['all', 'modern', 'minimal', 'promo', 'elegant', 'corporate', 'youth', 'informative'];
 
@@ -343,11 +357,11 @@ function adaptPrintOptionToFormat(option, format) {
         return option;
     }
 
-    if (format === 'horizontal') {
+    if (isHorizontalFormat(format)) {
         return {
             ...option,
             detail: formatDimensionLabel(parsed.height, parsed.width, parsed.unit),
-            formatHint: 'horizontal',
+            formatHint: format,
         };
     }
 
@@ -410,6 +424,7 @@ export const initialDesignerState = {
     stateRevision: 0,
     templateRevision: 0,
     designSurface: null,
+    activePageId: 'page-1',
     content: {
         title: '',
         subtitle: '',
@@ -430,5 +445,6 @@ export const initialDesignerState = {
         contact: { x: 36, y: 368, w: 230, zIndex: 20, fontSize: 15, color: '#e9d5ff', shadow: false, border: false, fontFamily: 'Merriweather, sans-serif', opacity: 100, fontWeight: 'regular', italic: false, uppercase: false, textAlign: 'left', letterSpacing: 0, lineHeight: 1.3, shadowPreset: 'soft', shadowColor: '#0f172a', contourWidth: 0, contourColor: '#ffffff', neonColor: '', bubbleColor: '', backgroundColor: 'transparent', imageCropScale: 1, imageCropOffsetX: 0, imageCropOffsetY: 0, flipX: false, flipY: false },
         extra: { x: 36, y: 410, w: 270, zIndex: 10, fontSize: 15, color: '#ede9fe', shadow: false, border: false, fontFamily: 'Montserrat, sans-serif', opacity: 100, fontWeight: 'regular', italic: false, uppercase: false, textAlign: 'left', letterSpacing: 0, lineHeight: 1.4, shadowPreset: 'soft', shadowColor: '#0f172a', contourWidth: 0, contourColor: '#ffffff', neonColor: '', bubbleColor: '', backgroundColor: 'transparent', imageCropScale: 1, imageCropOffsetX: 0, imageCropOffsetY: 0, flipX: false, flipY: false },
     },
+    pages: [],
     userUploadedImages: [],
 };

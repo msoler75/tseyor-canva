@@ -7,7 +7,7 @@ import EditorTopBar from '../../Components/designer/EditorTopBar.vue';
 import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.vue';
 import EditorCanvasStage from '../../Components/designer/EditorCanvasStage.vue';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { filterLabels, objectiveOptions, objectiveRecommendations, resolveObjectiveSizeOptions } from '../../data/designer';
+import { filterLabels, initialDesignerState, isHorizontalFormat, objectiveOptions, objectiveRecommendations, resolveObjectiveSizeOptions } from '../../data/designer';
 import {
   flushDesignerStatePersistence,
   hydrateDesignerStateFromPage,
@@ -97,6 +97,167 @@ if (!state.customElements || Array.isArray(state.customElements)) {
 if (!state.userUploadedImages) {
   state.userUploadedImages = [];
 }
+
+const clonePlain = (value) => JSON.parse(JSON.stringify(value ?? null));
+const createPageId = () => `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const documentRevision = ref(0);
+const documentPageList = ref([]);
+const documentPageRefs = new Map();
+let visiblePageFrame = null;
+const refreshDocumentPageList = () => {
+  documentPageList.value = clonePlain(state.pages ?? []);
+};
+const clonePageFromState = (id = state.activePageId ?? createPageId()) => ({
+  id,
+  content: clonePlain(state.content ?? initialDesignerState.content),
+  elementLayout: clonePlain(state.elementLayout ?? initialDesignerState.elementLayout),
+  customElements: clonePlain(state.customElements ?? {}),
+});
+const createBlankPage = () => ({
+  id: createPageId(),
+  content: clonePlain(initialDesignerState.content),
+  elementLayout: clonePlain(initialDesignerState.elementLayout),
+  customElements: {},
+});
+const ensureDocumentPages = (hydrateActivePage = false) => {
+  if (!Array.isArray(state.pages) || !state.pages.length) {
+    const firstId = state.activePageId ?? createPageId();
+    state.activePageId = firstId;
+    state.pages = [clonePageFromState(firstId)];
+    return;
+  }
+
+  state.pages = state.pages
+    .filter((page) => page && typeof page === 'object')
+    .map((page, index) => ({
+      id: String(page.id ?? `page-${index + 1}`),
+      content: clonePlain(page.content ?? initialDesignerState.content),
+      elementLayout: clonePlain(page.elementLayout ?? initialDesignerState.elementLayout),
+      customElements: clonePlain(page.customElements ?? {}),
+    }));
+
+  if (!state.pages.length) {
+    const firstId = createPageId();
+    state.activePageId = firstId;
+    state.pages = [clonePageFromState(firstId)];
+  }
+
+  if (!state.activePageId || !state.pages.some((page) => page.id === state.activePageId)) {
+    state.activePageId = state.pages[0].id;
+  }
+
+  const activePage = state.pages.find((page) => page.id === state.activePageId);
+  if (hydrateActivePage && activePage) {
+    state.content = clonePlain(activePage.content);
+    state.elementLayout = clonePlain(activePage.elementLayout);
+    state.customElements = clonePlain(activePage.customElements);
+  }
+};
+const syncActivePageSnapshot = () => {
+  ensureDocumentPages();
+  const activeIndex = state.pages.findIndex((page) => page.id === state.activePageId);
+  if (activeIndex === -1) return;
+  state.pages[activeIndex] = clonePageFromState(state.activePageId);
+  refreshDocumentPageList();
+};
+const switchToPage = async (pageId) => {
+  if (pageId === state.activePageId) return;
+  try {
+    commitTextEdit();
+  } catch (_) {
+    // no-op
+  }
+  syncActivePageSnapshot();
+  const target = state.pages.find((page) => page.id === pageId);
+  if (!target) return;
+  state.activePageId = target.id;
+  state.content = clonePlain(target.content);
+  state.elementLayout = clonePlain(target.elementLayout);
+  state.customElements = clonePlain(target.customElements);
+  state.selectedElementId = 'background';
+  multiSelectionIds.value = [];
+  selectedGroupId.value = null;
+  editingElementId.value = null;
+  await nextTick();
+  refreshDocumentPageList();
+};
+const setDocumentPageRef = (pageId, element) => {
+  if (element) {
+    documentPageRefs.set(pageId, element);
+  } else {
+    documentPageRefs.delete(pageId);
+  }
+};
+const resolveMostVisiblePageId = () => {
+  const scrollContainer = documentPageRefs.get(state.activePageId)?.closest?.('.canvas-grid') ?? null;
+  const viewport = scrollContainer?.getBoundingClientRect?.();
+  if (!viewport) return null;
+
+  const viewportCenter = viewport.top + viewport.height / 2;
+  let best = { id: null, score: Number.POSITIVE_INFINITY };
+
+  documentPages.value.forEach((page) => {
+    const node = documentPageRefs.get(page.id);
+    const rect = node?.getBoundingClientRect?.();
+    if (!rect) return;
+    const visibleHeight = Math.max(0, Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top));
+    if (visibleHeight <= 0) return;
+    const centerDistance = Math.abs((rect.top + rect.height / 2) - viewportCenter);
+    if (centerDistance < best.score) {
+      best = { id: page.id, score: centerDistance };
+    }
+  });
+
+  return best.id;
+};
+const activateVisibleDocumentPage = () => {
+  const pageId = resolveMostVisiblePageId();
+  if (pageId && pageId !== state.activePageId) {
+    switchToPage(pageId);
+  }
+};
+const handleDocumentPagesScroll = () => {
+  if (visiblePageFrame !== null) return;
+  visiblePageFrame = requestAnimationFrame(() => {
+    visiblePageFrame = null;
+    activateVisibleDocumentPage();
+  });
+};
+const addDocumentPage = async ({ afterPageId = state.activePageId, duplicate = false } = {}) => {
+  try {
+    commitTextEdit();
+  } catch (_) {
+    // no-op
+  }
+  syncActivePageSnapshot();
+  const source = duplicate
+    ? clonePlain(state.pages.find((page) => page.id === afterPageId) ?? clonePageFromState())
+    : createBlankPage();
+  source.id = createPageId();
+  const insertAfterIndex = Math.max(0, state.pages.findIndex((page) => page.id === afterPageId));
+  state.pages.splice(insertAfterIndex + 1, 0, source);
+  refreshDocumentPageList();
+  documentRevision.value += 1;
+  await nextTick();
+  flushDesignerStateWithThumbnail();
+};
+const duplicateDocumentPage = (pageId) => addDocumentPage({ afterPageId: pageId, duplicate: true });
+const deleteDocumentPage = async (pageId) => {
+  ensureDocumentPages();
+  if (state.pages.length <= 1) return;
+  const pageIndex = state.pages.findIndex((page) => page.id === pageId);
+  if (pageIndex === -1) return;
+  const nextPage = state.pages[pageIndex + 1] ?? state.pages[pageIndex - 1];
+  state.pages.splice(pageIndex, 1);
+  refreshDocumentPageList();
+  documentRevision.value += 1;
+  if (pageId === state.activePageId) {
+    await switchToPage(nextPage.id);
+  }
+  flushDesignerStateWithThumbnail();
+};
+ensureDocumentPages(true);
+refreshDocumentPageList();
 const uploadEndpoint = computed(() => page.props.designer?.endpoints?.upload ?? '/designer/uploads');
 const resetEndpoint = computed(() => page.props.designer?.endpoints?.reset ?? '/designer/state');
 const designsStoreEndpoint = computed(() => page.props.designer?.endpoints?.designsStore ?? null);
@@ -622,6 +783,65 @@ const editorElements = computed(() => {
     .filter((item) => state.elementLayout[item.id])
     .sort((a, b) => (state.elementLayout[a.id]?.zIndex ?? 0) - (state.elementLayout[b.id]?.zIndex ?? 0));
 });
+const documentPages = computed(() => {
+  documentRevision.value;
+  return documentPageList.value;
+});
+const hasMultiplePages = computed(() => documentPages.value.length > 1);
+const pageMetaLine = (content = {}) => [content.date, content.time].filter(Boolean).join(' · ');
+const readonlyPageElements = (pageState) => {
+  const content = pageState?.content ?? {};
+  const layout = pageState?.elementLayout ?? {};
+  const custom = pageState?.customElements ?? {};
+  const baseTextElements = [
+    { id: 'title', type: 'text', label: 'Titulo', text: content.title },
+    { id: 'subtitle', type: 'text', label: 'Subtitulo', text: content.subtitle },
+    { id: 'meta', type: 'text', label: 'Fecha / hora', text: pageMetaLine(content) },
+    { id: 'contact', type: 'text', label: 'Contacto', text: content.contact },
+    { id: 'extra', type: 'text', label: 'Texto adicional', text: content.extra },
+  ];
+  const customElements = Object.entries(custom).map(([id, element]) => ({
+    id,
+    type: element.type,
+    label: element.label ?? 'Elemento',
+    text: element.type === 'text' ? (element.text ?? '') : '',
+    src: element.type === 'image' ? element.src : null,
+    shapeKind: element.type === 'shape' ? element.shapeKind : null,
+  }));
+
+  return [...baseTextElements, ...customElements]
+    .filter((item) => layout[item.id])
+    .sort((a, b) => (layout[a.id]?.zIndex ?? 0) - (layout[b.id]?.zIndex ?? 0));
+};
+const readonlyPageSurfaceStyle = (pageState) => ({
+  ...canvasElementStyle.value,
+  background: pageState?.elementLayout?.background?.backgroundColor ?? '#4338ca',
+});
+const readonlyPageElementStyle = (pageState, id) => {
+  const layout = pageState?.elementLayout?.[id] ?? {};
+  return {
+    position: 'absolute',
+    left: `${layout.x ?? 0}px`,
+    top: `${layout.y ?? 0}px`,
+    width: layout.w ? `${layout.w}px` : 'auto',
+    height: layout.h ? `${layout.h}px` : 'auto',
+    zIndex: layout.zIndex ?? 1,
+    transform: `rotate(${layout.rotation ?? 0}deg)`,
+    opacity: `${Number(layout.opacity ?? 100) / 100}`,
+    color: layout.color ?? '#ffffff',
+    fontSize: `${layout.fontSize ?? 16}px`,
+    fontFamily: layout.fontFamily ?? 'inherit',
+    fontWeight: layout.fontWeight === 'regular' ? 400 : (layout.fontWeight ?? 400),
+    fontStyle: layout.italic ? 'italic' : 'normal',
+    textTransform: layout.uppercase ? 'uppercase' : 'none',
+    textAlign: layout.textAlign ?? 'left',
+    letterSpacing: `${layout.letterSpacing ?? 0}px`,
+    lineHeight: layout.lineHeight ?? 1.2,
+    textShadow: layout.shadow ? '0 2px 8px rgba(15,23,42,.45)' : 'none',
+    overflow: 'hidden',
+    whiteSpace: 'pre-wrap',
+  };
+};
 const isTemplateFieldElement = (id) => Boolean(
   isTemplateBaseEditor.value
   && id
@@ -1015,7 +1235,7 @@ const editorCanvasDimensions = computed(() => {
     };
   }
 
-  if (state.format === 'horizontal') {
+  if (isHorizontalFormat(state.format)) {
     return { width: BASE_CANVAS_LONG_SIDE, height: BASE_CANVAS_SHORT_SIDE };
   }
 
@@ -1046,6 +1266,17 @@ const canvasZoomStyle = computed(() => ({
   transformOrigin: 'top center',
 }));
 const zoomScale = computed(() => Math.max(0.25, zoomLevel.value / 100));
+const pageViewportStyle = computed(() => ({
+  height: `${Math.ceil((editorCanvasDimensions.value.height + 42) * zoomScale.value)}px`,
+}));
+const pageChromeStyle = computed(() => ({
+  ...canvasFrameStyle.value,
+  transform: `translateX(-50%) scale(${zoomScale.value})`,
+  transformOrigin: 'top center',
+}));
+const addPageButtonViewportStyle = computed(() => ({
+  height: `${Math.ceil(48 * zoomScale.value)}px`,
+}));
 const controlZoomStyle = computed(() => ({
   transform: `scale(${Math.max(0.1, Math.min(4, 100 / zoomLevel.value))})`,
   transformOrigin: 'center center',
@@ -1205,7 +1436,7 @@ const canvasDimensionsForDesignerState = (snapshot = {}) => {
     };
   }
 
-  if (snapshot.format === 'horizontal') {
+  if (isHorizontalFormat(snapshot.format)) {
     return { width: BASE_CANVAS_LONG_SIDE, height: BASE_CANVAS_SHORT_SIDE };
   }
 
@@ -1394,6 +1625,7 @@ const rescaleDesignSurface = (previousSurface, nextSurface) => {
 };
 
 const addTextElement = (presetId) => {
+  activateVisibleDocumentPage();
   const preset = textPresets.find((item) => item.id === presetId);
   if (!preset) return;
 
@@ -1749,6 +1981,7 @@ const buildInitialImageLayout = async (src) => {
 };
 
 const addImageElementFromSrc = async (src, label = 'Imagen', options = {}) => {
+  activateVisibleDocumentPage();
   if (!src) return;
   const {
     assetId = null,
@@ -2529,6 +2762,7 @@ const handleDocumentPaste = async (event) => {
 };
 
 const addShapeElement = (shapeKind) => {
+  activateVisibleDocumentPage();
   const shape = shapePresets.find((item) => item.id === shapeKind);
   if (!shape) return;
 
@@ -3092,9 +3326,11 @@ let pendingFlush = false;
 const flushDesignerStateWithThumbnail = async () => {
   if (pendingFlush) return;
   pendingFlush = true;
+  syncActivePageSnapshot();
   generateThumbnailAndThen(async () => {
     pendingFlush = false;
     try {
+      syncActivePageSnapshot();
       await flushDesignerStatePersistence();
     } catch (error) {
       console.error('No se pudo guardar el estado del diseño automáticamente', error);
@@ -3106,6 +3342,7 @@ const flushDesignerStateWithThumbnail = async () => {
 watch(
   () => [state.content, state.elementLayout, state.customElements],
   () => {
+    syncActivePageSnapshot();
     scheduleHistorySnapshot();
     flushDesignerStateWithThumbnail();
   },
@@ -3126,6 +3363,10 @@ onBeforeUnmount(() => {
   document.removeEventListener('paste', handleDocumentPaste);
   document.removeEventListener('dragover', handleCanvasFileDragOver);
   document.removeEventListener('drop', handleCanvasFileDragLeave);
+  if (visiblePageFrame !== null) {
+    cancelAnimationFrame(visiblePageFrame);
+    visiblePageFrame = null;
+  }
   if (thumbnailTimer) {
     clearTimeout(thumbnailTimer);
     thumbnailTimer = null;
@@ -3741,8 +3982,8 @@ watch(
                 @click="removeArrayValue(templateForm.categoryIds, category)"
               >
                 {{ filterLabels[category] || category }} ??
-              </button>
-            </div>
+                </button>
+              </div>
 
             <div class="dropdown dropdown-bottom mt-3 w-full">
               <button type="button" tabindex="0" class="btn btn-outline w-full justify-between rounded-2xl">
@@ -4003,84 +4244,147 @@ watch(
             @open-settings="handleTemplateSettingsOpen"
           />
 
-          <EditorCanvasStage
-            :canvas-grid-style="canvasGridStyle"
-            :canvas-frame-style="canvasFrameStyle"
-            :canvas-zoom-style="canvasZoomStyle"
-            :is-background-selected="state.selectedElementId === 'background'"
-            :canvas-background-style="canvasBackgroundStyle"
-            :canvas-background-image-src="state.elementLayout.background?.backgroundImageSrc"
-            :canvas-background-image-style="canvasBackgroundImageStyle"
-            :template-mode="isTemplateBaseEditor"
-            template-watermark="PLANTILLA"
-            :show-field-labels="templatePanelHover"
-            :canvas-element-style="canvasElementStyle"
-            :editor-elements="editorElements"
-            :drag="drag"
-            :file-drag-active="fileDragActive"
-            :background-drop-preview="backgroundDropPreview"
-            :editing-element-id="editingElementId"
-            :state="state"
-            :element-box-style="elementBoxStyle"
-            :is-element-selected="isElementSelected"
-            :element-content-style="elementContentStyle"
-            :rich-editor-container-style="richEditorContainerStyle"
-            :neon-color-override="neonColorOverride"
-            :image-frame-style="imageFrameStyle"
-            :image-render-style="imageRenderStyle"
-            :image-tint-overlay-style="imageTintOverlayStyle"
-            :shape-style="shapeStyle"
-            :shape-render-model="shapeRenderModel"
-            :canvas-ref-setter="setCanvasRef"
-            :rich-editor-ref-setter="setRichEditorRef"
-            @canvas-pointer-down="handleCanvasPointerDownWithPinch"
-            @canvas-click="handleCanvasClick"
-            @canvas-file-drag-enter="handleCanvasFileDragEnter"
-            @canvas-file-drag-over="handleCanvasFileDragOver"
-            @canvas-file-drag-leave="handleCanvasFileDragLeave"
-            @canvas-file-drop="handleCanvasFileDrop"
-            @element-click="handleElementClick($event.event, $event.id)"
-            @begin-text-edit="beginTextEdit"
-            @element-pointer-down="handleElementPointerDown($event.event, $event.id)"
-            @rich-editor-text-update="onRichEditorTextUpdate($event.id, $event.value)"
-            @rich-editor-styles-update="onRichEditorStylesUpdate($event.id, $event.value)"
-            @rich-editor-selection-change="onRichEditorSelectionChange($event.id, $event.value)"
-            @rich-editor-blur="onRichEditorBlur($event.id, $event.event)"
-            @cancel-text-edit="cancelTextEdit"
-            @commit-text-edit="commitTextEdit"
-          >
-            <template #overlay>
-              <SelectionOverlay
-                v-if="activeSelectionIds.length || selectionMarquee.active || multiSelectionIds.length > 1"
-                :show-selection-controls="!!(activeSelectionIds.length && state.selectedElementId !== 'background')"
-                :show-marquee="selectionMarquee.active"
-                :show-group-button="multiSelectionIds.length > 1"
-                :show-edit-text-button="selectedElementType === 'text'"
-                :show-clone-button="canCloneCurrentSelection"
-                :overlay-control-target-id="overlayControlTargetId"
-                :is-group-selection="isGroupSelection"
-                :has-multi-selection="hasMultiSelection"
-                :selected-element-type="selectedElementType"
-                :selected-action-bar-style="selectedActionBarStyle"
-                :selected-overlay-style="selectedOverlayStyle"
-                :selected-handle-metrics="selectedHandleMetrics"
-                :control-zoom-style="controlZoomStyle"
-                :marquee-rect-style="marqueeRectStyle"
-                @mark-editor-control-interaction="markEditorControlInteraction"
-                @group-selected-elements="groupSelectedElements"
-                @edit-selected-text-element="editSelectedTextElement"
-                @clone-current-selection="cloneCurrentSelection"
-                @delete-current-selection="deleteCurrentSelection"
-                @start-rotate="startRotate($event.event, $event.id)"
-                @reset-rotation="resetRotation"
-                @start-resize="startResize($event.event, $event.id, $event.handle)"
-              />
-            </template>
-          </EditorCanvasStage>
+          <div class="canvas-grid relative h-full overflow-auto bg-slate-100 px-4 pt-6 pb-28 [touch-action:pan-x_pan-y] dark:bg-slate-950 sm:px-10 sm:pt-4 sm:pb-10 md:px-10 md:pt-16 md:pb-10" :style="canvasGridStyle" @scroll.passive="handleDocumentPagesScroll" @pointerdown="handleCanvasPointerDownWithPinch">
+            <div class="mx-auto flex w-full flex-col items-center gap-8">
+              <section
+                v-for="(documentPage, pageIndex) in documentPages"
+                :key="documentPage.id"
+                :ref="(element) => setDocumentPageRef(documentPage.id, element)"
+                class="relative w-full max-w-full"
+                :style="pageViewportStyle"
+              >
+                <div class="absolute top-0 left-1/2 origin-top" :style="pageChromeStyle">
+                <div class="mb-3 flex w-full items-center justify-between text-sm font-semibold text-slate-500 dark:text-slate-300" @pointerdown.stop>
+                  <span>{{ hasMultiplePages ? `Página ${pageIndex + 1}` : '' }}</span>
+                  <div class="flex items-center gap-1">
+                    <button type="button" class="btn btn-ghost btn-xs" title="Duplicar página" @click.stop.prevent="duplicateDocumentPage(documentPage.id)">
+                      <Icon icon="ph:copy-simple" class="h-4 w-4" />
+                    </button>
+                    <button type="button" class="btn btn-ghost btn-xs" title="Nueva página" @click.stop.prevent="addDocumentPage({ afterPageId: documentPage.id })">
+                      <Icon icon="ph:file-plus" class="h-4 w-4" />
+                    </button>
+                    <button v-if="hasMultiplePages" type="button" class="btn btn-ghost btn-xs text-error" title="Eliminar página" @click.stop.prevent="deleteDocumentPage(documentPage.id)">
+                      <Icon icon="ph:trash" class="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <EditorCanvasStage
+                  v-if="documentPage.id === state.activePageId"
+                  :canvas-grid-style="{ minHeight: 'auto', padding: 0, background: 'transparent', overflow: 'visible', height: 'auto' }"
+                  :canvas-frame-style="canvasFrameStyle"
+                  :canvas-zoom-style="{}"
+                  :is-background-selected="state.selectedElementId === 'background'"
+                  :canvas-background-style="canvasBackgroundStyle"
+                  :canvas-background-image-src="state.elementLayout.background?.backgroundImageSrc"
+                  :canvas-background-image-style="canvasBackgroundImageStyle"
+                  :template-mode="isTemplateBaseEditor"
+                  template-watermark="PLANTILLA"
+                  :show-field-labels="templatePanelHover"
+                  :canvas-element-style="canvasElementStyle"
+                  :editor-elements="editorElements"
+                  :drag="drag"
+                  :file-drag-active="fileDragActive"
+                  :background-drop-preview="backgroundDropPreview"
+                  :editing-element-id="editingElementId"
+                  :state="state"
+                  :element-box-style="elementBoxStyle"
+                  :is-element-selected="isElementSelected"
+                  :element-content-style="elementContentStyle"
+                  :rich-editor-container-style="richEditorContainerStyle"
+                  :neon-color-override="neonColorOverride"
+                  :image-frame-style="imageFrameStyle"
+                  :image-render-style="imageRenderStyle"
+                  :image-tint-overlay-style="imageTintOverlayStyle"
+                  :shape-style="shapeStyle"
+                  :shape-render-model="shapeRenderModel"
+                  :canvas-ref-setter="setCanvasRef"
+                  :rich-editor-ref-setter="setRichEditorRef"
+                  @canvas-pointer-down="handleCanvasPointerDownWithPinch"
+                  @canvas-click="handleCanvasClick"
+                  @canvas-file-drag-enter="handleCanvasFileDragEnter"
+                  @canvas-file-drag-over="handleCanvasFileDragOver"
+                  @canvas-file-drag-leave="handleCanvasFileDragLeave"
+                  @canvas-file-drop="handleCanvasFileDrop"
+                  @element-click="handleElementClick($event.event, $event.id)"
+                  @begin-text-edit="beginTextEdit"
+                  @element-pointer-down="handleElementPointerDown($event.event, $event.id)"
+                  @rich-editor-text-update="onRichEditorTextUpdate($event.id, $event.value)"
+                  @rich-editor-styles-update="onRichEditorStylesUpdate($event.id, $event.value)"
+                  @rich-editor-selection-change="onRichEditorSelectionChange($event.id, $event.value)"
+                  @rich-editor-blur="onRichEditorBlur($event.id, $event.event)"
+                  @cancel-text-edit="cancelTextEdit"
+                  @commit-text-edit="commitTextEdit"
+                >
+                  <template #overlay>
+                    <SelectionOverlay
+                      v-if="activeSelectionIds.length || selectionMarquee.active || multiSelectionIds.length > 1"
+                      :show-selection-controls="!!(activeSelectionIds.length && state.selectedElementId !== 'background')"
+                      :show-marquee="selectionMarquee.active"
+                      :show-group-button="multiSelectionIds.length > 1"
+                      :show-edit-text-button="selectedElementType === 'text'"
+                      :show-clone-button="canCloneCurrentSelection"
+                      :overlay-control-target-id="overlayControlTargetId"
+                      :is-group-selection="isGroupSelection"
+                      :has-multi-selection="hasMultiSelection"
+                      :selected-element-type="selectedElementType"
+                      :selected-action-bar-style="selectedActionBarStyle"
+                      :selected-overlay-style="selectedOverlayStyle"
+                      :selected-handle-metrics="selectedHandleMetrics"
+                      :control-zoom-style="controlZoomStyle"
+                      :marquee-rect-style="marqueeRectStyle"
+                      @mark-editor-control-interaction="markEditorControlInteraction"
+                      @group-selected-elements="groupSelectedElements"
+                      @edit-selected-text-element="editSelectedTextElement"
+                      @clone-current-selection="cloneCurrentSelection"
+                      @delete-current-selection="deleteCurrentSelection"
+                      @start-rotate="startRotate($event.event, $event.id)"
+                      @reset-rotation="resetRotation"
+                      @start-resize="startResize($event.event, $event.id, $event.handle)"
+                    />
+                  </template>
+                </EditorCanvasStage>
+
+                <button
+                  v-else
+                  type="button"
+                  class="relative z-10 mx-auto block overflow-hidden shadow-2xl ring-1 ring-transparent transition hover:ring-primary"
+                  :style="canvasFrameStyle"
+                  @pointerdown.stop
+                  @click.stop="switchToPage(documentPage.id)"
+                >
+                  <div class="relative overflow-hidden p-7 text-left text-white" :style="readonlyPageSurfaceStyle(documentPage)">
+                    <img
+                      v-if="documentPage.elementLayout?.background?.backgroundImageSrc"
+                      :src="documentPage.elementLayout.background.backgroundImageSrc"
+                      alt="Fondo de la página"
+                      class="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                      draggable="false"
+                    />
+                    <div
+                      v-for="item in readonlyPageElements(documentPage)"
+                      :key="item.id"
+                      :style="readonlyPageElementStyle(documentPage, item.id)"
+                    >
+                      <img v-if="item.type === 'image' && item.src" :src="item.src" :alt="item.label" class="h-full w-full object-cover" draggable="false" />
+                      <span v-else-if="item.type === 'shape'" class="block h-full w-full rounded-xl bg-white/40"></span>
+                      <span v-else>{{ item.text }}</span>
+                    </div>
+                  </div>
+                </button>
+                </div>
+              </section>
+
+              <div class="relative w-full" :style="addPageButtonViewportStyle">
+                <button type="button" class="btn btn-outline btn-primary absolute top-0 left-1/2 origin-top" :style="pageChromeStyle" @pointerdown.stop @click.stop.prevent="addDocumentPage()">
+                + Añadir una página
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    </section>
     </div>
+    </section>
     <!-- Diálogo de asistente -->
     <dialog v-if="assistantOpen" class="modal modal-open backdrop-blur-sm" style="z-index:90;">
       <div class="modal-box w-full max-w-lg lg:max-w-5xl p-0 overflow-visible bg-base-100 rounded-[30px] shadow-2xl border border-base-300">
@@ -4095,6 +4399,7 @@ watch(
         />
       </div>
     </dialog>
+    </div>
   </DesignerLayout>
 </template>
 

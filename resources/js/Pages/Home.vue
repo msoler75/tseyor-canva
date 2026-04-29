@@ -6,6 +6,7 @@ import DesignerAssistant from './../Components/designer/DesignerAssistant.vue';
 import DesignerLayout from './../Layouts/DesignerLayout.vue';
 import TimeAgo from '../Components/TimeAgo.vue';
 import { flushDesignerStatePersistence, resetDesignerState, toggleDesignerDarkMode, useDesignerState } from '../composables/useDesignerState';
+import { isHorizontalFormat } from '../data/designer';
 import { applyFormatToDimensions, parseSizeDetail } from '../utils/editorShared';
 
 const props = defineProps({
@@ -95,7 +96,7 @@ const resolveTargetSurface = (snapshot) => {
         };
     }
 
-    return snapshot.format === 'horizontal'
+    return isHorizontalFormat(snapshot.format)
         ? { width: 620, height: 368 }
         : (snapshot.format === 'square' ? { width: 500, height: 500 } : { width: 368, height: 620 });
 };

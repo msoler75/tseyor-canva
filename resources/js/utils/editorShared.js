@@ -776,12 +776,13 @@ export function parseSizeDetail(detail) {
 export function applyFormatToDimensions(dimensions, format) {
   const width = Number(dimensions?.width ?? 0);
   const height = Number(dimensions?.height ?? 0);
+  const horizontalFormats = new Set(['horizontal', 'diptych', 'triptych']);
 
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     return dimensions;
   }
 
-  if (format === 'horizontal' && height > width) {
+  if (horizontalFormats.has(format) && height > width) {
     return { ...dimensions, width: height, height: width };
   }
 

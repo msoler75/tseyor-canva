@@ -24,6 +24,7 @@ final class DesignerStateRules
             "{$prefix}.designTitle" => ['nullable', 'string', 'max:255'],
             "{$prefix}.designTitleManual" => ['nullable', 'boolean'],
             "{$prefix}.currentDesignUuid" => ['nullable', 'string', 'max:36'],
+            "{$prefix}.activePageId" => ['nullable', 'string', 'max:120'],
             // stateRevision evita que un save antiguo sobrescriba un diseño más nuevo.
             "{$prefix}.stateRevision" => ['nullable', 'integer', 'min:0'],
             // templateRevision fuerza re-montar el editor rico cuando reaplicamos una plantilla.
@@ -149,6 +150,12 @@ final class DesignerStateRules
             "{$prefix}.customElements.*.needsUpload" => ['nullable', 'boolean'],
             "{$prefix}.customElements.*.intrinsicWidth" => ['nullable', 'numeric'],
             "{$prefix}.customElements.*.intrinsicHeight" => ['nullable', 'numeric'],
+            "{$prefix}.pages" => ['nullable', 'array'],
+            "{$prefix}.pages.*.id" => ['nullable', 'string', 'max:120'],
+            "{$prefix}.pages.*.content" => ['nullable', 'array'],
+            "{$prefix}.pages.*.content.*" => ['nullable', 'string', 'max:5000'],
+            "{$prefix}.pages.*.elementLayout" => ['nullable', 'array'],
+            "{$prefix}.pages.*.customElements" => ['nullable', 'array'],
             "{$prefix}.userUploadedImages" => ['nullable', 'array'],
             "{$prefix}.userUploadedImages.*.id" => ['nullable', 'string', 'max:120'],
             "{$prefix}.userUploadedImages.*.label" => ['nullable', 'string', 'max:255'],

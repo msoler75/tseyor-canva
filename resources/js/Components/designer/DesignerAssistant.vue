@@ -8,6 +8,7 @@ import TemplateCard from './TemplateCard.vue';
 import StepFooter from './StepFooter.vue';
 import {
   filterLabels,
+  foldGuidePositionsForFormat,
   formatCards,
   objectiveOptions,
   objectiveRecommendations,
@@ -54,6 +55,9 @@ const isFirstStep = computed(() => assistantIndex.value <= 0);
 const isLastStep = computed(() => assistantIndex.value === assistantSteps.value.length - 1);
 
 const objectiveTitle = computed(() => objectiveOptions.find((item) => item.id === state.objective)?.title ?? 'Sin objetivo');
+const availableFormatCards = computed(() => formatCards.filter((item) => (
+  !item.outputTypes?.length || item.outputTypes.includes(state.outputType)
+)));
 const sizes = computed(() => resolveObjectiveSizeOptions(state.objective, state.outputType, state.format));
 const groupedSizes = computed(() => {
   if (!state.outputType) return [];
@@ -239,6 +243,9 @@ watch([customWidth, customHeight], () => {
 
 function chooseOutput(o) {
     state.outputType = o;
+    if (!availableFormatCards.value.some((item) => item.id === state.format)) {
+      state.format = null;
+    }
     state.size = null
     if (!usingCustomFormat.value) {
       state.designSurface = null;
@@ -362,7 +369,7 @@ defineExpose({ assistantStep });
               <div class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Paso 2: Formato</div>
               <div class="mt-3 grid grid-cols-2 gap-3">
                 <button
-                  v-for="item in formatCards"
+                  v-for="item in availableFormatCards"
                   :key="item.id"
                   type="button"
                   class="rounded-2xl border px-3 py-2 text-left flex lg:flex-col gap-2 items-center"
@@ -370,7 +377,15 @@ defineExpose({ assistantStep });
                   :class="state.format === item.id ? 'border-primary bg-primary/10' : 'border-base-300 bg-base-100 hover:border-primary/40 disabled:opacity-50'"
                   @click="chooseFormat(item.id)"
                 >
-                    <IconifyIcon :icon="item.icon" :class="item.iconClass" class="text-6xl text-base-content"/>
+                    <span class="relative inline-flex">
+                      <IconifyIcon :icon="item.icon" :class="item.iconClass" class="text-6xl text-base-content"/>
+                      <span
+                        v-for="position in foldGuidePositionsForFormat(item.id)"
+                        :key="`${item.id}-guide-${position}`"
+                        class="pointer-events-none absolute top-4 bottom-4 w-px -translate-x-1/2 rounded-full bg-black/80 dark:bg-white/80 shadow-[0_0_0_1px_rgba(15,23,42,0.25)]"
+                        :style="{ left: `${position}%` }"
+                      ></span>
+                    </span>
                   <span class="font-medium">{{ item.title }}</span>
                 </button>
               </div>

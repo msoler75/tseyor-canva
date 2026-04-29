@@ -17,6 +17,7 @@ let currentRequestIsAuthenticated = false;
 let persistenceMeta = {};
 
 const nextRevision = (value) => Number(value ?? 0) + 1;
+const clonePersistedValue = (value) => JSON.parse(JSON.stringify(value ?? null));
 
 function normalizeUploadedAssetUrl(value) {
     if (typeof value !== 'string' || !value) {
@@ -161,7 +162,7 @@ function buildInitialState(sessionState) {
     const base = {
         ...initialDesignerState,
         content: { ...initialDesignerState.content },
-        elementLayout: structuredClone(initialDesignerState.elementLayout),
+        elementLayout: clonePersistedValue(initialDesignerState.elementLayout),
     };
 
     if (!sessionState) {
@@ -189,7 +190,49 @@ function buildInitialState(sessionState) {
         designSurface: normalizeDesignSurface(sessionState.designSurface),
     };
 
+    result.pages = normalizeDocumentPages(sessionState.pages, {
+        content: result.content,
+        elementLayout: result.elementLayout,
+        customElements: result.customElements,
+    });
+    result.activePageId = String(sessionState.activePageId ?? result.pages[0]?.id ?? 'page-1');
+
+    const activePage = result.pages.find((page) => page.id === result.activePageId) ?? result.pages[0];
+    if (activePage) {
+        result.activePageId = activePage.id;
+        result.content = { ...activePage.content };
+        result.elementLayout = clonePersistedValue(activePage.elementLayout);
+        result.customElements = clonePersistedValue(activePage.customElements);
+    }
+
     return result;
+}
+
+function normalizeDocumentPages(pages, fallbackPage) {
+    const sourcePages = Array.isArray(pages) && pages.length
+        ? pages
+        : [{ id: 'page-1', ...fallbackPage }];
+
+    return sourcePages
+        .filter((page) => page && typeof page === 'object')
+        .map((page, index) => {
+            const elementLayout = mergeElementLayout(
+                initialDesignerState.elementLayout,
+                page.elementLayout ?? fallbackPage.elementLayout ?? {},
+            );
+            const content = {
+                ...initialDesignerState.content,
+                ...normalizeContentStrings(page.content ?? fallbackPage.content ?? {}),
+            };
+            syncContentAndElementLayout(content, elementLayout);
+
+            return {
+                id: String(page.id ?? `page-${index + 1}`),
+                content,
+                elementLayout,
+                customElements: normalizeCustomElements(page.customElements ?? fallbackPage.customElements ?? {}, elementLayout),
+            };
+        });
 }
 
 function normalizeDesignSurface(designSurface) {

@@ -1,5 +1,6 @@
 <script setup>
-import { defineAsyncComponent } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
+import { foldGuidePositionsForFormat } from '../../data/designer';
 
 const RichTextEditor = defineAsyncComponent(() => import('./RichTextEditor.vue'));
 
@@ -59,6 +60,8 @@ const emit = defineEmits([
 const assignRichEditorRef = (id, element) => {
   props.richEditorRefSetter?.(id, element);
 };
+
+const foldGuidePositions = computed(() => foldGuidePositionsForFormat(props.state?.format));
 </script>
 
 <template>
@@ -108,6 +111,13 @@ const assignRichEditorRef = (id, element) => {
             draggable="false"
           />
         </div>
+        <div
+          v-for="position in foldGuidePositions"
+          :key="`fold-guide-${position}`"
+          class="pointer-events-none absolute top-0 bottom-0 z-[60] w-0 -translate-x-1/2 border-l border-dashed border-white/75 mix-blend-difference"
+          :style="{ left: `${position}%` }"
+          aria-hidden="true"
+        ></div>
         <div
           v-for="item in editorElements"
           :key="item.id"

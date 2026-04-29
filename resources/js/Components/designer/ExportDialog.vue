@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue';
 import { toCanvasExport, toJpegExport, toPngExport } from '../../utils/useHtml2Image';
 import { useDesignerState } from '../../composables/useDesignerState';
-import { objectiveOptions, resolveObjectiveSizeOptions } from '../../data/designer';
+import { isHorizontalFormat, objectiveOptions, resolveObjectiveSizeOptions } from '../../data/designer';
 import RichTextEditor from './RichTextEditor.vue';
 import {
     BASE_TEXT_ELEMENT_IDS,
@@ -87,7 +87,7 @@ const baseCanvasDimensions = computed(() => {
         }
         return { width: Math.max(300, Math.min(BASE_CANVAS_LONG_SIDE, Math.round(BASE_CANVAS_LONG_SIDE * ratio))), height: BASE_CANVAS_LONG_SIDE };
     }
-    if (state.format === 'horizontal') {
+    if (isHorizontalFormat(state.format)) {
         return { width: BASE_CANVAS_LONG_SIDE, height: BASE_CANVAS_SHORT_SIDE };
     }
     if (state.format === 'square') {
