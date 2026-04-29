@@ -58,6 +58,16 @@ const exportSuccess = ref('');
 
 const exportPreviewRef = ref(null);
 const previewImageUrl = ref('');
+const documentPages = computed(() => (Array.isArray(state.pages) && state.pages.length
+    ? state.pages
+    : [{
+        id: state.activePageId ?? 'page-1',
+        content: state.content,
+        elementLayout: state.elementLayout,
+        customElements: state.customElements ?? {},
+    }]
+));
+const hasMultiplePages = computed(() => documentPages.value.length > 1);
 // Genera un SVG transparente con las dimensiones deseadas y lo convierte a data-uri
 function svgPlaceholder(width, height) {
   // SVG sin width/height, solo viewBox, para que el <img> lo escale igual que la imagen real
@@ -68,6 +78,7 @@ const isPreviewRendering = ref(true);
 const previewRenderError = ref('');
 let previewTimer = null;
 let previewRenderSeq = 0;
+let isRenderingPageSnapshot = false;
 
 const resolvedSizeOption = computed(() => {
     const options = resolveObjectiveSizeOptions(state.objective, state.outputType, state.format);
@@ -109,7 +120,12 @@ const sanitizeFileName = (value) => {
         .replace(/^-+|-+$/g, '') || 'diseno';
 };
 
-const fileName = computed(() => `${sanitizeFileName(state.content.title || 'diseno')}-${selectedDpi.value}dpi.${selectedExportFormat.value}`);
+const baseFileName = computed(() => `${sanitizeFileName(state.designTitle || state.content.title || 'diseno')}-${selectedDpi.value}dpi`);
+const fileName = computed(() => {
+    if (selectedExportFormat.value === 'pdf') return `${baseFileName.value}.pdf`;
+    if (hasMultiplePages.value) return `${baseFileName.value}-${selectedExportFormat.value}.zip`;
+    return `${baseFileName.value}.${selectedExportFormat.value}`;
+});
 const exportButtonLabel = computed(() => {
     const ext = selectedExportFormat.value.toUpperCase();
     return isExporting.value ? `Generando ${ext}...` : `Descargar ${ext}`;
@@ -402,6 +418,240 @@ async function buildRendererOptions(width, height) {
     return {};
 }
 
+const clonePlain = (value) => JSON.parse(JSON.stringify(value ?? null));
+const dataUrlToBytes = (dataUrl) => {
+    const [, base64 = ''] = String(dataUrl).split(',');
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+};
+const bytesToBinaryString = (bytes) => {
+    let result = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        result += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    return result;
+};
+const downloadBlob = (blob, name) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = name;
+    link.href = url;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+const withRenderedPage = async (page, callback) => {
+    isRenderingPageSnapshot = true;
+    const previous = {
+        activePageId: state.activePageId,
+        content: clonePlain(state.content),
+        elementLayout: clonePlain(state.elementLayout),
+        customElements: clonePlain(state.customElements ?? {}),
+    };
+
+    state.activePageId = page.id;
+    state.content = clonePlain(page.content ?? {});
+    state.elementLayout = clonePlain(page.elementLayout ?? {});
+    state.customElements = clonePlain(page.customElements ?? {});
+
+    await nextTick();
+    if (document.fonts?.ready) {
+        await document.fonts.ready;
+    }
+
+    try {
+        return await callback();
+    } finally {
+        state.activePageId = previous.activePageId;
+        state.content = previous.content;
+        state.elementLayout = previous.elementLayout;
+        state.customElements = previous.customElements;
+        await nextTick();
+        isRenderingPageSnapshot = false;
+    }
+};
+const renderCurrentPreviewNode = async (format) => {
+    if (!exportPreviewRef.value) {
+        throw new Error('No export preview node');
+    }
+
+    const node = exportPreviewRef.value;
+    const { width, height } = targetDimensions.value;
+    const baseWidth = baseCanvasDimensions.value.width;
+    const baseHeight = baseCanvasDimensions.value.height;
+    const prevWidth = node.style.width;
+    const prevHeight = node.style.height;
+    const prevTransform = node.style.transform;
+    const prevTransformOrigin = node.style.transformOrigin;
+    const scaleX = width / baseWidth;
+    const scaleY = height / baseHeight;
+
+    node.style.width = baseWidth + 'px';
+    node.style.height = baseHeight + 'px';
+    node.style.transformOrigin = 'top left';
+    node.style.transform = `scale(${scaleX}, ${scaleY})`;
+
+    try {
+        const backgroundColor = state.elementLayout.background?.fillMode === 'solid'
+            ? (state.elementLayout.background?.backgroundColor || '#fff')
+            : null;
+
+        return format === 'jpg'
+            ? await toJpegExport(node, {
+                width,
+                height,
+                quality: clamp(Number(jpgQuality.value), 0.6, 1),
+                backgroundColor,
+            })
+            : await toPngExport(node, {
+                width,
+                height,
+                backgroundColor,
+            });
+    } finally {
+        node.style.width = prevWidth;
+        node.style.height = prevHeight;
+        node.style.transform = prevTransform;
+        node.style.transformOrigin = prevTransformOrigin;
+    }
+};
+
+let crcTable = null;
+const getCrcTable = () => {
+    if (crcTable) return crcTable;
+    crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n += 1) {
+        let c = n;
+        for (let k = 0; k < 8; k += 1) {
+            c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+        crcTable[n] = c >>> 0;
+    }
+    return crcTable;
+};
+const crc32 = (bytes) => {
+    const table = getCrcTable();
+    let crc = 0xffffffff;
+    bytes.forEach((byte) => {
+        crc = table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+    });
+    return (crc ^ 0xffffffff) >>> 0;
+};
+const writeUint16 = (array, offset, value) => {
+    array[offset] = value & 0xff;
+    array[offset + 1] = (value >>> 8) & 0xff;
+};
+const writeUint32 = (array, offset, value) => {
+    array[offset] = value & 0xff;
+    array[offset + 1] = (value >>> 8) & 0xff;
+    array[offset + 2] = (value >>> 16) & 0xff;
+    array[offset + 3] = (value >>> 24) & 0xff;
+};
+const createZipBlob = (files) => {
+    const encoder = new TextEncoder();
+    const chunks = [];
+    const central = [];
+    let offset = 0;
+
+    files.forEach((file) => {
+        const nameBytes = encoder.encode(file.name);
+        const data = file.bytes;
+        const crc = crc32(data);
+        const local = new Uint8Array(30 + nameBytes.length);
+        writeUint32(local, 0, 0x04034b50);
+        writeUint16(local, 4, 20);
+        writeUint16(local, 6, 0);
+        writeUint16(local, 8, 0);
+        writeUint16(local, 10, 0);
+        writeUint16(local, 12, 0);
+        writeUint32(local, 14, crc);
+        writeUint32(local, 18, data.length);
+        writeUint32(local, 22, data.length);
+        writeUint16(local, 26, nameBytes.length);
+        writeUint16(local, 28, 0);
+        local.set(nameBytes, 30);
+        chunks.push(local, data);
+
+        const centralHeader = new Uint8Array(46 + nameBytes.length);
+        writeUint32(centralHeader, 0, 0x02014b50);
+        writeUint16(centralHeader, 4, 20);
+        writeUint16(centralHeader, 6, 20);
+        writeUint16(centralHeader, 8, 0);
+        writeUint16(centralHeader, 10, 0);
+        writeUint16(centralHeader, 12, 0);
+        writeUint16(centralHeader, 14, 0);
+        writeUint32(centralHeader, 16, crc);
+        writeUint32(centralHeader, 20, data.length);
+        writeUint32(centralHeader, 24, data.length);
+        writeUint16(centralHeader, 28, nameBytes.length);
+        writeUint16(centralHeader, 30, 0);
+        writeUint16(centralHeader, 32, 0);
+        writeUint16(centralHeader, 34, 0);
+        writeUint16(centralHeader, 36, 0);
+        writeUint32(centralHeader, 38, 0);
+        writeUint32(centralHeader, 42, offset);
+        centralHeader.set(nameBytes, 46);
+        central.push(centralHeader);
+        offset += local.length + data.length;
+    });
+
+    const centralOffset = offset;
+    central.forEach((chunk) => {
+        chunks.push(chunk);
+        offset += chunk.length;
+    });
+    const end = new Uint8Array(22);
+    writeUint32(end, 0, 0x06054b50);
+    writeUint16(end, 8, files.length);
+    writeUint16(end, 10, files.length);
+    writeUint32(end, 12, offset - centralOffset);
+    writeUint32(end, 16, centralOffset);
+    writeUint16(end, 20, 0);
+    chunks.push(end);
+
+    return new Blob(chunks, { type: 'application/zip' });
+};
+const createPdfBlob = (jpegDataUrls, width, height) => {
+    const objects = [];
+    objects.push('<< /Type /Catalog /Pages 2 0 R >>');
+    const pageObjectIds = jpegDataUrls.map((_, index) => 3 + index * 3);
+    objects.push(`<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${jpegDataUrls.length} >>`);
+
+    jpegDataUrls.forEach((dataUrl, index) => {
+        const pageId = 3 + index * 3;
+        const contentId = pageId + 1;
+        const imageId = pageId + 2;
+        const imageName = `Im${index + 1}`;
+        const commands = `q\n${width} 0 0 ${height} 0 0 cm\n/${imageName} Do\nQ\n`;
+        const imageBytes = dataUrlToBytes(dataUrl);
+        objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /XObject << /${imageName} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`);
+        objects.push(`<< /Length ${commands.length} >>\nstream\n${commands}endstream`);
+        objects.push(`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n${bytesToBinaryString(imageBytes)}\nendstream`);
+    });
+
+    let pdf = '%PDF-1.4\n';
+    const offsets = [0];
+    objects.forEach((object, index) => {
+        offsets.push(pdf.length);
+        pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    });
+    const xrefOffset = pdf.length;
+    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    offsets.slice(1).forEach((offset) => {
+        pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+    });
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+    const bytes = new Uint8Array(pdf.length);
+    for (let i = 0; i < pdf.length; i += 1) {
+        bytes[i] = pdf.charCodeAt(i) & 0xff;
+    }
+    return new Blob([bytes], { type: 'application/pdf' });
+};
+
 async function renderGeneratedImagePreview() {
   if (!exportPreviewRef.value) return;
   const runId = ++previewRenderSeq;
@@ -412,45 +662,10 @@ async function renderGeneratedImagePreview() {
     if (document.fonts?.ready) {
       await document.fonts.ready;
     }
-    const node = exportPreviewRef.value;
-    const { width, height } = targetDimensions.value;
-    const baseWidth = baseCanvasDimensions.value.width;
-    const baseHeight = baseCanvasDimensions.value.height;
-    const prevWidth = node.style.width;
-    const prevHeight = node.style.height;
-    const prevTransform = node.style.transform;
-    const scaleX = width / baseWidth;
-    const scaleY = height / baseHeight;
-    node.style.width = baseWidth + 'px';
-    node.style.height = baseHeight + 'px';
-    node.style.transformOrigin = 'top left';
-    node.style.transform = `scale(${scaleX}, ${scaleY})`;
-    // Determinar color de fondo
-    let backgroundColor = null;
-    if (state.elementLayout.background?.fillMode === 'solid') {
-      backgroundColor = state.elementLayout.background?.backgroundColor || '#fff';
-    }
-    let dataUrl;
-    if (selectedExportFormat.value === 'jpg') {
-      dataUrl = await toJpegExport(node, {
-        width,
-        height,
-        quality: clamp(Number(jpgQuality.value), 0.6, 1),
-        backgroundColor,
-      });
-    } else {
-      dataUrl = await toPngExport(node, {
-        width,
-        height,
-        backgroundColor,
-      });
-    }
+    const previewFormat = selectedExportFormat.value === 'jpg' ? 'jpg' : 'png';
+    const dataUrl = await withRenderedPage(documentPages.value[0], () => renderCurrentPreviewNode(previewFormat));
     if (runId !== previewRenderSeq) return;
     previewImageUrl.value = dataUrl;
-    // Restaurar estilos
-    node.style.width = prevWidth;
-    node.style.height = prevHeight;
-    node.style.transform = prevTransform;
   } catch (error) {
     if (runId !== previewRenderSeq) return;
     console.error('No se pudo renderizar la vista previa', error);
@@ -464,6 +679,9 @@ async function renderGeneratedImagePreview() {
 
 
 function schedulePreviewRender() {
+  if (isRenderingPageSnapshot) {
+    return;
+  }
   if (previewTimer) {
     clearTimeout(previewTimer);
   }
@@ -479,41 +697,37 @@ async function downloadImage() {
         return;
     }
     isExporting.value = true;
-    const node = exportPreviewRef.value;
     const { width, height } = targetDimensions.value;
-    const baseWidth = baseCanvasDimensions.value.width;
-    const baseHeight = baseCanvasDimensions.value.height;
-    const prevWidth = node.style.width;
-    const prevHeight = node.style.height;
-    const prevTransform = node.style.transform;
-    const scaleX = width / baseWidth;
-    const scaleY = height / baseHeight;
-    node.style.width = baseWidth + 'px';
-    node.style.height = baseHeight + 'px';
-    node.style.transformOrigin = 'top left';
-    node.style.transform = `scale(${scaleX}, ${scaleY})`;
     try {
-        await nextTick();
-        if (document.fonts?.ready) {
-            await document.fonts.ready;
+        const pages = documentPages.value;
+
+        if (selectedExportFormat.value === 'pdf') {
+            const jpegPages = [];
+            for (const page of pages) {
+                jpegPages.push(await withRenderedPage(page, () => renderCurrentPreviewNode('jpg')));
+            }
+            downloadBlob(createPdfBlob(jpegPages, width, height), fileName.value);
+            exportSuccess.value = `PDF generado con ${pages.length} página${pages.length === 1 ? '' : 's'}.`;
+            return;
         }
-        // Determinar color de fondo
-        let backgroundColor = null;
-        if (state.elementLayout.background?.fillMode === 'solid') {
-          backgroundColor = state.elementLayout.background?.backgroundColor || '#fff';
+
+        if (pages.length > 1) {
+            const files = [];
+            let index = 1;
+            for (const page of pages) {
+                const dataUrl = await withRenderedPage(page, () => renderCurrentPreviewNode(selectedExportFormat.value));
+                files.push({
+                    name: `${baseFileName.value}-pagina-${String(index).padStart(2, '0')}.${selectedExportFormat.value}`,
+                    bytes: dataUrlToBytes(dataUrl),
+                });
+                index += 1;
+            }
+            downloadBlob(createZipBlob(files), fileName.value);
+            exportSuccess.value = `ZIP generado con ${files.length} imágenes ${selectedExportFormat.value.toUpperCase()}.`;
+            return;
         }
-        const dataUrl = selectedExportFormat.value === 'jpg'
-          ? await toJpegExport(node, {
-            width,
-            height,
-            quality: clamp(Number(jpgQuality.value), 0.6, 1),
-            backgroundColor,
-          })
-          : await toPngExport(node, {
-            width,
-            height,
-            backgroundColor,
-          });
+
+        const dataUrl = await withRenderedPage(pages[0], () => renderCurrentPreviewNode(selectedExportFormat.value));
         const link = document.createElement('a');
         link.download = fileName.value;
         link.href = dataUrl;
@@ -524,9 +738,6 @@ async function downloadImage() {
         console.error('No se pudo exportar la imagen', error);
         exportError.value = 'No se pudo exportar la imagen. Si usas imagenes externas, revisa que permitan CORS.';
     } finally {
-        node.style.width = prevWidth;
-        node.style.height = prevHeight;
-        node.style.transform = prevTransform;
         isExporting.value = false;
     }
 }
@@ -544,15 +755,6 @@ onBeforeUnmount(() => {
 watch([selectedDpi, selectedExportFormat, jpgQuality], () => {
     schedulePreviewRender();
 });
-watch(() => state.content, () => {
-    schedulePreviewRender();
-}, { deep: true });
-watch(() => state.customElements, () => {
-    schedulePreviewRender();
-}, { deep: true });
-watch(() => state.elementLayout, () => {
-    schedulePreviewRender();
-}, { deep: true });
 
 </script>
 
@@ -579,6 +781,7 @@ watch(() => state.elementLayout, () => {
                 <div class="mt-3 flex gap-2">
                   <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'png' ? 'btn-primary' : 'btn-outline'" @click="selectedExportFormat = 'png'">PNG</button>
                   <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'jpg' ? 'btn-primary' : 'btn-outline'" @click="selectedExportFormat = 'jpg'">JPG</button>
+                  <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'pdf' ? 'btn-primary' : 'btn-outline'" @click="selectedExportFormat = 'pdf'">PDF</button>
                 </div>
                 <p class="mt-2 text-xs text-base-content/70">PNG para máxima fidelidad; JPG para menor peso.</p>
               </div>

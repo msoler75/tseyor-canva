@@ -1790,7 +1790,14 @@ const generateThumbnailAndThen = (cb) => {
     await nextTick();
     setTimeout(async () => {
       if (!canvasRef.value) return;
+      const originalPageId = state.activePageId;
+      const firstPageId = Array.isArray(state.pages) && state.pages.length ? state.pages[0].id : originalPageId;
       try {
+        if (firstPageId && firstPageId !== state.activePageId) {
+          syncActivePageSnapshot();
+          await switchToPage(firstPageId);
+          await nextTick();
+        }
         const { toJpegExport } = await import('../../utils/useHtml2Image');
         const dataUrl = await toJpegExport(canvasRef.value, {
           quality: 0.6,
@@ -1802,12 +1809,14 @@ const generateThumbnailAndThen = (cb) => {
         const hashArray = Array.from(new Uint8Array(hash));
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         setDesignerThumbnailDataUrl(dataUrl, hashHex);
+      } catch (error) {
+        // Aun con error, intentar guardar tras restaurar la pagina activa.
+      } finally {
+        if (originalPageId && originalPageId !== state.activePageId) {
+          await switchToPage(originalPageId);
+        }
         if (typeof cb === 'function') {
           await cb();
-        }
-      } catch (error) {
-        if (typeof cb === 'function') {
-          await cb(); // Aun con error, intentar guardar
         }
       }
     }, 0);
@@ -3342,6 +3351,10 @@ const flushDesignerStateWithThumbnail = async () => {
 watch(
   () => [state.content, state.elementLayout, state.customElements],
   () => {
+    if (exportDialogOpen.value) {
+      syncActivePageSnapshot();
+      return;
+    }
     syncActivePageSnapshot();
     scheduleHistorySnapshot();
     flushDesignerStateWithThumbnail();
