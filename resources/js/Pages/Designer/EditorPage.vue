@@ -13,7 +13,6 @@ import {
   hydrateDesignerStateFromPage,
   resetDesignerState,
   setDesignerThumbnailDataUrl,
-  toggleDesignerDarkMode,
   useDesignerState,
 } from '../../composables/useDesignerState';
 import { useEditorHistory } from '../../composables/useEditorHistory';
@@ -4395,8 +4394,6 @@ watch(
     :show-steps="false"
     :show-header="false"
     :full-height="true"
-    :dark-mode="state.darkMode"
-    @toggle-dark="toggleDesignerDarkMode"
   >
     <div class="flex h-full min-h-0 flex-col overflow-hidden bg-base-100">
 
@@ -4409,7 +4406,6 @@ watch(
       :undo-action-label="undoActionLabel"
       :redo-action-label="redoActionLabel"
       :zoom-level="zoomLevel"
-      :dark-mode="state.darkMode"
       :template-mode="isTemplateBaseEditor"
       @go-home="handleHomeNavigation"
       @create-new-design="handleCreateNewDesign"
@@ -4423,7 +4419,6 @@ watch(
       @undo="performUndo"
       @redo="performRedo"
       @update-zoom-level="setZoomLevel"
-      @toggle-dark-mode="toggleDesignerDarkMode"
       @export-navigate="handleExportNavigation"
 
       />

@@ -5,7 +5,7 @@ import { computed, ref } from 'vue';
 import DesignerAssistant from './../Components/designer/DesignerAssistant.vue';
 import DesignerLayout from './../Layouts/DesignerLayout.vue';
 import TimeAgo from '../Components/TimeAgo.vue';
-import { flushDesignerStatePersistence, resetDesignerState, toggleDesignerDarkMode, useDesignerState } from '../composables/useDesignerState';
+import { flushDesignerStatePersistence, resetDesignerState, useDesignerState } from '../composables/useDesignerState';
 import { isHorizontalFormat } from '../data/designer';
 import { applyFormatToDimensions, parseSizeDetail } from '../utils/editorShared';
 
@@ -253,8 +253,6 @@ const deleteDesign = async (design) => {
         :current-step="currentStep"
         :steps="steps"
         :show-steps="false"
-        :dark-mode="state.darkMode"
-        @toggle-dark="toggleDesignerDarkMode"
     >
         <section class="grid gap-6 lg:grid-cols-[1.1fr,0.9fr]">
             <!-- Diseño temporal de sesión para invitado -->

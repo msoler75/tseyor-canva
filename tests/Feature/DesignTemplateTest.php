@@ -125,7 +125,6 @@ class DesignTemplateTest extends TestCase
             'template_category' => 'modern',
             'selected_template_id' => null,
             'state' => [
-                'darkMode' => false,
                 'mode' => 'guided',
                 'objective' => 'event_presential',
                 'outputType' => 'digital',
@@ -238,7 +237,6 @@ class DesignTemplateTest extends TestCase
     private function validDesignerState(string $title): array
     {
         return [
-            'darkMode' => false,
             'mode' => 'guided',
             'objective' => 'event_presential',
             'outputType' => 'digital',

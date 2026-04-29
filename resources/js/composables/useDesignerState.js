@@ -2,7 +2,7 @@ import { reactive, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { initialDesignerState } from '../data/designer';
-import { readThemePreference, setThemePreference } from './useThemePreference';
+import { setThemePreference } from './useThemePreference';
 
 const BASE_LAYOUT_KEYS = new Set(['background', 'title', 'subtitle', 'meta', 'contact', 'extra']);
 
@@ -106,7 +106,6 @@ export function hydrateDesignerStateFromPage() {
     // Forzar rehidratación desde los props actuales
     const state = useDesignerState({ forceRehydrate: true });
     const designUuid = page.props.designer?.currentDesign?.uuid ?? null;
-    const savedTheme = readThemePreference();
 
     // --- Sincronización de textos entre content y elementLayout tras hidratar (DRY) ---
     if (state && state.content && state.elementLayout) {
@@ -118,21 +117,14 @@ export function hydrateDesignerStateFromPage() {
         currentHydratedDesignUuid = designUuid;
     }
 
-    if (savedTheme !== null) {
-        state.darkMode = savedTheme;
-    }
-
     return state;
 }
 
 export function toggleDesignerDarkMode() {
-    if (!designerState) {
-        useDesignerState();
-    }
-
-    designerState.darkMode = !designerState.darkMode;
-
-    return designerState.darkMode;
+    const current = readThemePreference() ?? false;
+    const next = !current;
+    setThemePreference(next);
+    return next;
 }
 
 
@@ -158,7 +150,6 @@ export function resetDesignerState() {
 }
 
 function buildInitialState(sessionState) {
-    const savedTheme = readThemePreference();
     const base = {
         ...initialDesignerState,
         content: { ...initialDesignerState.content },
@@ -166,7 +157,6 @@ function buildInitialState(sessionState) {
     };
 
     if (!sessionState) {
-        base.darkMode = savedTheme ?? false;
         return base;
     }
 
@@ -180,7 +170,6 @@ function buildInitialState(sessionState) {
     const result = {
         ...base,
         ...sessionState,
-        darkMode: savedTheme ?? (typeof sessionState.darkMode === 'boolean' ? sessionState.darkMode : false),
         designTitleManual: Boolean(sessionState.designTitleManual),
         stateRevision: Number(sessionState.stateRevision ?? 0) || 0,
         content: normalizedContent,
@@ -411,14 +400,6 @@ function mergeElementLayout(defaultLayout, sessionLayout) {
 }
 
 function bootstrapPersistence(saveEndpoint) {
-    watch(
-        () => designerState.darkMode,
-        (darkMode) => {
-            setThemePreference(darkMode);
-        },
-        { flush: 'sync' }
-    );
-
     // Guardado automático desactivado para evitar múltiples PUT; el guardado lo controla el editor
 }
 
@@ -426,7 +407,6 @@ function isPersistableDesignerStateSnapshot(snapshot) {
     return Boolean(
         snapshot
         && typeof snapshot === 'object'
-        && typeof snapshot.darkMode === 'boolean'
         && typeof snapshot.mode === 'string'
         && snapshot.content
         && typeof snapshot.content === 'object'

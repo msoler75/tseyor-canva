@@ -1,9 +1,18 @@
 <script setup>
 import axios from 'axios';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
-import { computed, onMounted, watch } from 'vue';
+import { computed, onMounted } from 'vue';
 import Avatar from '@/Components/Avatar.vue';
-import { setThemePreference } from '../composables/useThemePreference';
+import { readThemePreference, setThemePreference } from '../composables/useThemePreference';
+import { ref } from 'vue';
+
+const darkMode = ref(readThemePreference() ?? false);
+
+const syncTheme = () => {
+    setThemePreference(darkMode.value, { persist: false });
+};
+
+onMounted(syncTheme);
 
 const props = defineProps({
     title: String,
@@ -15,7 +24,6 @@ const props = defineProps({
     },
     currentStep: String,
     steps: Array,
-    darkMode: Boolean,
     showSteps: {
         type: Boolean,
         default: true,
@@ -30,7 +38,6 @@ const props = defineProps({
     },
 });
 
-const emit = defineEmits(['toggle-dark']);
 const page = usePage();
 const authUser = computed(() => page.props.auth?.user ?? null);
 
@@ -49,12 +56,10 @@ const handleLogout = async () => {
   };
 }
 
-const syncTheme = () => {
-    setThemePreference(props.darkMode, { persist: false });
+const handleToggleDarkMode = () => {
+    darkMode.value = !darkMode.value;
+    setThemePreference(darkMode.value);
 };
-
-onMounted(syncTheme);
-watch(() => props.darkMode, syncTheme);
 </script>
 
 <template>
@@ -81,7 +86,7 @@ watch(() => props.darkMode, syncTheme);
                         <div class="flex items-center gap-2">
                             <button
                                 type="button"
-                                @click="emit('toggle-dark')"
+                                @click="handleToggleDarkMode"
                                 class="btn btn-sm btn-outline rounded-full"
                             >
                                 {{ !darkMode ? '☀️ Modo claro' : '🌙 Modo oscuro' }}

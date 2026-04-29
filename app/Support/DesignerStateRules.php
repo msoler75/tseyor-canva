@@ -11,7 +11,6 @@ final class DesignerStateRules
     {
         return [
             $prefix => ['required', 'array'],
-            "{$prefix}.darkMode" => ['required', 'boolean'],
             "{$prefix}.mode" => ['required', 'string', 'in:guided,direct'],
             "{$prefix}.objective" => ['nullable', 'string'],
             "{$prefix}.outputType" => ['nullable', 'string', 'in:print,digital'],

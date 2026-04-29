@@ -49,7 +49,6 @@ class AuthAndDesignApiTest extends TestCase
         $payload = [
             'name' => 'Cartel guardado',
             'state' => [
-                'darkMode' => true,
                 'mode' => 'guided',
                 'objective' => 'event_presential',
                 'outputType' => 'print',
@@ -116,7 +115,6 @@ class AuthAndDesignApiTest extends TestCase
             ->postJson('/designer/designs', [
                 'name' => 'Diseño original',
                 'state' => [
-                    'darkMode' => true,
                     'mode' => 'guided',
                     'objective' => 'event_presential',
                     'outputType' => 'print',

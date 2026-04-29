@@ -1,6 +1,15 @@
 <script setup>
 import { Icon } from '@iconify/vue';
 import Avatar from '@/Components/Avatar.vue';
+import { readThemePreference, setThemePreference } from '@/composables/useThemePreference';
+import { ref } from 'vue';
+
+const darkMode = ref(readThemePreference() ?? false);
+
+const handleToggleDarkMode = () => {
+    darkMode.value = !darkMode.value;
+    setThemePreference(darkMode.value);
+};
 
 defineProps({
   authUser: {
@@ -35,10 +44,6 @@ defineProps({
     type: [Number, String],
     default: 100,
   },
-  darkMode: {
-    type: Boolean,
-    default: false,
-  },
   templateMode: {
     type: Boolean,
     default: false,
@@ -58,7 +63,6 @@ const emit = defineEmits([
   'undo',
   'redo',
   'updateZoomLevel',
-  'toggleDarkMode',
   'exportNavigate',
 ]);
 
@@ -229,7 +233,7 @@ const handleZoomInput = (event) => {
         type="button"
         class="btn text-lg rounded-full px-1.5"
         :title="darkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'"
-        @click="emit('toggleDarkMode')"
+        @click="handleToggleDarkMode"
       >
         {{ darkMode ? '🌙' : '☀️' }}
       </button>

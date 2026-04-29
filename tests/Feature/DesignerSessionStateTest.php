@@ -248,7 +248,6 @@ class DesignerSessionStateTest extends TestCase
         $pendingDataUrl = 'data:image/png;base64,'.str_repeat('a', 5000);
 
         $state = [
-            'darkMode' => true,
             'mode' => 'guided',
             'objective' => 'event',
             'outputType' => 'print',
@@ -324,7 +323,6 @@ class DesignerSessionStateTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Designer/EditorPage')
-                ->where('designer.state.darkMode', true)
                 ->where('designer.state.content.title', 'Festival persistido')
                 ->where('designer.state.selectedElementId', 'title')
                 ->where('designer.state.customElements.image-1.assetId', 'upload-1')
@@ -337,7 +335,6 @@ class DesignerSessionStateTest extends TestCase
         $user = User::factory()->create();
 
         $state = [
-            'darkMode' => true,
             'mode' => 'guided',
             'objective' => 'event',
             'outputType' => 'print',
@@ -429,7 +426,6 @@ class DesignerSessionStateTest extends TestCase
             'format' => 'square',
             'size_label' => 'Post cuadrado',
             'state' => [
-                'darkMode' => false,
                 'mode' => 'guided',
                 'stateRevision' => 2,
                 'objective' => 'event',
@@ -1198,7 +1194,6 @@ class DesignerSessionStateTest extends TestCase
     private function validDesignerState(array $overrides = []): array
     {
         return [
-            'darkMode' => true,
             'mode' => 'guided',
             'objective' => 'event_presential',
             'outputType' => 'print',

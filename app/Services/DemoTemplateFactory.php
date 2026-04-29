@@ -130,7 +130,6 @@ class DemoTemplateFactory
         $palette = $definition['palette'];
 
         return [
-            'darkMode' => false,
             'mode' => 'guided',
             'objective' => 'generic',
             'outputType' => 'digital',

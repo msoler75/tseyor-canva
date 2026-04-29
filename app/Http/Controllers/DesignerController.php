@@ -821,7 +821,7 @@ class DesignerController extends Controller
      */
     private function isPersistableDesignerState(array $state): bool
     {
-        return isset($state['darkMode'], $state['mode'])
+        return isset($state['mode'])
             && is_array($state['content'] ?? null)
             && is_array($state['elementLayout'] ?? null)
             && is_array($state['elementLayout']['background'] ?? null)

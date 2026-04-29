@@ -449,7 +449,6 @@ export function resolveObjectiveSizeOptions(objective, outputType, format = null
 
 
 export const initialDesignerState = {
-    darkMode: false,
     mode: 'guided',
     objective: null,
     outputType: null,
