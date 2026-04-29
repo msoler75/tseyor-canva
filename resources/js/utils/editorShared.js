@@ -161,19 +161,27 @@ export function buildEditorElements(state) {
   const metaText = [state.content?.date, state.content?.time].filter(Boolean).join(' ? ');
   const contactText = [state.content?.location, state.content?.platform, state.content?.contact].filter(Boolean).join(' ? ');
   const extraText = [state.content?.teacher, state.content?.price, state.content?.extra].filter(Boolean).join(' ? ');
+  const fieldText = (fieldKey, fallback = '') => {
+    if (!fieldKey) return fallback;
+    if (fieldKey === 'meta') return metaText;
+    if (fieldKey === 'contact') return contactText;
+    if (fieldKey === 'extra') return extraText;
+    return state.content?.[fieldKey] ?? fallback;
+  };
   const baseTextElements = [
-    { id: 'title', type: 'text', label: 'Titulo', text: state.content?.title ?? '' },
-    { id: 'subtitle', type: 'text', label: 'Subtitulo', text: state.content?.subtitle ?? '' },
-    { id: 'meta', type: 'text', label: 'Fecha / hora', text: metaText },
-    { id: 'contact', type: 'text', label: 'Contacto', text: contactText },
-    { id: 'extra', type: 'text', label: 'Texto adicional', text: extraText },
+    { id: 'title', type: 'text', label: 'Titulo', fieldKey: 'title', text: state.content?.title ?? '' },
+    { id: 'subtitle', type: 'text', label: 'Subtitulo', fieldKey: 'subtitle', text: state.content?.subtitle ?? '' },
+    { id: 'meta', type: 'text', label: 'Fecha / hora', fieldKey: 'meta', text: metaText },
+    { id: 'contact', type: 'text', label: 'Contacto', fieldKey: 'contact', text: contactText },
+    { id: 'extra', type: 'text', label: 'Texto adicional', fieldKey: 'extra', text: extraText },
   ];
 
   const customElements = Object.entries(state.customElements ?? {}).map(([id, element]) => ({
     id,
     type: element.type,
     label: element.label ?? 'Elemento',
-    text: element.type === 'text' ? (element.text ?? '') : '',
+    fieldKey: element.fieldKey ?? null,
+    text: element.type === 'text' ? fieldText(element.fieldKey, element.text ?? '') : '',
     src: element.type === 'image' ? element.src : null,
     shapeKind: element.type === 'shape' ? element.shapeKind : null,
   }));

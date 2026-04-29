@@ -194,7 +194,7 @@ function buildInitialState(sessionState) {
         content: result.content,
         elementLayout: result.elementLayout,
         customElements: result.customElements,
-    });
+    }, result.format);
     result.activePageId = String(sessionState.activePageId ?? result.pages[0]?.id ?? 'page-1');
 
     const activePage = result.pages.find((page) => page.id === result.activePageId) ?? result.pages[0];
@@ -208,7 +208,11 @@ function buildInitialState(sessionState) {
     return result;
 }
 
-function normalizeDocumentPages(pages, fallbackPage) {
+function blankPageElementLayout() {
+    return { background: clonePersistedValue(initialDesignerState.elementLayout.background) };
+}
+
+function normalizeDocumentPages(pages, fallbackPage, format = null) {
     const sourcePages = Array.isArray(pages) && pages.length
         ? pages
         : [{ id: 'page-1', ...fallbackPage }];
@@ -216,9 +220,14 @@ function normalizeDocumentPages(pages, fallbackPage) {
     return sourcePages
         .filter((page) => page && typeof page === 'object')
         .map((page, index) => {
+            const defaultLayout = format === 'brochure' && index > 0
+                ? blankPageElementLayout()
+                : initialDesignerState.elementLayout;
+            const sessionLayout = page.elementLayout
+                ?? (format === 'brochure' && index > 0 ? {} : (fallbackPage.elementLayout ?? {}));
             const elementLayout = mergeElementLayout(
-                initialDesignerState.elementLayout,
-                page.elementLayout ?? fallbackPage.elementLayout ?? {},
+                defaultLayout,
+                sessionLayout,
             );
             const content = {
                 ...initialDesignerState.content,

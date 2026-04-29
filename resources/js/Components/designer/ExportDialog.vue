@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue';
 import { toCanvasExport, toJpegExport, toPngExport } from '../../utils/useHtml2Image';
 import { useDesignerState } from '../../composables/useDesignerState';
-import { brochurePrintPairForPhysicalPage, isBrochureFormat, isHorizontalFormat, objectiveOptions, resolveObjectiveSizeOptions } from '../../data/designer';
+import { brochurePagePairForPhysicalPage, brochurePrintPairForPhysicalPage, isBrochureFormat, isHorizontalFormat, objectiveOptions, resolveObjectiveSizeOptions } from '../../data/designer';
 import RichTextEditor from './RichTextEditor.vue';
 import {
     BASE_TEXT_ELEMENT_IDS,
@@ -43,14 +43,15 @@ const state = useDesignerState();
 const BASE_CANVAS_SHORT_SIDE = 368;
 const BASE_CANVAS_LONG_SIDE = 620;
 const baseTextElementIds = BASE_TEXT_ELEMENT_IDS;
-const dpiOptions = [
+const allDpiOptions = [
     { value: 96, label: '96 DPI', helper: 'Web / estándar' },
     { value: 150, label: '150 DPI', helper: 'Calidad media' },
     { value: 300, label: '300 DPI', helper: 'Impresión alta' },
 ];
 const objectiveTitle = computed(() => objectiveOptions.find((item) => item.id === state.objective)?.title ?? 'Genérico');
-const selectedDpi = ref(96);
-const selectedExportFormat = ref('png');
+const defaultExportDpi = () => (state.outputType === 'print' ? 150 : 96);
+const selectedDpi = ref(defaultExportDpi());
+const selectedExportFormat = ref(isBrochureFormat(state.format) ? 'pdf' : 'png');
 const jpgQuality = ref(0.95);
 const isExporting = ref(false);
 const exportError = ref('');
@@ -69,6 +70,11 @@ const documentPages = computed(() => (Array.isArray(state.pages) && state.pages.
 ));
 const hasMultiplePages = computed(() => documentPages.value.length > 1);
 const isBrochureExport = computed(() => isBrochureFormat(state.format));
+const dpiOptions = computed(() => (
+    state.outputType === 'print'
+        ? allDpiOptions.filter((option) => option.value !== 96)
+        : allDpiOptions
+));
 // Genera un SVG transparente con las dimensiones deseadas y lo convierte a data-uri
 function svgPlaceholder(width, height) {
   // SVG sin width/height, solo viewBox, para que el <img> lo escale igual que la imagen real
@@ -528,14 +534,41 @@ const loadImageFromDataUrl = (dataUrl) => new Promise((resolve, reject) => {
     image.src = dataUrl;
 });
 
-const drawBrochurePanel = (context, sourceImages, brochurePageNumber, destinationX, width, height) => {
-    const sourceSpreadIndex = brochurePageNumber === (sourceImages.length * 2)
-        ? 0
-        : Math.floor(brochurePageNumber / 2);
-    const sourceIsLeftPanel = brochurePageNumber === (sourceImages.length * 2)
-        || brochurePageNumber % 2 === 0;
-    const sourceX = sourceIsLeftPanel ? 0 : width;
-    context.drawImage(sourceImages[sourceSpreadIndex], sourceX, 0, width, height, destinationX, 0, width, height);
+const buildBrochurePanelMap = (sourceImages) => {
+    const panelMap = new Map();
+    const physicalPageCount = sourceImages.length;
+
+    sourceImages.forEach((image, physicalPageIndex) => {
+        const [leftBrochurePage, rightBrochurePage] = brochurePagePairForPhysicalPage(physicalPageIndex, physicalPageCount);
+        const panelWidth = image.naturalWidth / 2;
+        const panelHeight = image.naturalHeight;
+
+        panelMap.set(leftBrochurePage, {
+            image,
+            sx: 0,
+            sy: 0,
+            sw: panelWidth,
+            sh: panelHeight,
+        });
+        panelMap.set(rightBrochurePage, {
+            image,
+            sx: panelWidth,
+            sy: 0,
+            sw: panelWidth,
+            sh: panelHeight,
+        });
+    });
+
+    return panelMap;
+};
+
+const drawBrochurePanel = (context, panelMap, brochurePageNumber, destinationX, width, height) => {
+    const panel = panelMap.get(brochurePageNumber);
+    if (!panel) {
+        return;
+    }
+
+    context.drawImage(panel.image, panel.sx, panel.sy, panel.sw, panel.sh, destinationX, 0, width, height);
 };
 
 const renderBrochurePrintPages = async (format) => {
@@ -554,6 +587,7 @@ const renderBrochurePrintPages = async (format) => {
     const { width, height } = targetDimensions.value;
     const panelWidth = Math.floor(width / 2);
     const outputMime = format === 'jpg' ? 'image/jpeg' : 'image/png';
+    const panelMap = buildBrochurePanelMap(sourceImages);
 
     return pages.map((_, pageIndex) => {
         const [leftBrochurePage, rightBrochurePage] = brochurePrintPairForPhysicalPage(pageIndex, pages.length);
@@ -567,8 +601,8 @@ const renderBrochurePrintPages = async (format) => {
             context.fillRect(0, 0, width, height);
         }
 
-        drawBrochurePanel(context, sourceImages, leftBrochurePage, 0, panelWidth, height);
-        drawBrochurePanel(context, sourceImages, rightBrochurePage, panelWidth, panelWidth, height);
+        drawBrochurePanel(context, panelMap, leftBrochurePage, 0, panelWidth, height);
+        drawBrochurePanel(context, panelMap, rightBrochurePage, panelWidth, panelWidth, height);
 
         return format === 'jpg'
             ? canvas.toDataURL(outputMime, jpgQuality.value)
@@ -748,6 +782,9 @@ function schedulePreviewRender() {
 async function downloadImage() {
     exportError.value = '';
     exportSuccess.value = '';
+    if (isBrochureExport.value) {
+        selectedExportFormat.value = 'pdf';
+    }
     if (!exportPreviewRef.value) {
         exportError.value = 'No se encontro la vista previa para exportar.';
         return;
@@ -825,6 +862,16 @@ onBeforeUnmount(() => {
 watch([selectedDpi, selectedExportFormat, jpgQuality], () => {
     schedulePreviewRender();
 });
+watch(() => state.format, () => {
+    if (isBrochureExport.value) {
+        selectedExportFormat.value = 'pdf';
+    }
+});
+watch(() => state.outputType, () => {
+    if (state.outputType === 'print' && selectedDpi.value === 96) {
+        selectedDpi.value = 150;
+    }
+});
 
 </script>
 
@@ -849,13 +896,15 @@ watch([selectedDpi, selectedExportFormat, jpgQuality], () => {
               <div class="rounded-2xl border border-base-300 bg-base-100/70 p-4">
                 <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/70">Formato</p>
                 <div class="mt-3 flex gap-2">
-                  <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'png' ? 'btn-primary' : 'btn-outline'" @click="selectedExportFormat = 'png'">PNG</button>
-                  <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'jpg' ? 'btn-primary' : 'btn-outline'" @click="selectedExportFormat = 'jpg'">JPG</button>
+                  <button v-if="!isBrochureExport" type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'png' ? 'btn-primary' : 'btn-outline'" @click="selectedExportFormat = 'png'">PNG</button>
+                  <button v-if="!isBrochureExport" type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'jpg' ? 'btn-primary' : 'btn-outline'" @click="selectedExportFormat = 'jpg'">JPG</button>
                   <button type="button" class="btn btn-sm rounded-xl flex-1" :class="selectedExportFormat === 'pdf' ? 'btn-primary' : 'btn-outline'" @click="selectedExportFormat = 'pdf'">PDF</button>
                 </div>
-                <p class="mt-2 text-xs text-base-content/70">PNG para máxima fidelidad; JPG para menor peso.</p>
+                <p class="mt-2 text-xs text-base-content/70">
+                  {{ isBrochureExport ? 'Los folletos se exportan solo como PDF para impresion.' : 'PNG para maxima fidelidad; JPG para menor peso.' }}
+                </p>
               </div>
-              <div v-if="selectedExportFormat === 'jpg'" class="rounded-2xl border border-base-300 bg-base-100/70 p-4">
+              <div v-if="!isBrochureExport && selectedExportFormat === 'jpg'" class="rounded-2xl border border-base-300 bg-base-100/70 p-4">
                 <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/70">Calidad JPG</p>
                 <div class="mt-3 flex items-center gap-3">
                   <input v-model.number="jpgQuality" type="range" min="0.6" max="1" step="0.01" class="range range-primary flex-1" />
