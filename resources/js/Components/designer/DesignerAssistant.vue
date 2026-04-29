@@ -260,8 +260,14 @@ function chooseOutput(o) {
 }
 
 function chooseFormat(f) {
+    const newSizes = resolveObjectiveSizeOptions(state.objective, state.outputType, f);
+    const currentSize = state.size;
+    const sizeStillValid = currentSize && newSizes.some((s) => s.label === currentSize);
+
     state.format = f;
-    state.size = null
+    if (!sizeStillValid) {
+      state.size = null;
+    }
     if (f === 'other') {
       customWidth.value = String(Number(state.designSurface?.width ?? 0) || 1080);
       customHeight.value = String(Number(state.designSurface?.height ?? 0) || 1080);
