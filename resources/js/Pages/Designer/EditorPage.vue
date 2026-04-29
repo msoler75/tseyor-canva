@@ -242,6 +242,27 @@ const addDocumentPage = async ({ afterPageId = state.activePageId, duplicate = f
   flushDesignerStateWithThumbnail();
 };
 const duplicateDocumentPage = (pageId) => addDocumentPage({ afterPageId: pageId, duplicate: true });
+const moveDocumentPage = async (pageId, direction) => {
+  ensureDocumentPages();
+  const currentIndex = state.pages.findIndex((page) => page.id === pageId);
+  const nextIndex = currentIndex + direction;
+
+  if (currentIndex === -1 || nextIndex < 0 || nextIndex >= state.pages.length) return;
+
+  try {
+    commitTextEdit();
+  } catch (_) {
+    // no-op
+  }
+
+  syncActivePageSnapshot();
+  const [pageToMove] = state.pages.splice(currentIndex, 1);
+  state.pages.splice(nextIndex, 0, pageToMove);
+  refreshDocumentPageList();
+  documentRevision.value += 1;
+  await nextTick();
+  flushDesignerStateWithThumbnail();
+};
 const deleteDocumentPage = async (pageId) => {
   ensureDocumentPages();
   if (state.pages.length <= 1) return;
@@ -1289,6 +1310,36 @@ const setZoomLevel = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return;
   zoomLevel.value = Math.round(clamp(parsed, 25, 200));
+};
+
+const handleCanvasWheel = (event) => {
+  if (!event.ctrlKey) return;
+
+  if (event.cancelable) {
+    event.preventDefault();
+  }
+  event.stopPropagation();
+
+  const scrollElement = event.currentTarget;
+  const previousZoom = zoomLevel.value;
+  const direction = event.deltaY < 0 ? 1 : -1;
+  const nextZoom = Math.round(clamp(previousZoom + (direction * 10), 25, 200));
+
+  if (!scrollElement || nextZoom === previousZoom) {
+    return;
+  }
+
+  const scrollRect = scrollElement.getBoundingClientRect();
+  const focusX = scrollElement.scrollLeft + event.clientX - scrollRect.left;
+  const focusY = scrollElement.scrollTop + event.clientY - scrollRect.top;
+  const ratio = nextZoom / Math.max(1, previousZoom);
+
+  setZoomLevel(nextZoom);
+
+  nextTick(() => {
+    scrollElement.scrollLeft = Math.max(0, (focusX * ratio) - (event.clientX - scrollRect.left));
+    scrollElement.scrollTop = Math.max(0, (focusY * ratio) - (event.clientY - scrollRect.top));
+  });
 };
 
 const getCanvasScrollContainer = () => canvasRef.value?.closest?.('.canvas-grid') ?? null;
@@ -4257,7 +4308,7 @@ watch(
             @open-settings="handleTemplateSettingsOpen"
           />
 
-          <div class="canvas-grid relative h-full overflow-auto bg-slate-100 px-4 pt-6 pb-28 [touch-action:pan-x_pan-y] dark:bg-slate-950 sm:px-10 sm:pt-4 sm:pb-10 md:px-10 md:pt-16 md:pb-10" :style="canvasGridStyle" @scroll.passive="handleDocumentPagesScroll" @pointerdown="handleCanvasPointerDownWithPinch">
+          <div class="canvas-grid relative h-full overflow-auto bg-slate-100 px-4 pt-6 pb-28 [touch-action:pan-x_pan-y] dark:bg-slate-950 sm:px-10 sm:pt-4 sm:pb-10 md:px-10 md:pt-16 md:pb-10" :style="canvasGridStyle" @scroll.passive="handleDocumentPagesScroll" @wheel.capture="handleCanvasWheel" @pointerdown="handleCanvasPointerDownWithPinch">
             <div class="mx-auto flex w-full flex-col items-center gap-8">
               <section
                 v-for="(documentPage, pageIndex) in documentPages"
@@ -4267,18 +4318,48 @@ watch(
                 :style="pageViewportStyle"
               >
                 <div class="absolute top-0 left-1/2 origin-top" :style="pageChromeStyle">
-                <div class="mb-3 flex w-full items-center justify-between text-sm font-semibold text-slate-500 dark:text-slate-300" @pointerdown.stop>
+                <div class="relative z-50 mb-3 flex w-full items-center justify-between text-sm font-semibold text-slate-500 dark:text-slate-300" @pointerdown.stop>
                   <span>{{ hasMultiplePages ? `Página ${pageIndex + 1}` : '' }}</span>
-                  <div class="flex items-center gap-1">
-                    <button type="button" class="btn btn-ghost btn-xs" title="Duplicar página" @click.stop.prevent="duplicateDocumentPage(documentPage.id)">
-                      <Icon icon="ph:copy-simple" class="h-4 w-4" />
-                    </button>
-                    <button type="button" class="btn btn-ghost btn-xs" title="Nueva página" @click.stop.prevent="addDocumentPage({ afterPageId: documentPage.id })">
-                      <Icon icon="ph:file-plus" class="h-4 w-4" />
-                    </button>
-                    <button v-if="hasMultiplePages" type="button" class="btn btn-ghost btn-xs text-error" title="Eliminar página" @click.stop.prevent="deleteDocumentPage(documentPage.id)">
-                      <Icon icon="ph:trash" class="h-4 w-4" />
-                    </button>
+                  <div class="relative z-50 flex items-center gap-1">
+                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover página hacia arriba">
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs"
+                        :class="{ 'btn-disabled opacity-40': pageIndex === 0 }"
+                        :disabled="pageIndex === 0"
+                        aria-label="Mover página hacia arriba"
+                        @click.stop.prevent="moveDocumentPage(documentPage.id, -1)"
+                      >
+                        <Icon icon="ph:arrow-up" class="h-4 w-4" />
+                      </button>
+                    </span>
+                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover página hacia abajo">
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs"
+                        :class="{ 'btn-disabled opacity-40': pageIndex === documentPages.length - 1 }"
+                        :disabled="pageIndex === documentPages.length - 1"
+                        aria-label="Mover página hacia abajo"
+                        @click.stop.prevent="moveDocumentPage(documentPage.id, 1)"
+                      >
+                        <Icon icon="ph:arrow-down" class="h-4 w-4" />
+                      </button>
+                    </span>
+                    <span class="tooltip tooltip-bottom" data-tip="Duplicar página">
+                      <button type="button" class="btn btn-ghost btn-xs" aria-label="Duplicar página" @click.stop.prevent="duplicateDocumentPage(documentPage.id)">
+                        <Icon icon="ph:copy-simple" class="h-4 w-4" />
+                      </button>
+                    </span>
+                    <span class="tooltip tooltip-bottom" data-tip="Nueva página">
+                      <button type="button" class="btn btn-ghost btn-xs" aria-label="Nueva página" @click.stop.prevent="addDocumentPage({ afterPageId: documentPage.id })">
+                        <Icon icon="ph:file-plus" class="h-4 w-4" />
+                      </button>
+                    </span>
+                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom" data-tip="Eliminar página">
+                      <button type="button" class="btn btn-ghost btn-xs text-error" aria-label="Eliminar página" @click.stop.prevent="deleteDocumentPage(documentPage.id)">
+                        <Icon icon="ph:trash" class="h-4 w-4" />
+                      </button>
+                    </span>
                   </div>
                 </div>
 
