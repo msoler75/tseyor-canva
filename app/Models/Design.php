@@ -60,9 +60,16 @@ class Design extends Model
      */
     public function setStateAttribute($value): void
     {
-        $this->attributes['state'] = $this->castAttribute('state', $value);
+        // El cast 'array' ya convierte el JSON a array automáticamente,
+        // pero en el mutator recibimos el valor crudo. Lo normalizamos.
+        if (is_string($value)) {
+            $decoded = json_decode($value, true) ?? [];
+        } else {
+            $decoded = $value ?? [];
+        }
 
-        $decoded = is_array($value) ? $value : json_decode($value ?? '[]', true);
+        $this->attributes['state'] = is_string($value) ? $value : json_encode($decoded);
+
         $pages = $decoded['pages'] ?? [];
         $this->attributes['pages_count'] = is_array($pages) && count($pages) > 0 ? count($pages) : 1;
     }
