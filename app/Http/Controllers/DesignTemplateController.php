@@ -29,7 +29,7 @@ class DesignTemplateController extends Controller
         abort_unless($this->isAdmin($user), 403);
 
         $templates = DesignTemplate::query()
-            ->with('baseDesign:id,uuid,thumbnail_path,updated_at,name')
+            ->with('baseDesign:id,uuid,thumbnail_path,updated_at,pages_count')
             ->orderByDesc('featured')
             ->orderBy('sort_order')
             ->orderBy('title')
@@ -46,7 +46,7 @@ class DesignTemplateController extends Controller
         $includeDrafts = $this->isAdmin($request->user()) && $request->boolean('includeDrafts');
 
         $templates = DesignTemplate::query()
-            ->with('baseDesign:id,uuid,thumbnail_path,updated_at')
+            ->with('baseDesign:id,uuid,thumbnail_path,updated_at,pages_count')
             ->when(! $includeDrafts, fn ($query) => $query->where('status', 'published'))
             ->orderByDesc('featured')
             ->orderBy('sort_order')
@@ -297,6 +297,7 @@ class DesignTemplateController extends Controller
             'featured' => $template->featured,
             'sort_order' => $template->sort_order,
             'base_design_uuid' => $template->baseDesign?->uuid,
+            'base_pages_count' => $template->baseDesign?->pages_count ?? 1,
             'thumbnail_url' => $template->baseDesign?->thumbnail_path
                 ? $this->versionedThumbnailRoute(
                     $template->baseDesign->thumbnail_path,

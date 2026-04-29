@@ -29,6 +29,7 @@ class Design extends Model
         'selected_template_id',
         'thumbnail_path',
         'state',
+        'pages_count',
         'status',
         'last_opened_at',
         'public',
@@ -52,6 +53,18 @@ class Design extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Mutator: al asignar state, sincroniza pages_count.
+     */
+    public function setStateAttribute($value): void
+    {
+        $this->attributes['state'] = $this->castAttribute('state', $value);
+
+        $decoded = is_array($value) ? $value : json_decode($value ?? '[]', true);
+        $pages = $decoded['pages'] ?? [];
+        $this->attributes['pages_count'] = is_array($pages) && count($pages) > 0 ? count($pages) : 1;
     }
 
     public function selectedTemplate(): BelongsTo

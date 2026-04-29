@@ -96,6 +96,12 @@ const availableTemplateFilters = computed(() => {
   });
   return Array.from(categories);
 });
+const currentDesignPageCount = computed(() => {
+  if (state.pages?.length > 0) return state.pages.length;
+  const format = state.format;
+  if (format === 'diptych' || format === 'triptych' || format === 'brochure') return 2;
+  return 1;
+});
 const filteredTemplates = computed(() => {
   if (!availableTemplates.value.length) return [];
   return availableTemplates.value.filter((item) => {
@@ -108,6 +114,11 @@ const filteredTemplates = computed(() => {
       || objectiveIds.includes('generic')
       || !state.objective
       || objectiveIds.includes(state.objective);
+
+    if (currentDesignPageCount.value === 1) {
+      const tplPages = item.base_pages_count ?? 1;
+      return matchesCategory && matchesObjective && tplPages <= 1;
+    }
 
     return matchesCategory && matchesObjective;
   });

@@ -50,3 +50,8 @@ Thumbs.db
 storage/app/public/thumbnails/*
 storage/app/public/users/*
 public/fontsx/*
+.agents
+.claude
+.continue
+.kilocode
+.qwen
