@@ -3480,9 +3480,11 @@ const syncLinkedFieldText = (fieldKey, text) => {
     if (element?.fieldKey !== fieldKey || !state.elementLayout[elementId]) return;
     element.text = text;
     state.elementLayout[elementId].text = text;
+    recalculateTextHeight(elementId);
   });
   if (state.elementLayout[fieldKey]) {
     state.elementLayout[fieldKey].text = text;
+    recalculateTextHeight(fieldKey);
   }
 };
 
@@ -3544,6 +3546,7 @@ const onRichEditorTextUpdate = (id, newText) => {
 
   if (linkedFieldKey) {
     updateLinkedContentField(linkedFieldKey, normalizedText);
+    recalculateTextHeight(id);
     return;
   }
 
@@ -3553,9 +3556,11 @@ const onRichEditorTextUpdate = (id, newText) => {
         case 'contact':
         case 'extra':
       updateLinkedContentField(id, normalizedText);
+      recalculateTextHeight(id);
             break;
         case 'meta': {
             updateLinkedContentField('meta', normalizedText);
+            recalculateTextHeight(id);
             break;
         }
         default:
@@ -3564,7 +3569,18 @@ const onRichEditorTextUpdate = (id, newText) => {
           }
           if (state.elementLayout[id] && typeof state.elementLayout[id] === 'object') {
             state.elementLayout[id].text = normalizedText;
+            recalculateTextHeight(id);
     }
+  }
+};
+
+const recalculateTextHeight = (id) => {
+  const layout = state.elementLayout[id];
+  if (!layout || !isTextElement(id)) return;
+  const text = getElementText(id);
+  const estimatedHeight = getEstimatedTextHeight(layout, text);
+  if (estimatedHeight > 0) {
+    layout.h = estimatedHeight;
   }
 };
 
@@ -3736,6 +3752,9 @@ const commitTextEdit = () => {
     if (editorRef?.getParagraphStyles) {
       onRichEditorStylesUpdate(id, editorRef.getParagraphStyles());
     }
+
+    // Recalcular altura al finalizar la edición
+    recalculateTextHeight(id);
 
     paragraphSelection.start = selectedParagraphIndex.value;
     paragraphSelection.end = selectedParagraphIndex.value;
