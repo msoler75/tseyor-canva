@@ -490,17 +490,17 @@ export const useEditorInteractions = ({
 
         if (handle === 'n-width' || handle === 's-width') {
           if (handle === 's-width') {
-            nextH = clamp(Math.round(snapshot.h + deltaY), minSize, boundsHeight - 8);
+            nextH = Math.max(minSize, Math.round(snapshot.h + deltaY));
           } else {
-            nextH = clamp(Math.round(snapshot.h - deltaY), minSize, boundsHeight - 8);
+            nextH = Math.max(minSize, Math.round(snapshot.h - deltaY));
             nextY = snapshot.y + (snapshot.h - nextH);
           }
         } else {
           if (handle.includes('e')) {
-            nextW = clamp(Math.round(snapshot.w + deltaX), minSize, boundsWidth - 8);
+            nextW = Math.max(minSize, Math.round(snapshot.w + deltaX));
           }
           if (handle.includes('w')) {
-            nextW = clamp(Math.round(snapshot.w - deltaX), minSize, boundsWidth - 8);
+            nextW = Math.max(minSize, Math.round(snapshot.w - deltaX));
             nextX = snapshot.x + (snapshot.w - nextW);
           }
         }
@@ -510,16 +510,16 @@ export const useEditorInteractions = ({
           nextY = snapshot.y;
         } else if (handle !== 'n-width' && handle !== 's-width') {
           if (handle.includes('s')) {
-            nextH = clamp(Math.round(snapshot.h + deltaY), minSize, boundsHeight - 8);
+            nextH = Math.max(minSize, Math.round(snapshot.h + deltaY));
           }
           if (handle.includes('n')) {
-            nextH = clamp(Math.round(snapshot.h - deltaY), minSize, boundsHeight - 8);
+            nextH = Math.max(minSize, Math.round(snapshot.h - deltaY));
             nextY = snapshot.y + (snapshot.h - nextH);
           }
         }
 
-        nextX = clamp(Math.round(nextX), 0, Math.max(0, boundsWidth - nextW - 8));
-        nextY = clamp(Math.round(nextY), 18, Math.max(18, boundsHeight - nextH - 8));
+        nextX = Math.round(nextX);
+        nextY = Math.round(nextY);
 
         const sx = nextW / Math.max(1, snapshot.w);
         const sy = nextH / Math.max(1, snapshot.h);
@@ -624,33 +624,33 @@ export const useEditorInteractions = ({
 
         if (isVerticalBarHandle) {
           const verticalDelta = handle === 's-width' ? deltaY : -deltaY;
-          const nextHeight = clamp(Math.round(currentHeight + verticalDelta), minHeight, 460);
+          const nextHeight = Math.max(minHeight, Math.round(currentHeight + verticalDelta));
           layout.h = nextHeight;
 
           if (handle === 'n-width') {
-            layout.y = Math.round(clamp(drag.startY + (currentHeight - nextHeight), 18, Math.max(18, boundsHeight - nextHeight - 8)));
+            layout.y = Math.round(drag.startY + (currentHeight - nextHeight));
           } else {
-            layout.y = Math.round(clamp(drag.startY, 18, Math.max(18, boundsHeight - nextHeight - 8)));
+            layout.y = Math.round(drag.startY);
           }
           return;
         }
 
         if (isSideHandle) {
-          const nextWidth = clamp(Math.round(drag.startW + horizontalDelta), minWidth, 460);
+          const nextWidth = Math.max(minWidth, Math.round(drag.startW + horizontalDelta));
           layout.w = nextWidth;
 
           if (handle === 'w') {
-            layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, boundsWidth - nextWidth - 8)));
+            layout.x = Math.round(drag.startX + (drag.startW - nextWidth));
           } else {
-            layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, boundsWidth - nextWidth - 8)));
+            layout.x = Math.round(drag.startX);
           }
 
           return;
         }
 
         const verticalDelta = handle.includes('s') ? deltaY : -deltaY;
-        let nextWidth = clamp(Math.round(drag.startW + horizontalDelta), minWidth, 460);
-        let nextHeight = clamp(Math.round(currentHeight + verticalDelta), minHeight, 460);
+        let nextWidth = Math.max(minWidth, Math.round(drag.startW + horizontalDelta));
+        let nextHeight = Math.max(minHeight, Math.round(currentHeight + verticalDelta));
 
         if (isAspectLockedResizeElement(drag.elementId)) {
           const startW = Math.max(1, drag.startW);
@@ -658,56 +658,56 @@ export const useEditorInteractions = ({
           const widthScale = (drag.startW + horizontalDelta) / startW;
           const heightScale = (currentHeight + verticalDelta) / startH;
           const scale = Math.abs(widthScale - 1) >= Math.abs(heightScale - 1) ? widthScale : heightScale;
-          nextWidth = clamp(Math.round(startW * scale), minWidth, 460);
-          nextHeight = clamp(Math.round(startH * scale), minHeight, 460);
+          nextWidth = Math.max(minWidth, Math.round(startW * scale));
+          nextHeight = Math.max(minHeight, Math.round(startH * scale));
         }
 
         layout.w = nextWidth;
         layout.h = nextHeight;
 
         if (handle.includes('w')) {
-          layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, boundsWidth - nextWidth - 8)));
+          layout.x = Math.round(drag.startX + (drag.startW - nextWidth));
         } else {
-          layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, boundsWidth - nextWidth - 8)));
+          layout.x = Math.round(drag.startX);
         }
         if (handle.includes('n')) {
-          layout.y = Math.round(clamp(drag.startY + (currentHeight - nextHeight), 18, Math.max(18, boundsHeight - nextHeight - 8)));
+          layout.y = Math.round(drag.startY + (currentHeight - nextHeight));
         } else {
-          layout.y = Math.round(clamp(drag.startY, 18, Math.max(18, boundsHeight - nextHeight - 8)));
+          layout.y = Math.round(drag.startY);
         }
 
         return;
       }
 
       if (isSideHandle) {
-        const nextWidth = clamp(Math.round(drag.startW + horizontalDelta), 120, maxTextWidth);
+        const nextWidth = Math.max(120, Math.round(drag.startW + horizontalDelta));
         layout.w = nextWidth;
 
         if (handle === 'w') {
-          layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, boundsWidth - nextWidth - 8)));
+          layout.x = Math.round(drag.startX + (drag.startW - nextWidth));
         } else {
-          layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, boundsWidth - nextWidth - 8)));
+          layout.x = Math.round(drag.startX);
         }
 
         return;
       }
 
       const widthDelta = horizontalDelta + (deltaY * 0.35);
-      const nextWidth = clamp(Math.round(drag.startW + widthDelta), 120, maxTextWidth);
+      const nextWidth = Math.max(120, Math.round(drag.startW + widthDelta));
       const scale = nextWidth / Math.max(drag.startW, 1);
 
       layout.w = nextWidth;
-      layout.fontSize = clamp(Math.round(drag.startFontSize * scale), 14, 72);
+      layout.fontSize = Math.max(14, Math.round(drag.startFontSize * scale));
       layout.paragraphStyles = (drag.startParagraphStyles?.length ? drag.startParagraphStyles : ensureParagraphStyles(layout, getElementText(drag.elementId)).map((style) => ({ ...style })))
         .map((style) => ({
           ...style,
-          fontSize: clamp(Math.round((style.fontSize ?? drag.startFontSize) * scale), 8, 200),
+          fontSize: Math.max(8, Math.round((style.fontSize ?? drag.startFontSize) * scale)),
         }));
 
-      if (handle.includes('w')) layout.x = Math.round(clamp(drag.startX + (drag.startW - nextWidth), 0, Math.max(0, boundsWidth - nextWidth - 8)));
-      else layout.x = Math.round(clamp(drag.startX, 0, Math.max(0, boundsWidth - nextWidth - 8)));
+      if (handle.includes('w')) layout.x = Math.round(drag.startX + (drag.startW - nextWidth));
+      else layout.x = Math.round(drag.startX);
 
-      if (handle.includes('n')) layout.y = Math.round(clamp(drag.startY - ((layout.fontSize - drag.startFontSize) * 0.6), 18, Math.max(18, boundsHeight - 44)));
+      if (handle.includes('n')) layout.y = Math.round(drag.startY - ((layout.fontSize - drag.startFontSize) * 0.6));
       return;
     }
 
