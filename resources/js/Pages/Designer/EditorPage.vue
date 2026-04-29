@@ -105,7 +105,6 @@ const documentPageList = ref([]);
 const documentPageRefs = new Map();
 const copiedElements = ref([]);
 const visuallyFocusedPageId = ref(null);
-let pasteOffsetStep = 0;
 let visiblePageFrame = null;
 const refreshDocumentPageList = () => {
   documentPageList.value = clonePlain(state.pages ?? []);
@@ -325,17 +324,39 @@ const deleteDocumentPage = async (pageId) => {
   if (state.pages.length <= minimumDocumentPageCount()) return;
   const pageIndex = state.pages.findIndex((page) => page.id === pageId);
   if (pageIndex === -1) return;
+
+  try {
+    commitTextEdit();
+  } catch (_) {
+    // no-op
+  }
+
+  if (state.pages.some((page) => page.id === state.activePageId)) {
+    syncActivePageSnapshot();
+  }
+
   const deleteStart = isBrochureDocument() ? Math.floor(pageIndex / 2) * 2 : pageIndex;
   const deleteCount = isBrochureDocument() ? Math.min(2, state.pages.length - deleteStart) : 1;
   const deletedIds = state.pages.slice(deleteStart, deleteStart + deleteCount).map((page) => page.id);
-  const nextPage = state.pages[deleteStart + deleteCount] ?? state.pages[deleteStart - 1];
   state.pages.splice(deleteStart, deleteCount);
   normalizeBrochurePages(state);
+  const nextPage = state.pages[Math.min(deleteStart, state.pages.length - 1)] ?? state.pages[deleteStart - 1] ?? state.pages[0];
+  if (!state.pages.length || !nextPage) return;
+
+  if (deletedIds.includes(state.activePageId)) {
+    state.activePageId = nextPage.id;
+    state.content = clonePlain(nextPage.content);
+    state.elementLayout = clonePlain(nextPage.elementLayout);
+    state.customElements = clonePlain(nextPage.customElements);
+    state.selectedElementId = 'background';
+    multiSelectionIds.value = [];
+    selectedGroupId.value = null;
+    editingElementId.value = null;
+  }
+
   refreshDocumentPageList();
   documentRevision.value += 1;
-  if (deletedIds.includes(state.activePageId)) {
-    await switchToPage(nextPage?.id ?? state.pages[0]?.id);
-  }
+  await nextTick();
   flushDesignerStateWithThumbnail();
 };
 ensureDocumentPages(true);
@@ -354,23 +375,43 @@ const pageSurfaceRect = (pageId) => {
   const node = documentPageRefs.get(pageId);
   return node?.querySelector?.('[data-page-surface="true"], [data-editor-canvas="true"]')?.getBoundingClientRect?.() ?? null;
 };
-const transferElementsToPage = async (elementIds, targetPageId, event, pointerOffset = null) => {
+const boundsFromLayoutSnapshots = (snapshots) => {
+  if (!snapshots.length) return null;
+
+  const rects = snapshots.map(({ layout }) => ({
+    x: Number(layout.x ?? 0),
+    y: Number(layout.y ?? 0),
+    w: Number(layout.w ?? 120),
+    h: Number(layout.h ?? layout.fontSize ?? 44),
+  }));
+  const minX = Math.min(...rects.map((rect) => rect.x));
+  const minY = Math.min(...rects.map((rect) => rect.y));
+  const maxX = Math.max(...rects.map((rect) => rect.x + rect.w));
+  const maxY = Math.max(...rects.map((rect) => rect.y + rect.h));
+
+  return {
+    x: minX,
+    y: minY,
+    w: maxX - minX,
+    h: maxY - minY,
+  };
+};
+const transferElementsToPage = async (elementIds, targetPageId, event, pointerOffset = null, sourceSnapshotsOverride = null) => {
   const ids = [...new Set(elementIds)].filter((id) => id && state.elementLayout[id]);
   if (!ids.length || !targetPageId || targetPageId === state.activePageId) return false;
 
   const targetPage = state.pages.find((page) => page.id === targetPageId);
   if (!targetPage) return false;
 
-  const sourceSnapshots = ids.map((id) => ({
-    id,
-    layout: clonePlain(state.elementLayout[id]),
-    customElement: clonePlain(state.customElements?.[id] ?? null),
-  }));
-  const bounds = getSelectionBounds(ids);
+  const sourceSnapshots = sourceSnapshotsOverride ?? ids.map((id) => ({
+      id,
+      layout: clonePlain(state.elementLayout[id]),
+      customElement: clonePlain(state.customElements?.[id] ?? null),
+    }));
+  const bounds = boundsFromLayoutSnapshots(sourceSnapshots);
   const surfaceRect = pageSurfaceRect(targetPageId);
 
-  syncActivePageSnapshot();
-  targetPage.content = clonePlain(state.content ?? initialDesignerState.content);
+  targetPage.content = clonePlain(targetPage.content ?? initialDesignerState.content);
   targetPage.elementLayout = clonePlain(targetPage.elementLayout ?? createBlankElementLayout());
   targetPage.customElements = clonePlain(targetPage.customElements ?? {});
 
@@ -392,7 +433,6 @@ const transferElementsToPage = async (elementIds, targetPageId, event, pointerOf
       x: Math.round((layout.x ?? 0) + dx),
       y: Math.round((layout.y ?? 0) + dy),
     };
-    placeInsideCanvas(nextLayout);
     targetPage.elementLayout[id] = nextLayout;
     if (customElement) {
       targetPage.customElements[id] = customElement;
@@ -947,6 +987,7 @@ const documentPages = computed(() => {
   return documentPageList.value;
 });
 const hasMultiplePages = computed(() => documentPages.value.length > 1);
+const canDeleteDocumentPage = computed(() => documentPages.value.length > minimumDocumentPageCount());
 const physicalPageLabel = (pageIndex) => (
   isBrochureDocument()
     ? `Página física ${pageIndex + 1} · folleto ${brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length).join('-')}`
@@ -3212,7 +3253,6 @@ const cloneElementsByIds = (ids) => {
     if (!snapshots.length) return false;
 
     copiedElements.value = snapshots;
-    pasteOffsetStep = 0;
     return true;
   };
 
@@ -3223,15 +3263,14 @@ const cloneElementsByIds = (ids) => {
     }
 
     activateVisibleDocumentPage();
-    pasteOffsetStep += 1;
     const pastedIds = [];
 
     copiedElements.value.forEach(({ element, layout }) => {
       const cloneId = createElementId(element.type || 'element');
       const cloneLayout = {
         ...clonePlain(layout),
-        x: (layout.x ?? 0) + (18 * pasteOffsetStep),
-        y: (layout.y ?? 0) + (18 * pasteOffsetStep),
+        x: layout.x ?? 0,
+        y: layout.y ?? 0,
         zIndex: getMaxZIndex() + 10,
         paragraphStyles: Array.isArray(layout.paragraphStyles)
           ? layout.paragraphStyles.map((style) => ({ ...style }))
@@ -3626,7 +3665,25 @@ const handleDocumentPointerEnd = async (event) => {
     ? [...multiSelectionIds.value]
     : (drag.active && drag.elementId ? [drag.elementId] : []);
   const wasMoveDrag = drag.active && ['move', 'multi'].includes(drag.mode);
-  const sourceBounds = wasMoveDrag ? getSelectionBounds(draggedIds) : null;
+  const sourceSnapshots = wasMoveDrag
+    ? draggedIds
+        .map((id) => {
+          const currentLayout = state.elementLayout[id];
+          if (!currentLayout) return null;
+          const multiStart = drag.multiSnapshot?.find((item) => item.id === id);
+          return {
+            id,
+            layout: {
+              ...clonePlain(currentLayout),
+              x: multiStart?.startX ?? (id === drag.elementId ? drag.startX : currentLayout.x),
+              y: multiStart?.startY ?? (id === drag.elementId ? drag.startY : currentLayout.y),
+            },
+            customElement: clonePlain(state.customElements?.[id] ?? null),
+          };
+        })
+        .filter(Boolean)
+    : [];
+  const sourceBounds = boundsFromLayoutSnapshots(sourceSnapshots);
   const sourceSurfaceRect = wasMoveDrag ? pageSurfaceRect(state.activePageId) : null;
   const pointerOffset = sourceBounds && sourceSurfaceRect
     ? {
@@ -3638,8 +3695,8 @@ const handleDocumentPointerEnd = async (event) => {
 
   endDrag(event);
 
-  if (wasMoveDrag && targetPageId && targetPageId !== state.activePageId) {
-    await transferElementsToPage(draggedIds, targetPageId, event, pointerOffset);
+  if (wasMoveDrag && targetPageId && targetPageId !== state.activePageId && sourceSnapshots.length) {
+    await transferElementsToPage(draggedIds, targetPageId, event, pointerOffset, sourceSnapshots);
   }
 };
 
@@ -4686,8 +4743,8 @@ watch(
                 <div
                   class="absolute top-0 left-1/2 origin-top rounded-[28px] transition-shadow"
                   :class="[
-                    visuallyFocusedPageId === documentPage.id ? 'outline outline-4 outline-primary/70 outline-offset-[10px]' : '',
                     drag.active && documentPage.id === state.activePageId ? 'z-[90]' : 'z-10',
+                    'shadow',
                   ]"
                   :style="pageChromeStyle"
                 >
@@ -4728,8 +4785,17 @@ watch(
                         <Icon icon="ph:file-plus" class="h-4 w-4" />
                       </button>
                     </span>
-                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom" :data-tip="deletePageTip">
-                      <button type="button" class="btn btn-ghost btn-xs text-error" aria-label="Eliminar página" @click.stop.prevent="deleteDocumentPage(documentPage.id)">
+                    <span
+                      v-if="canDeleteDocumentPage"
+                      class="tooltip tooltip-bottom"
+                      :data-tip="deletePageTip"
+                    >
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-error"
+                        aria-label="Eliminar página"
+                        @click.stop.prevent="deleteDocumentPage(documentPage.id)"
+                      >
                         <Icon icon="ph:trash" class="h-4 w-4" />
                       </button>
                     </span>
@@ -4753,6 +4819,7 @@ watch(
                   :drag="drag"
                   :file-drag-active="fileDragActive"
                   :background-drop-preview="backgroundDropPreview"
+                  :active-page="documentPage.id === state.activePageId"
                   :editing-element-id="editingElementId"
                   :state="state"
                   :element-box-style="elementBoxStyle"

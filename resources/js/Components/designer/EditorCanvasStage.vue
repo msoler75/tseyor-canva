@@ -35,6 +35,7 @@ const props = defineProps({
   templateMode: Boolean,
   templateWatermark: String,
   showFieldLabels: Boolean,
+  activePage: Boolean,
   canvasRefSetter: Function,
   richEditorRefSetter: Function,
 });
@@ -78,7 +79,14 @@ const foldGuidePositions = computed(() => foldGuidePositionsForFormat(props.stat
         </span>
       </div>
     </div>
-    <div class="relative z-10 mx-auto shadow-2xl" :style="[canvasFrameStyle, canvasZoomStyle]" :class="isBackgroundSelected ? 'ring-2 ring-primary' : ''">
+    <div
+      class="relative z-10 mx-auto shadow-2xl"
+      :style="[canvasFrameStyle, canvasZoomStyle]"
+      :class="[
+        isBackgroundSelected ? 'ring-2 ring-primary' : '',
+        activePage ? 'outline outline-4 outline-primary/70 outline-offset-4' : '',
+      ]"
+    >
       <div
         :ref="canvasRefSetter"
         data-editor-canvas="true"
