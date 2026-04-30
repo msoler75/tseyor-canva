@@ -64,9 +64,8 @@ export const useEditorSelection = ({
     const bounds = ids.map((id) => {
       const layout = state.elementLayout[id];
       if (!layout) return null;
-      const measured = elementMeasurements[id] ?? null;
-      const width = measured?.width ?? layout.w ?? 0;
-      const height = measured?.height ?? layout.h ?? 44;
+      const width = layout.w ?? elementMeasurements[id]?.width ?? 0;
+      const height = layout.h ?? elementMeasurements[id]?.height ?? 44;
       return {
         left: layout.x,
         top: layout.y,

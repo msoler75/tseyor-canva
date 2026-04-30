@@ -1,4 +1,5 @@
 import { computed, nextTick } from 'vue';
+import { useAlignmentGuides } from './useAlignmentGuides';
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -48,7 +49,16 @@ export const useEditorInteractions = ({
   isLinkedTextElement,
   isAspectLockedResizeElement,
   applyParagraphStyleField,
+  recalculateTextHeight,
+  activeSelectionIds,
 }) => {
+  const alignmentGuides = useAlignmentGuides({
+    state,
+    canvasRef,
+    getCanvasBounds,
+    getSelectionBounds,
+    activeSelectionIds,
+  });
   let longPressTimer = null;
 
   const clearLongPress = () => {
@@ -465,17 +475,21 @@ export const useEditorInteractions = ({
         const shiftX = nextX - group.layout.x;
         const shiftY = nextY - group.layout.y;
 
-        group.layout.x = nextX;
-        group.layout.y = nextY;
-        group.elementIds.forEach((id) => {
-          const memberLayout = state.elementLayout[id];
-          if (!memberLayout) return;
-          memberLayout.x = Math.round((memberLayout.x ?? 0) + shiftX);
-          memberLayout.y = Math.round((memberLayout.y ?? 0) + shiftY);
-        });
-        if (event.cancelable) event.preventDefault();
-        return;
+      group.layout.x = nextX;
+      group.layout.y = nextY;
+      group.elementIds.forEach((id) => {
+        const memberLayout = state.elementLayout[id];
+        if (!memberLayout) return;
+        memberLayout.x = Math.round((memberLayout.x ?? 0) + shiftX);
+        memberLayout.y = Math.round((memberLayout.y ?? 0) + shiftY);
+      });
+      if (event.cancelable) event.preventDefault();
+      const dragBounds = getSelectionBounds(activeSelectionIds?.value ?? []);
+      if (dragBounds) {
+        alignmentGuides.updateGuides(dragBounds);
       }
+      return;
+    }
 
       if (drag.mode === 'resize') {
         if (event.cancelable) event.preventDefault();
@@ -706,6 +720,8 @@ export const useEditorInteractions = ({
           fontSize: Math.max(8, Math.round((style.fontSize ?? drag.startFontSize) * scale)),
         }));
 
+      recalculateTextHeight(drag.elementId);
+
       if (handle.includes('w')) layout.x = Math.round(drag.startX + (drag.startW - nextWidth));
       else layout.x = Math.round(drag.startX);
 
@@ -724,6 +740,10 @@ export const useEditorInteractions = ({
         l.y = Math.round(startY + deltaY);
       });
       if (event.cancelable) event.preventDefault();
+      const dragBounds = getSelectionBounds(activeSelectionIds?.value ?? []);
+      if (dragBounds) {
+        alignmentGuides.updateGuides(dragBounds);
+      }
       return;
     }
 
@@ -732,6 +752,11 @@ export const useEditorInteractions = ({
     layout.x = Math.round(drag.startX + deltaX);
     layout.y = Math.round(drag.startY + deltaY);
     if (event.cancelable) event.preventDefault();
+    const ids = activeSelectionIds?.value?.length ? activeSelectionIds.value : [drag.elementId];
+    const dragBounds = getSelectionBounds(ids);
+    if (dragBounds) {
+      alignmentGuides.updateGuides(dragBounds);
+    }
   };
 
   const endDrag = (event) => {
@@ -783,6 +808,7 @@ export const useEditorInteractions = ({
     if (wasDragging) {
       suppressElementClickUntil.value = Date.now() + 250;
     }
+    alignmentGuides.clearGuides();
     setDragDocumentState(false);
   };
 
@@ -899,5 +925,6 @@ export const useEditorInteractions = ({
     handleCanvasPointerDown,
     handleGlobalPointerDown,
     handleGlobalKeydown,
+    guides: alignmentGuides.guides,
   };
 };

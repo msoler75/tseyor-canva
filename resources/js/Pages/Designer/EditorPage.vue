@@ -215,7 +215,7 @@ const syncActivePageSnapshot = () => {
   state.pages[activeIndex] = clonePageFromState(state.activePageId);
   refreshDocumentPageList();
 };
-const switchToPage = async (pageId) => {
+const switchToPage = async (pageId, { isUserAction = true } = {}) => {
   if (pageId === state.activePageId) return;
   try {
     commitTextEdit();
@@ -225,6 +225,9 @@ const switchToPage = async (pageId) => {
   syncActivePageSnapshot();
   const target = state.pages.find((page) => page.id === pageId);
   if (!target) return;
+  if (isUserAction) {
+    userSelectedPage = true;
+  }
   state.activePageId = target.id;
   state.content = clonePlain(target.content);
   state.elementLayout = clonePlain(target.elementLayout);
@@ -243,13 +246,16 @@ const setDocumentPageRef = (pageId, element) => {
     documentPageRefs.delete(pageId);
   }
 };
+let userSelectedPage = false;
+
 const resolveMostVisiblePageId = () => {
   const firstNode = documentPageRefs.values().next().value;
   const scrollContainer = firstNode?.closest?.('.canvas-grid') ?? null;
   const viewport = scrollContainer?.getBoundingClientRect?.();
   if (!viewport) return null;
 
-  const viewportCenter = viewport.top + viewport.height / 2;
+  const viewportHeight = viewport.height;
+  const viewportCenter = viewport.top + viewportHeight / 2;
   let best = { id: null, score: Number.POSITIVE_INFINITY };
 
   documentPages.value.forEach((page) => {
@@ -260,21 +266,40 @@ const resolveMostVisiblePageId = () => {
     if (visibleHeight <= 0) return;
     const centerDistance = Math.abs((rect.top + rect.height / 2) - viewportCenter);
     if (centerDistance < best.score) {
-      best = { id: page.id, score: centerDistance };
+      best = { id: page.id, score: centerDistance, visibleRatio: visibleHeight / rect.height };
     }
   });
 
-  return best.id;
+  return best;
 };
 const updateVisuallyFocusedPage = () => {
-  visuallyFocusedPageId.value = resolveMostVisiblePageId() ?? state.activePageId;
+  const mostVisible = resolveMostVisiblePageId();
+  visuallyFocusedPageId.value = mostVisible?.id ?? state.activePageId;
 };
-const activateVisibleDocumentPage = () => {};
+const activateVisibleDocumentPage = () => {
+  if (userSelectedPage && state.activePageId) {
+    const node = documentPageRefs.get(state.activePageId);
+    const scrollContainer = node?.closest?.('.canvas-grid') ?? null;
+    const viewport = scrollContainer?.getBoundingClientRect?.();
+    if (viewport) {
+      const rect = node.getBoundingClientRect();
+      const visibleHeight = Math.max(0, Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top));
+      const visibleRatio = visibleHeight / rect.height;
+      if (visibleRatio >= 0.75) return;
+    }
+    userSelectedPage = false;
+  }
+  const mostVisible = resolveMostVisiblePageId();
+  if (mostVisible?.id && mostVisible.id !== state.activePageId) {
+    switchToPage(mostVisible.id, { isUserAction: false });
+  }
+};
 const handleDocumentPagesScroll = () => {
   if (visiblePageFrame !== null) return;
   visiblePageFrame = requestAnimationFrame(() => {
     visiblePageFrame = null;
     updateVisuallyFocusedPage();
+    activateVisibleDocumentPage();
   });
 };
 const addDocumentPage = async ({ afterPageId = state.activePageId, duplicate = false } = {}) => {
@@ -2447,14 +2472,7 @@ const generateThumbnailAndThen = (cb) => {
     await nextTick();
     setTimeout(async () => {
       if (!canvasRef.value) return;
-      const originalPageId = state.activePageId;
-      const firstPageId = Array.isArray(state.pages) && state.pages.length ? state.pages[0].id : originalPageId;
       try {
-        if (firstPageId && firstPageId !== state.activePageId) {
-          syncActivePageSnapshot();
-          await switchToPage(firstPageId);
-          await nextTick();
-        }
         const { toJpegExport } = await import('../../utils/useHtml2Image');
         const dataUrl = await toJpegExport(canvasRef.value, {
           quality: 0.6,
@@ -2467,11 +2485,8 @@ const generateThumbnailAndThen = (cb) => {
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         setDesignerThumbnailDataUrl(dataUrl, hashHex);
       } catch (error) {
-        // Aun con error, intentar guardar tras restaurar la pagina activa.
+        // Error generando thumbnail
       } finally {
-        if (originalPageId && originalPageId !== state.activePageId) {
-          await switchToPage(originalPageId);
-        }
         if (typeof cb === 'function') {
           await cb();
         }
@@ -4032,6 +4047,7 @@ const {
   handleCanvasPointerDown,
   handleGlobalPointerDown,
   handleGlobalKeydown,
+  guides,
 } = useEditorInteractions({
   state,
   canvasRef,
@@ -4078,6 +4094,8 @@ const {
   isLinkedTextElement: (...args) => isLinkedTextElement(...args),
   isAspectLockedResizeElement: (...args) => isAspectLockedResizeElement(...args),
   applyParagraphStyleField: (...args) => applyParagraphStyleField(...args),
+  recalculateTextHeight: (...args) => recalculateTextHeight(...args),
+  activeSelectionIds,
 });
 
 const handleDocumentPointerEnd = async (event) => {
@@ -5355,6 +5373,17 @@ watch(
                       @reset-rotation="resetRotation"
                       @start-resize="startResize($event.event, $event.id, $event.handle)"
                     />
+                    <!-- Guías de alineación -->
+                    <div v-if="guides.length" class="pointer-events-none absolute inset-0 z-[5000]">
+                      <div
+                        v-for="(guide, index) in guides"
+                        :key="`guide-${index}`"
+                        class="absolute bg-primary/70"
+                        :style="guide.type === 'vertical'
+                          ? { left: `${guide.x}px`, top: `${guide.start}px`, width: '1px', height: `${guide.end - guide.start}px` }
+                          : { left: `${guide.start}px`, top: `${guide.y}px`, width: `${guide.end - guide.start}px`, height: '1px' }"
+                      ></div>
+                    </div>
                   </template>
                 </EditorCanvasStage>
 
