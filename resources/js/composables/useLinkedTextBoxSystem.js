@@ -75,74 +75,205 @@ export function createLinkedTextBoxSystem() {
     return chain;
   }
 
-  /**
-   * Redistribuir texto completo entre todas las cajas de una cadena
-   * Enfoque: Fragmentar por palabras usando medición del navegador
-   */
-  const redistribute = (groupId, fullHtml, chainLayouts, containerStyle = {}) => {
-    const system = systemsMap.get(groupId);
-    if (!system) return;
+   /**
+    * Redistribuir texto completo entre todas las cajas de una cadena
+    * Enfoque: Fragmentar por palabras usando medición del navegador
+    * Procesa las cajas en secuencia, cada caja muestra lo que cabe y el overflow
+    * pasa a la siguiente caja.
+    */
+   const redistribute = (groupId, fullHtml, chainLayouts, containerStyle = {}) => {
+     const system = systemsMap.get(groupId);
+     if (!system) return;
 
-    system.fullHtml = fullHtml;
-    system.fragments = {};
+     system.fullHtml = fullHtml;
+     system.fragments = {};
 
-    if (!chainLayouts || chainLayouts.length === 0) return;
-    if (!fullHtml || fullHtml.trim() === '') return;
+     if (!chainLayouts || chainLayouts.length === 0) return;
+     if (!fullHtml || fullHtml.trim() === '') {
+       // Texto vacío: todas las cajas vacías
+       chainLayouts.forEach(layout => {
+         system.fragments[layout.id] = { html: '', overflowHtml: '', fitsInBox: true };
+       });
+       return;
+     }
 
-    const frontendLog = useFrontendLog();
+     const frontendLog = useFrontendLog();
 
-    // Parsear el HTML en párrafos con estilos
-    const paragraphs = parseHtmlIntoParagraphs(fullHtml);
+     // Parsear el HTML en párrafos con estilos
+     const paragraphs = parseHtmlIntoParagraphs(fullHtml);
 
-    // Log de párrafos parseados
-    frontendLog.info('parseHtml',
-      `HTML parseado en ${paragraphs.length} párrafos`,
-      {
-        groupId,
-        inputHtml: fullHtml.substring(0, 300),
-        paragraphs: paragraphs.map(p => ({
-          tag: p.tag,
-          style: p.style?.substring(0, 150),
-          wordsCount: p.words.length,
-          firstWords: p.words.slice(0, 3).join(' '),
-        })),
-      }
-    );
+     // Log de párrafos parseados
+     frontendLog.info('parseHtml',
+       `HTML parseado en ${paragraphs.length} párrafos`,
+       {
+         groupId,
+         inputHtml: fullHtml.substring(0, 300),
+         paragraphs: paragraphs.map(p => ({
+           tag: p.tag,
+           style: p.style?.substring(0, 150),
+           wordsCount: p.words.length,
+           firstWords: p.words.slice(0, 3).join(' '),
+         })),
+       }
+     );
 
-    // Distribuir palabras entre frames
-    const fragments = distributeWordsToFragments(paragraphs, chainLayouts, containerStyle);
+     // Convertir párrafos a lista plana de palabras con referencia a su párrafo original
+     const allWords = [];
+     for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+       const para = paragraphs[pIdx];
+       for (let wIdx = 0; wIdx < para.words.length; wIdx++) {
+         allWords.push({
+           word: para.words[wIdx],
+           paragraphIndex: pIdx,
+           paragraph: para // referencia al objeto párrafo original
+         });
+       }
+     }
+     const totalWords = allWords.length;
 
-    // Log de fragmentos generados
-    frontendLog.info('buildFragments',
-      `Generados ${fragments.length} fragmentos`,
-      {
-        groupId,
-        fragments: fragments.map((f, i) => ({
-          index: i,
-          html: f.html?.substring(0, 200),
-          htmlLength: f.html?.length || 0,
-          hasOverflow: !!f.overflowHtml,
-          fitsInBox: f.fitsInBox,
-        })),
-      }
-    );
+     // Crear UN solo div de medición (reutilizar)
+     let measureDiv = document.getElementById('measure');
+     if(!measureDiv) {
+        measureDiv = document.createElement("div")
+        measureDiv.id = 'measure'
+        measureDiv.style.position = 'absolute';
+        measureDiv.style.left = '-9999px';
+        measureDiv.style.visibility = 'hidden';
+        measureDiv.style.overflow = 'visible';
+        measureDiv.style.whiteSpace = 'pre-wrap';
+        measureDiv.style.wordBreak = 'break-word';
+        measureDiv.style.overflowWrap = 'break-word';
+        document.body.appendChild(measureDiv);
+     }
 
-    // Asignar HTML a cada caja
-    chainLayouts.forEach((layout, index) => {
-      if (index < fragments.length) {
-        system.fragments[layout.id] = {
-          html: fragments[index].html,
-          overflowHtml: fragments[index].overflowHtml || '',
-          fitsInBox: fragments[index].fitsInBox ?? true,
-        };
-      } else {
-        system.fragments[layout.id] = {
-          html: '',
-          overflowHtml: '',
-          fitsInBox: true,
-        };
-      }
-    });
+     // Función para aplicar estilos del contenedor al div de medición
+     const applyContainerStylesToMeasure = () => {
+       if (!containerStyle) return;
+       const criticalStyles = [
+         'fontSize', 'fontFamily', 'lineHeight', 'letterSpacing',
+         'wordSpacing', 'padding', 'fontWeight', 'fontStyle'
+       ];
+       criticalStyles.forEach(prop => {
+         if (containerStyle[prop]) {
+           measureDiv.style[prop] = containerStyle[prop];
+         }
+       });
+     };
+     applyContainerStylesToMeasure();
+
+     /**
+      * Construir HTML desde un slice de palabras (manteniendo estructura de párrafos)
+      * @param {Array} wordSlice Array de objetos {word, paragraphIndex, paragraph}
+      * @returns {string} HTML con párrafos adecuados
+      */
+     const buildHtmlFromWordSlice = (wordSlice) => {
+       if (!wordSlice || wordSlice.length === 0) return '';
+       // Agrupar palabras por párrafo original
+       const grouped = [];
+       let currentGroup = null;
+       for (const wObj of wordSlice) {
+         if (!currentGroup || currentGroup.paragraphIndex !== wObj.paragraphIndex) {
+           // Nuevo párrafo
+           currentGroup = {
+             paragraphIndex: wObj.paragraphIndex,
+             paragraph: wObj.paragraph,
+             words: [wObj.word]
+           };
+           grouped.push(currentGroup);
+         } else {
+           // Mismo párrafo
+           currentGroup.words.push(wObj.word);
+         }
+       }
+       // Construir HTML
+       return grouped.map(group => {
+         const para = group.paragraph;
+         const tag = para.tag || 'p';
+         const style = para.style || '';
+         const styleAttr = style ? ` style="${style}"` : '';
+         const text = group.words.join(' ');
+         return `<${tag}${styleAttr}>${text}</${tag}>`;
+       }).join('');
+     };
+
+     // Procesar cada caja en la cadena secuencialmente
+     let wordIdx = 0; // índice de la próxima palabra a colocar
+     chainLayouts.forEach((layout, boxIndex) => {
+       // Si ya no quedan palabras, la caja actual y las siguientes quedan vacías
+       if (wordIdx >= totalWords) {
+         system.fragments[layout.id] = {
+           html: '',
+           overflowHtml: '',
+           fitsInBox: true
+         };
+         return;
+       }
+
+       // Dimensiones disponibles de la caja (restando padding y botón de enlace)
+       const paddingVertical = 2;
+       const paddingHorizontal = 16;
+       const linkBtnWidth = 28;
+       const maxHeight = (layout.h || 120) - paddingVertical;
+       const maxWidth = (layout.w || 300) - paddingHorizontal - linkBtnWidth;
+
+       // Aplicar estilos del contenedor (puede variar por caja, pero usamos el mismo containerStyle global)
+       applyContainerStylesToMeasure();
+       measureDiv.style.width = `${maxWidth}px`;
+
+       // Búsqueda binaria para encontrar cuántas palabras caben en esta caja
+       let left = 0;
+       let right = totalWords - wordIdx;
+       let bestFit = 0;
+
+       while (left <= right) {
+         const mid = Math.floor((left + right) / 2);
+         const testSlice = allWords.slice(wordIdx, wordIdx + mid);
+         const html = buildHtmlFromWordSlice(testSlice);
+         measureDiv.innerHTML = html;
+         const height = measureDiv.offsetHeight;
+
+         if (height <= maxHeight) {
+           // Cabe: intentar con más palabras
+           bestFit = mid;
+           left = mid + 1;
+         } else {
+           // No cabe: intentar con menos palabras
+           right = mid - 1;
+         }
+       }
+
+       const fitWords = bestFit;
+       const visibleSlice = allWords.slice(wordIdx, wordIdx + fitWords);
+       const overflowSlice = allWords.slice(wordIdx + fitWords); // resto para siguientes cajas
+
+       const visibleHtml = buildHtmlFromWordSlice(visibleSlice);
+       const overflowHtml = buildHtmlFromWordSlice(overflowSlice); // Texto que no cabe en esta caja (pasará a la siguiente)
+       const fitsInBox = (wordIdx + fitWords) >= totalWords; // true si no hay más palabras después
+
+       // Asignar fragmento a esta caja
+       system.fragments[layout.id] = {
+         html: visibleHtml,
+         overflowHtml: overflowHtml,
+         fitsInBox: fitsInBox
+       };
+
+       // Actualizar índice para la siguiente caja
+       wordIdx += fitWords;
+
+       // Log para esta caja (opcional)
+       frontendLog.info('boxFragment',
+         `Caja ${boxIndex + 1}: ${fitWords}/${totalWords - (wordIdx - fitWords)} palabras caben`,
+         {
+           boxIndex,
+           boxId: layout.id,
+           wordsFit: fitWords,
+           wordsRemaining: totalWords - wordIdx,
+           fitsInBox,
+           overflowLength: overflowSlice.length
+         }
+       );
+     });
+
   };
 
   /**
@@ -182,174 +313,7 @@ export function createLinkedTextBoxSystem() {
     return paragraphs;
   }
 
-  /**
-   * Distribuir palabras usando búsqueda binaria jerárquica (2 niveles)
-   * REGLAS del experto:
-   * - Un solo measureDiv reutilizado
-   * - Sin HEIGHT_TOLERANCE
-   * - Nivel 1: búsqueda por párrafos completos
-   * - Nivel 2: búsqueda por palabras en el párrafo parcial
-   */
-function distributeWordsToFragments(paragraphs, chainLayouts, containerStyle) {
-    const results = [];
-    const paddingVertical = 2;
-    const paddingHorizontal = 16;
-    const linkBtnWidth = 28;
 
-    const maxHeight = (chainLayouts[0]?.h || 120) - paddingVertical;
-    const maxWidth = (chainLayouts[0]?.w || 300) - paddingHorizontal - linkBtnWidth;
-
-    // Crear UN solo div de medición (reutilizar)
-    const measureDiv = document.createElement('div');
-    measureDiv.style.position = 'absolute';
-    measureDiv.style.left = '-9999px';
-    measureDiv.style.visibility = 'hidden';
-    measureDiv.style.width = `${maxWidth}px`;
-    measureDiv.style.overflow = 'visible';
-    measureDiv.style.whiteSpace = 'pre-wrap';
-    measureDiv.style.wordBreak = 'break-word';
-    measureDiv.style.overflowWrap = 'break-word';
-    applyContainerStyles(measureDiv, containerStyle);
-    document.body.appendChild(measureDiv);
-
-    // ==========================================
-    // NIVEL 1: BÚSQUEDA BINARIA POR PÁRRAFOS
-    // ==========================================
-    let leftPara = 0;
-    let rightPara = paragraphs.length;
-    let fullParagraphsFit = 0;
-
-    while (leftPara <= rightPara) {
-      const midPara = Math.floor((leftPara + rightPara) / 2);
-      const html = buildHtmlFromParagraphs(paragraphs.slice(0, midPara));
-
-      measureDiv.innerHTML = html;
-      const height = measureDiv.offsetHeight;
-
-      if (height <= maxHeight) {
-        fullParagraphsFit = midPara;
-        leftPara = midPara + 1;
-      } else {
-        rightPara = midPara - 1;
-      }
-    }
-
-    // ==========================================
-    // NIVEL 2: BÚSQUEDA BINARIA POR PALABRAS
-    // Solo en el siguiente párrafo (si existe)
-    // ==========================================
-    let partialParagraphWords = 0;
-
-    if (fullParagraphsFit < paragraphs.length) {
-      const nextParagraph = paragraphs[fullParagraphsFit];
-      const words = nextParagraph.words;
-
-      let leftWord = 0;
-      let rightWord = words.length;
-      let wordsFit = 0;
-
-      while (leftWord <= rightWord) {
-        const midWord = Math.floor((leftWord + rightWord) / 2);
-
-        // Construir HTML: párrafos completos + palabras parciales
-        const htmlParts = [];
-        if (fullParagraphsFit > 0) {
-          htmlParts.push(buildHtmlFromParagraphs(paragraphs.slice(0, fullParagraphsFit)));
-        }
-        if (midWord > 0) {
-          const partialPara = { ...nextParagraph, words: words.slice(0, midWord) };
-          htmlParts.push(buildHtmlFromParagraphs([partialPara]));
-        }
-
-        const html = htmlParts.join('');
-        measureDiv.innerHTML = html;
-        const height = measureDiv.offsetHeight;
-
-        if (height <= maxHeight) {
-          wordsFit = midWord;
-          leftWord = midWord + 1;
-        } else {
-          rightWord = midWord - 1;
-        }
-      }
-
-      partialParagraphWords = wordsFit;
-    }
-
-    // Limpiar
-    document.body.removeChild(measureDiv);
-
-    // ==========================================
-    // CONSTRUIR RESULTADO FINAL
-    // ==========================================
-// Nueva estrategia: 
-    // - html: texto que cabe (recortado por la caja visible)
-    // - overflowHtml: TODO el texto completo (para la caja base sin límite)
-    
-    // Texto visible (lo que cabe en la caja)
-    const visibleParts = [];
-    if (fullParagraphsFit > 0) {
-      visibleParts.push(buildHtmlFromParagraphs(paragraphs.slice(0, fullParagraphsFit)));
-    }
-    if (partialParagraphWords > 0 && fullParagraphsFit < paragraphs.length) {
-      const partialPara = {
-        ...paragraphs[fullParagraphsFit],
-        words: paragraphs[fullParagraphsFit].words.slice(0, partialParagraphWords)
-      };
-      visibleParts.push(buildHtmlFromParagraphs([partialPara]));
-    }
-    
-    // Texto completo (para la caja base sin límite inferior)
-    const fullTextParts = [];
-    if (fullParagraphsFit > 0) {
-      fullTextParts.push(buildHtmlFromParagraphs(paragraphs.slice(0, fullParagraphsFit)));
-    }
-    if (partialParagraphWords > 0 && fullParagraphsFit < paragraphs.length) {
-      const partialPara = {
-        ...paragraphs[fullParagraphsFit],
-        words: paragraphs[fullParagraphsFit].words.slice(0, partialParagraphWords)
-      };
-      fullTextParts.push(buildHtmlFromParagraphs([partialPara]));
-    }
-    // Añadir el resto del texto (lo que no cabe)
-    if (fullParagraphsFit < paragraphs.length) {
-      const remainingWords = paragraphs[fullParagraphsFit].words.slice(partialParagraphWords);
-      if (remainingWords.length > 0) {
-        const remainingPara = { ...paragraphs[fullParagraphsFit], words: remainingWords };
-        fullTextParts.push(buildHtmlFromParagraphs([remainingPara]));
-      }
-      if (fullParagraphsFit + 1 < paragraphs.length) {
-        fullTextParts.push(buildHtmlFromParagraphs(paragraphs.slice(fullParagraphsFit + 1)));
-      }
-    }
-    
-    const visibleHtml = visibleParts.join('');
-    const fullTextHtml = fullTextParts.join('');
-    const fitsInBox = fullParagraphsFit === paragraphs.length && partialParagraphWords === paragraphs[fullParagraphsFit]?.words?.length;
-    
-    results.push({
-      html: visibleHtml,
-      overflowHtml: fullTextHtml, // TODO el texto para la caja base
-      fitsInBox: fitsInBox
-    });
-
-    // Log
-    const totalWords = paragraphs.reduce((sum, p) => sum + p.words.length, 0);
-    const wordsBeforeParagraph = paragraphs.slice(0, fullParagraphsFit).reduce((sum, p) => sum + p.words.length, 0);
-    const wordsFit = wordsBeforeParagraph + partialParagraphWords;
-
-    const frontendLog = useFrontendLog();
-    frontendLog.info('hierarchicalSearch',
-      `Búsqueda jerárquica: ${wordsFit}/${totalWords} palabras caben`,
-      {
-        level1: { paragraphsFit: fullParagraphsFit, totalParagraphs: paragraphs.length },
-        level2: { wordsFitInPartialParagraph: partialParagraphWords },
-        result: { wordsFit, totalWords, overflowWords: totalWords - wordsFit }
-      }
-    );
-
-    return results;
-  }
 
   /**
    * Construir HTML desde array de párrafos
