@@ -117,19 +117,31 @@ export function createLinkedTextBoxSystem() {
        }
      );
 
-     // Convertir párrafos a lista plana de palabras con referencia a su párrafo original
-     const allWords = [];
+     // Convertir parrafos a lista plana de unidades distribuibles.
+     // Los parrafos vacios no tienen palabras, asi que necesitan una unidad propia
+     // para ocupar altura real y poder empujar el contenido a la siguiente caja.
+     const allUnits = [];
      for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
        const para = paragraphs[pIdx];
+       if (!para.words.length) {
+         allUnits.push({
+           type: 'paragraph',
+           paragraphIndex: pIdx,
+           paragraph: para
+         });
+         continue;
+       }
+
        for (let wIdx = 0; wIdx < para.words.length; wIdx++) {
-         allWords.push({
+         allUnits.push({
+           type: 'word',
            word: para.words[wIdx],
            paragraphIndex: pIdx,
-           paragraph: para // referencia al objeto párrafo original
+           paragraph: para
          });
        }
      }
-     const totalWords = allWords.length;
+     const totalUnits = allUnits.length;
 
       // Crear UN solo div de medición (reutilizar)
       let measureDiv = document.getElementById('measure');
@@ -208,47 +220,93 @@ export function createLinkedTextBoxSystem() {
         return innerDiv;
       };
 
-      /**
-       * Construir HTML desde un slice de palabras (manteniendo estructura de párrafos)
-       * @param {Array} wordSlice Array de objetos {word, paragraphIndex, paragraph}
-       * @returns {string} HTML con párrafos adecuados
-       */
-      const buildHtmlFromWordSlice = (wordSlice) => {
-        if (!wordSlice || wordSlice.length === 0) return '';
-        // Agrupar palabras por párrafo original
-        const grouped = [];
-        let currentGroup = null;
-        for (const wObj of wordSlice) {
-          if (!currentGroup || currentGroup.paragraphIndex !== wObj.paragraphIndex) {
-            // Nuevo párrafo
-            currentGroup = {
-              paragraphIndex: wObj.paragraphIndex,
-              paragraph: wObj.paragraph,
-              words: [wObj.word]
-            };
-            grouped.push(currentGroup);
-          } else {
-            // Mismo párrafo
-            currentGroup.words.push(wObj.word);
-          }
-        }
-        // Construir HTML
-        return grouped.map(group => {
-          const para = group.paragraph;
-          const tag = para.tag || 'p';
-          const style = para.style || '';
-          const styleAttr = style ? ` style="${style}"` : '';
-          // Unir tokens sin añadir espacios extra (ya que los espacios son tokens independientes)
-          const text = group.words.join('');
-          return `<${tag}${styleAttr}>${text}</${tag}>`;
-        }).join('');
-      };
+       const escapeHtml = (value) => String(value ?? '')
+         .replace(/&/g, '&amp;')
+         .replace(/</g, '&lt;')
+         .replace(/>/g, '&gt;')
+         .replace(/"/g, '&quot;')
+         .replace(/'/g, '&#39;');
+
+       const escapeAttribute = (value) => escapeHtml(value);
+
+       /**
+        * Construir HTML desde un slice de unidades (manteniendo estructura de parrafos).
+        * Incluye parrafos vacios como <br> para que ocupen una altura de linea real
+        * durante la medicion y en el modo display.
+        * @param {Array} unitSlice Array de objetos {type, word, paragraphIndex, paragraph}
+        * @returns {string} HTML con parrafos adecuados
+        */
+       const buildHtmlFromUnitSlice = (unitSlice) => {
+         if (!unitSlice || unitSlice.length === 0) return '';
+
+         const paraIndices = new Set();
+         for (const unit of unitSlice) {
+           paraIndices.add(unit.paragraphIndex);
+         }
+
+         if (paraIndices.size === 0) return '';
+
+         const minParaIdx = Math.min(...paraIndices);
+         const maxParaIdx = Math.max(...paraIndices);
+
+         if (paragraphs && minParaIdx <= maxParaIdx && maxParaIdx < paragraphs.length) {
+           const htmlParts = [];
+           let unitIdx = 0;
+
+           for (let idx = minParaIdx; idx <= maxParaIdx; idx++) {
+             const para = paragraphs[idx];
+             const tag = para.tag || 'p';
+             const style = para.style || '';
+             const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
+
+             const units = [];
+             while (unitIdx < unitSlice.length && unitSlice[unitIdx].paragraphIndex === idx) {
+               units.push(unitSlice[unitIdx]);
+               unitIdx++;
+             }
+
+             const text = units
+               .filter((unit) => unit.type === 'word')
+               .map((unit) => escapeHtml(unit.word))
+               .join('');
+             const contents = text || '<br>';
+             htmlParts.push(`<${tag}${styleAttr}>${contents}</${tag}>`);
+           }
+
+           return htmlParts.join('');
+         }
+
+         const grouped = [];
+         let currentGroup = null;
+         for (const unit of unitSlice) {
+           if (!currentGroup || currentGroup.paragraphIndex !== unit.paragraphIndex) {
+             currentGroup = {
+               paragraphIndex: unit.paragraphIndex,
+               paragraph: unit.paragraph,
+               words: unit.type === 'word' ? [unit.word] : []
+             };
+             grouped.push(currentGroup);
+           } else if (unit.type === 'word') {
+             currentGroup.words.push(unit.word);
+           }
+         }
+
+         return grouped.map(group => {
+           const para = group.paragraph;
+           const tag = para.tag || 'p';
+           const style = para.style || '';
+           const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
+           const text = group.words.map((word) => escapeHtml(word)).join('');
+           const contents = text || '<br>';
+           return `<${tag}${styleAttr}>${contents}</${tag}>`;
+         }).join('');
+       };
 
        // Procesar cada caja en la cadena secuencialmente
-      let wordIdx = 0; // índice de la próxima palabra a colocar
+      let unitIdx = 0; // indice de la proxima unidad a colocar
       chainLayouts.forEach((layout, boxIndex) => {
         // Si ya no quedan palabras, la caja actual y las siguientes quedan vacías
-        if (wordIdx >= totalWords) {
+        if (unitIdx >= totalUnits) {
           system.fragments[layout.id] = {
             html: '',
             overflowHtml: '',
@@ -259,7 +317,7 @@ export function createLinkedTextBoxSystem() {
         }
 
         // Texto de entrada completo para esta caja (antes de recortar por altura)
-        const inputSlice = allWords.slice(wordIdx, totalWords);
+        const inputSlice = allUnits.slice(unitIdx, totalUnits);
 
         // Configurar el div de medición para esta caja (clonar o fallback)
         const measureNode = setupMeasureDiv(layout);
@@ -267,8 +325,8 @@ export function createLinkedTextBoxSystem() {
           // Si no hay nodo, no podemos medir
           system.fragments[layout.id] = {
             html: '',
-            overflowHtml: buildHtmlFromWordSlice(allWords.slice(wordIdx)),
-            fullTextHtml: buildHtmlFromWordSlice(inputSlice),
+            overflowHtml: buildHtmlFromUnitSlice(allUnits.slice(unitIdx)),
+            fullTextHtml: buildHtmlFromUnitSlice(inputSlice),
             fitsInBox: false
           };
           return;
@@ -277,13 +335,13 @@ export function createLinkedTextBoxSystem() {
         // La altura máxima es la altura de la caja
         const maxHeight = (layout.h || 50);
         let left = 0;
-        let right = totalWords - wordIdx;
+        let right = totalUnits - unitIdx;
         let bestFit = 0;
 
         while (left <= right) {
           const mid = Math.floor((left + right) / 2);
-          const testSlice = allWords.slice(wordIdx, wordIdx + mid);
-          const html = buildHtmlFromWordSlice(testSlice);
+          const testSlice = allUnits.slice(unitIdx, unitIdx + mid);
+          const html = buildHtmlFromUnitSlice(testSlice);
           measureNode.innerHTML = html;  // Usar el NODO retornado por setupMeasureDiv
           const height = measureNode.offsetHeight;
 
@@ -292,25 +350,25 @@ export function createLinkedTextBoxSystem() {
             bestFit = mid;
             left = mid + 1;
           } else {
-            // No cabe: intentar con menos palabras
+            // No cabe: intentar con menos unidades
             right = mid - 1;
           }
         }
 
-        const fitWords = bestFit;
-        const visibleSlice = allWords.slice(wordIdx, wordIdx + fitWords);
-        const overflowSlice = allWords.slice(wordIdx + fitWords); // resto para siguientes cajas
+        const fitUnits = bestFit;
+        const visibleSlice = allUnits.slice(unitIdx, unitIdx + fitUnits);
+        const overflowSlice = allUnits.slice(unitIdx + fitUnits); // resto para siguientes cajas
         
-        const visibleHtml = buildHtmlFromWordSlice(visibleSlice);
+        const visibleHtml = buildHtmlFromUnitSlice(visibleSlice);
         
         // REGLA: Si la caja tiene enlace siguiente, NUNCA tiene overflowHtml
         // (el texto que no cabe pasa a la siguiente caja, no es "overflow" de esta)
         const isLastInChain = !layout.linkedTextNext; // true si NO tiene enlace siguiente (es la última)
-        const overflowHtml = isLastInChain ? buildHtmlFromWordSlice(overflowSlice) : ''; // Solo la última caja puede tener overflow
+        const overflowHtml = isLastInChain ? buildHtmlFromUnitSlice(overflowSlice) : ''; // Solo la última caja puede tener overflow
         
-        const fullTextHtml = buildHtmlFromWordSlice(inputSlice); // Texto completo de entrada (para capa inferior)
+        const fullTextHtml = buildHtmlFromUnitSlice(inputSlice); // Texto completo de entrada (para capa inferior)
         // fitsInBox: true solo si es la última caja Y no hay más palabras después
-        const fitsInBox = isLastInChain && (wordIdx + fitWords) >= totalWords;
+        const fitsInBox = isLastInChain && (unitIdx + fitUnits) >= totalUnits;
 
         // Asignar fragmento a esta caja
         system.fragments[layout.id] = {
@@ -321,16 +379,16 @@ export function createLinkedTextBoxSystem() {
         };
 
         // Actualizar índice para la siguiente caja
-        wordIdx += fitWords;
+        unitIdx += fitUnits;
 
         // Log para esta caja (opcional)
         frontendLog.info('boxFragment',
-          `Caja ${boxIndex + 1}: ${fitWords}/${totalWords - (wordIdx - fitWords)} palabras caben`,
+          `Caja ${boxIndex + 1}: ${fitUnits}/${totalUnits - (unitIdx - fitUnits)} unidades caben`,
           {
             boxIndex,
             boxId: layout.id,
-            wordsFit: fitWords,
-            wordsRemaining: totalWords - wordIdx,
+            unitsFit: fitUnits,
+            unitsRemaining: totalUnits - unitIdx,
             fitsInBox,
             overflowLength: overflowSlice.length,
             fullTextLength: inputSlice.length
@@ -344,37 +402,47 @@ export function createLinkedTextBoxSystem() {
     * Parsear HTML en párrafos con sus estilos
     * Tokenización: conserva signos de puntuación y espacios como tokens independientes
     */
-   function parseHtmlIntoParagraphs(html) {
-     const temp = document.createElement('div');
-     temp.innerHTML = html;
+    function parseHtmlIntoParagraphs(html) {
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
 
-     const paragraphs = [];
-     const nodes = Array.from(temp.childNodes);
+      const paragraphs = [];
+      const nodes = Array.from(temp.childNodes);
 
-     for (const node of nodes) {
-       if (node.nodeType === Node.TEXT_NODE) {
-         const text = node.textContent;
-         if (text && text.trim()) {
-           paragraphs.push({
-             style: '',
-             words: tokenizeText(text),
-           });
-         }
-       } else if (node.nodeType === Node.ELEMENT_NODE) {
-         const style = node.getAttribute('style') || '';
-         const text = node.textContent;
-         if (text && text.trim()) {
-           paragraphs.push({
-             style,
-             words: tokenizeText(text),
-             tag: node.tagName.toLowerCase(),
-           });
-         }
-       }
-     }
+      for (const node of nodes) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent;
+          if (text && text.trim()) {
+            paragraphs.push({
+              style: '',
+              words: tokenizeText(text),
+            });
+          }
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          const style = node.getAttribute('style') || '';
+          const tag = node.tagName.toLowerCase();
+          const text = node.textContent;
 
-     return paragraphs;
-   }
+          // Incluir párrafos vacíos (presionar ENTER crea párrafos vacíos)
+          // Los párrafos vacíos empujan el contenido hacia la siguiente caja
+          if (!text || !text.trim()) {
+            paragraphs.push({
+              style,
+              words: [],
+              tag,
+            });
+          } else {
+            paragraphs.push({
+              style,
+              words: tokenizeText(text),
+              tag,
+            });
+          }
+        }
+      }
+
+      return paragraphs;
+    }
 
    /**
     * Tokenizar texto preservando signos y espacios como tokens independientes
@@ -454,8 +522,9 @@ export function createLinkedTextBoxSystem() {
   function stopEditing(groupId) {
     const system = systemsMap.get(groupId);
     if (!system) return;
+    const previousEditorId = system.editorId;
     system.editorId = null;
-    if (activeEditorId.value === system.editorId) {
+    if (activeEditorId.value === previousEditorId) {
       activeEditorId.value = null;
     }
   }

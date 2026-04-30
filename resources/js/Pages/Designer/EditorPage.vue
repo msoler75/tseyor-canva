@@ -1028,6 +1028,7 @@ const recalculateLinkedTextAllocations = (headId) => {
       italic: l.italic || false,
       letterSpacing: l.letterSpacing || 0,
       lineHeight: l.lineHeight || 1.4,
+      linkedTextNext: l.linkedTextNext || null,
     };
   });
 
@@ -2276,12 +2277,19 @@ const onLinkedTextUpdate = (id, value) => {
   const element = state.customElements?.[id];
   if (!element || element.type !== 'linkedText') return;
 
-  element.text = value;
-
   const layout = state.elementLayout[id];
-  if (!layout?.linkedTextGroupId) return;
+  if (!layout?.linkedTextGroupId) {
+    element.text = value;
+    return;
+  }
 
   const headId = getLinkedTextChainHead(id);
+  const headElement = state.customElements?.[headId];
+  if (headElement?.type === 'linkedText') {
+    headElement.text = value;
+  } else {
+    element.text = value;
+  }
   recalculateLinkedTextAllocations(headId);
 };
 
@@ -2289,12 +2297,19 @@ const onRichEditorHtmlUpdate = (id, html) => {
   const element = state.customElements?.[id];
   if (!element || element.type !== 'linkedText') return;
 
-  element.html = html;
-
   const layout = state.elementLayout[id];
-  if (!layout?.linkedTextGroupId) return;
+  if (!layout?.linkedTextGroupId) {
+    element.html = html;
+    return;
+  }
 
   const headId = getLinkedTextChainHead(id);
+  const headElement = state.customElements?.[headId];
+  if (headElement?.type === 'linkedText') {
+    headElement.html = html;
+  } else {
+    element.html = html;
+  }
   recalculateLinkedTextAllocations(headId);
 };
 
