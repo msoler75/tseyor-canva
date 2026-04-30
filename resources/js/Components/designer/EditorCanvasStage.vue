@@ -73,15 +73,59 @@ const assignRichEditorRef = (id, element) => {
 };
 
 const foldGuidePositions = computed(() => foldGuidePositionsForFormat(props.state?.format));
+const PI = Math.PI;
+const DEG_TO_RAD = PI / 180;
+
+// Función para rotar un punto (x,y) alrededor de un centro (cx,cy) por un ángulo en grados
+const rotatePoint = (x, y, cx, cy, angleDeg) => {
+  if (!angleDeg) return { x, y };
+  const angleRad = angleDeg * DEG_TO_RAD;
+  const dx = x - cx;
+  const dy = y - cy;
+  const cosA = Math.cos(angleRad);
+  const sinA = Math.sin(angleRad);
+  return {
+    x: cx + dx * cosA - dy * sinA,
+    y: cy + dx * sinA + dy * cosA,
+  };
+};
 
 const getLinkSourcePosition = computed(() => {
   if (!props.linkedTextLink?.active || !props.linkedTextLink.sourceId) return null;
   const layout = props.state?.elementLayout?.[props.linkedTextLink.sourceId];
   if (!layout) return null;
-  return {
-    x: layout.x + (layout.w ?? 300),
-    y: layout.y + (layout.h ?? 120),
-  };
+  // Botón en bottom-1 right-1 (24x24px). Tailwind bottom-1 = 4px, right-1 = 4px
+  // Centro del botón: (x + w - 4px - 12px, y + h - 4px - 12px)
+  const bw = 24, bh = 24;
+  const offset = 4; // Tailwind bottom-1 right-1 = 4px
+  const btnCenterX = layout.x + (layout.w ?? 300) - offset - bw/2;
+  const btnCenterY = layout.y + (layout.h ?? 120) - offset - bh/2;
+  // Aplicar rotación alrededor del centro de la caja
+  const cx = layout.x + (layout.w ?? 300) / 2;
+  const cy = layout.y + (layout.h ?? 120) / 2;
+  return rotatePoint(btnCenterX, btnCenterY, cx, cy, layout.rotation ?? 0);
+});
+
+// Posición de destino: esquina superior izquierda de la caja destino (con rotación)
+const getLinkTargetPosition = computed(() => {
+  if (!props.linkedTextLink?.active) return null;
+  const targetId = props.linkedTextLink.hoverTargetId || props.linkedTextLink.canvasTargetId;
+  if (!targetId) {
+    // Fallback: usar la posición del mouse
+    if (props.linkedTextLink.canvasX !== undefined) {
+      return { x: props.linkedTextLink.canvasX, y: props.linkedTextLink.canvasY };
+    }
+    return null;
+  }
+  const targetLayout = props.state?.elementLayout?.[targetId];
+  if (!targetLayout) return null;
+  // Esquina superior izquierda (sin rotación)
+  const x = targetLayout.x ?? 0;
+  const y = targetLayout.y ?? 0;
+  // Aplicar rotación alrededor del centro de la caja destino
+  const cx = x + (targetLayout.w ?? 300) / 2;
+  const cy = y + (targetLayout.h ?? 120) / 2;
+  return rotatePoint(x, y, cx, cy, targetLayout.rotation ?? 0);
 });
 
 const permanentLinkLines = computed(() => {
@@ -116,16 +160,24 @@ const permanentLinkLines = computed(() => {
     current = l.linkedTextNext;
   }
   const lines = [];
+  const bw = 24, bh = 24;
   for (let i = 0; i < chainIds.length - 1; i++) {
     const a = props.state?.elementLayout?.[chainIds[i]];
     const b = props.state?.elementLayout?.[chainIds[i + 1]];
     if (!a || !b) continue;
-    lines.push({
-      x1: a.x + (a.w ?? 300),
-      y1: a.y + (a.h ?? 120),
-      x2: b.x + (b.w ?? 300),
-      y2: b.y + (b.h ?? 120),
-    });
+    // Source: centro del botón en esquina inferior derecha de la caja A (con rotación)
+    const btnCenterX = a.x + (a.w ?? 300) - bw/2;
+    const btnCenterY = a.y + (a.h ?? 120) - bh/2;
+    const cxA = a.x + (a.w ?? 300) / 2;
+    const cyA = a.y + (a.h ?? 120) / 2;
+    const src = rotatePoint(btnCenterX, btnCenterY, cxA, cyA, a.rotation ?? 0);
+    // Target: esquina superior izquierda de la caja B (con rotación)
+    const tx = b.x ?? 0;
+    const ty = b.y ?? 0;
+    const cxB = tx + (b.w ?? 300) / 2;
+    const cyB = ty + (b.h ?? 120) / 2;
+    const tgt = rotatePoint(tx, ty, cxB, cyB, b.rotation ?? 0);
+    lines.push({ x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y });
   }
   return lines;
 });
@@ -399,15 +451,14 @@ const isLinkedTextChainActive = (boxId) => {
           style="width: 100%; height: 100%;"
         >
           <line
-            v-if="getLinkSourcePosition"
+            v-if="getLinkSourcePosition && getLinkTargetPosition"
             :x1="getLinkSourcePosition.x"
             :y1="getLinkSourcePosition.y"
-            :x2="linkedTextLink.canvasX"
-            :y2="linkedTextLink.canvasY"
+            :x2="getLinkTargetPosition.x"
+            :y2="getLinkTargetPosition.y"
             stroke="currentColor"
             stroke-width="2"
             stroke-dasharray="5,5"
-            class="text-primary"
           />
         </svg>
 

@@ -300,11 +300,17 @@ export function createLinkedTextBoxSystem() {
         const fitWords = bestFit;
         const visibleSlice = allWords.slice(wordIdx, wordIdx + fitWords);
         const overflowSlice = allWords.slice(wordIdx + fitWords); // resto para siguientes cajas
-
+        
         const visibleHtml = buildHtmlFromWordSlice(visibleSlice);
-        const overflowHtml = buildHtmlFromWordSlice(overflowSlice); // Texto que no cabe en esta caja (pasará a la siguiente)
-        const fullTextHtml = buildHtmlFromWordSlice(inputSlice); // TODO el texto de entrada para esta caja (para la capa inferior sin límite)
-        const fitsInBox = (wordIdx + fitWords) >= totalWords; // true si no hay más palabras después
+        
+        // REGLA: Si la caja tiene enlace siguiente, NUNCA tiene overflowHtml
+        // (el texto que no cabe pasa a la siguiente caja, no es "overflow" de esta)
+        const isLastInChain = !layout.linkedTextNext; // true si NO tiene enlace siguiente (es la última)
+        const overflowHtml = isLastInChain ? buildHtmlFromWordSlice(overflowSlice) : ''; // Solo la última caja puede tener overflow
+        
+        const fullTextHtml = buildHtmlFromWordSlice(inputSlice); // Texto completo de entrada (para capa inferior)
+        // fitsInBox: true solo si es la última caja Y no hay más palabras después
+        const fitsInBox = isLastInChain && (wordIdx + fitWords) >= totalWords;
 
         // Asignar fragmento a esta caja
         system.fragments[layout.id] = {
