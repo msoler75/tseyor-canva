@@ -436,7 +436,12 @@ export const useEditorStyles = ({
 
   const isTextElement = (id) => {
     if (baseTextElementIds.has(id)) return true;
-    return state.customElements?.[id]?.type === 'text';
+    const type = state.customElements?.[id]?.type;
+    return type === 'text' || type === 'linkedText';
+  };
+
+  const isLinkedTextElement = (id) => {
+    return state.customElements?.[id]?.type === 'linkedText';
   };
 
   const isAspectLockedResizeElement = (id) => {
@@ -451,7 +456,7 @@ export const useEditorStyles = ({
 
   const elementBoxStyle = (id) => {
     const layout = state.elementLayout[id];
-    return buildElementBoxStyle(layout, { isText: isTextElement(id) });
+    return buildElementBoxStyle(layout, { isText: isTextElement(id), isLinkedText: isLinkedTextElement(id) });
   };
 
   const imageFrameStyle = (id) => {
@@ -514,6 +519,7 @@ export const useEditorStyles = ({
     swapShapeGradientStops,
     elementBoxStyle,
     isTextElement,
+    isLinkedTextElement,
     isAspectLockedResizeElement,
     shapeStyleFromKind,
     shapeStyle,

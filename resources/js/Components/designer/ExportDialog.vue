@@ -337,8 +337,12 @@ function resolveTargetDimensions(detail, dpi) {
 }
 
 function isTextElement(id) {
-    if (baseTextElementIds.has(id)) return true;
-    return state.customElements?.[id]?.type === 'text';
+    const type = state.customElements?.[id]?.type;
+    return type === 'text' || type === 'linkedText';
+}
+
+function isLinkedTextElement(id) {
+    return state.customElements?.[id]?.type === 'linkedText';
 }
 
 function elementContentStyle(id) {
@@ -361,7 +365,7 @@ function exportElementContentStyle(id) {
 }
 function elementBoxStyle(id) {
     const layout = state.elementLayout[id] ?? {};
-    return buildElementBoxStyle(layout, { isText: isTextElement(id) });
+    return buildElementBoxStyle(layout, { isText: isTextElement(id), isLinkedText: isLinkedTextElement(id) });
 }
 function richEditorContainerStyle(id) {
     return buildRichEditorContainerStyle(state.elementLayout[id] ?? {});
@@ -1004,7 +1008,7 @@ watch(() => state.outputType, () => {
                 <img v-else :src="state.elementLayout.background?.backgroundImageSrc" alt="Fondo del dise?o" :style="canvasBackgroundImageStyle" class="pointer-events-none" crossorigin="anonymous" />
               </div>
               <div v-for="item in editorElements" :key="item.id" :style="elementBoxStyle(item.id)">
-                <template v-if="item.type === 'text'">
+                <template v-if="item.type === 'text' || item.type === 'linkedText'">
                   <div :style="elementContentStyle(item.id)">
                     <RichTextEditor :paragraph-styles="state.elementLayout[item.id]?.paragraphStyles ?? []" :text="item.text ?? ''" :editable="false" :editor-style="richEditorContainerStyle(item.id)" :color-override="neonColorOverride(item.id)" :transparent-fill="!!state.elementLayout[item.id]?.hollowText" />
                   </div>

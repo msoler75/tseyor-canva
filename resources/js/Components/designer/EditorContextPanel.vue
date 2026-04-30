@@ -1166,7 +1166,7 @@ const endPanelCloseDrag = () => {
                 </div>
               </div>
 
-              <div v-else-if="activePropertyPanel === 'fontSize' && selectedElementType === 'text'" class="card border border-base-300 bg-base-100/80">
+              <div v-else-if="activePropertyPanel === 'fontSize' && hasTextSelection" class="card border border-base-300 bg-base-100/80">
                     <div class="card-body p-4 space-y-4">
                         <div class="flex flex-start items-center gap-4">
 

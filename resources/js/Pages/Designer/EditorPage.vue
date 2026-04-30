@@ -20,6 +20,8 @@ import { useEditorStyles } from '../../composables/useEditorStyles';
 import { useEditorSelection } from '../../composables/useEditorSelection';
 import { useEditorInteractions } from '../../composables/useEditorInteractions';
 import { SHAPE_CLIP_PATHS, applyFormatToDimensions, buildCoverImageStyle, parseSizeDetail } from '../../utils/editorShared';
+import { useLinkedTextBoxSystem } from '../../composables/useLinkedTextBoxSystem';
+import { useFrontendLog } from '../../composables/useFrontendLog';
 import { dataUrlToFile, extractImageFilesFromDataTransfer, fileToDataUrl, hasFilesInTransfer, isDataImageUrl, isEditableTarget, optimizeImageFile } from '../../utils/imageUploads';
 
 const DesignerAssistant = defineAsyncComponent(() => import('../../Components/designer/DesignerAssistant.vue'));
@@ -40,6 +42,9 @@ const state = hydrateDesignerStateFromPage();
 const bumpRevision = (value) => Number(value ?? 0) + 1;
 const isMobileEditor = ref(false);
 let editorViewportQuery = null;
+
+const linkedTextBoxSystem = useLinkedTextBoxSystem();
+const frontendLog = useFrontendLog();
 
 const syncEditorViewport = () => {
   isMobileEditor.value = typeof window !== 'undefined'
@@ -544,6 +549,7 @@ const elementObservers = new Map();
 const richEditorRefs = ref({});
 const editingElementId = ref(null);
 const editingBoxHeight = ref(null);
+const activeLinkedTextBox = ref(null);
 const selectedParagraphIndex = ref(0);
 const paragraphSelection = reactive({ start: 0, end: 0, active: false });
 const activePropertyPanel = ref(null);
@@ -602,6 +608,15 @@ const dragIntent = reactive({
   targetType: 'element',
   startX: 0,
   startY: 0,
+});
+const linkedTextLink = reactive({
+  active: false,
+  sourceId: null,
+  currentX: 0,
+  currentY: 0,
+  canvasX: 0,
+  canvasY: 0,
+  hoverTargetId: null,
 });
 const suppressElementClickUntil = ref(0);
 const suppressCanvasClickUntil = ref(0);
@@ -959,6 +974,156 @@ const hasMeaningfulText = (value) => normalizePlainTextValue(value).length > 0;
 const templateFieldUsage = computed(() => Object.fromEntries(
   templateFieldDefinitions.value.map((field) => [field.id, Boolean(state.elementLayout?.[field.id])]),
 ));
+const getLinkedTextChain = (startId) => {
+  const chain = [];
+  let currentId = startId;
+  const visited = new Set();
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const layout = state.elementLayout[currentId];
+    if (!layout) break;
+    chain.push({ id: currentId, layout });
+    currentId = layout.linkedTextNext;
+  }
+  return chain;
+};
+
+const getLinkedTextChainHead = (startId) => {
+  let currentId = startId;
+  const visited = new Set();
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const layout = state.elementLayout[currentId];
+    if (!layout) break;
+    if (layout.linkedTextPrev) {
+      currentId = layout.linkedTextPrev;
+    } else {
+      return currentId;
+    }
+  }
+  return startId;
+};
+
+const recalculateLinkedTextAllocations = (headId) => {
+  const chain = getLinkedTextChain(headId);
+  if (chain.length === 0) return;
+
+  const headElement = state.customElements[headId];
+  if (!headElement || headElement.type !== 'linkedText') return;
+
+  const fullHtml = headElement.html || headElement.text || '';
+  const groupId = state.elementLayout[headId]?.linkedTextGroupId;
+  if (!groupId) return;
+
+  const chainLayouts = chain.map((item) => {
+    const l = state.elementLayout[item.id] || {};
+    return {
+      id: item.id,
+      w: l.w || 300,
+      h: l.h || 120,
+      fontSize: l.fontSize || 18,
+      fontFamily: l.fontFamily || 'Poppins, sans-serif',
+      fontWeight: l.fontWeight || 'regular',
+      italic: l.italic || false,
+      letterSpacing: l.letterSpacing || 0,
+      lineHeight: l.lineHeight || 1.4,
+    };
+  });
+
+  const firstLayout = chainLayouts[0] || {};
+  const containerStyle = {
+    fontSize: firstLayout.fontSize || 18,
+    fontFamily: firstLayout.fontFamily || 'Poppins, sans-serif',
+    lineHeight: firstLayout.lineHeight || 1.4,
+    letterSpacing: firstLayout.letterSpacing || 0,
+  };
+
+  // Log antes de redistribuir
+  frontendLog.info('redistribution', 
+    `Redistribuyendo texto enlazado para grupo ${groupId}`, 
+    {
+      headId,
+      groupId,
+      chainLength: chain.length,
+      chainIds: chain.map(item => item.id),
+      fullHtmlLength: fullHtml.length,
+      fullHtmlPreview: fullHtml.substring(0, 200),
+      chainLayouts,
+      containerStyle,
+    }
+  );
+
+  linkedTextBoxSystem.redistribute(groupId, fullHtml, chainLayouts, containerStyle);
+
+  // Log después de redistribuir - registrar fragmentos
+  const system = linkedTextBoxSystem.getOrCreateSystem(groupId);
+  if (system.fragments) {
+    for (const [boxId, fragment] of Object.entries(system.fragments)) {
+      frontendLog.logFragmentation(groupId, boxId, fragment);
+    }
+  }
+};
+
+const getLinkedTextBoxText = (boxId) => {
+  const layout = state.elementLayout[boxId];
+  if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fitsInBox: true };
+
+  const groupId = layout.linkedTextGroupId;
+  const headId = getLinkedTextChainHead(boxId);
+
+  // Asegurar que el sistema tiene los fragmentos calculados
+  const system = linkedTextBoxSystem.getOrCreateSystem(groupId);
+  if (!system.fragments || Object.keys(system.fragments).length === 0) {
+    recalculateLinkedTextAllocations(headId);
+  }
+
+  // Determinar si es la última caja de la cadena
+  const chain = getLinkedTextChain(headId);
+  const isLastInChain = chain.length > 0 && chain[chain.length - 1].id === boxId;
+
+  const fragment = linkedTextBoxSystem.getFragmentForBox(groupId, boxId);
+
+  // Log del fragmento obtenido
+  frontendLog.debug('getFragment', 
+    `Obteniendo fragmento para caja ${boxId}`, 
+    {
+      boxId,
+      groupId,
+      headId,
+      isLastInChain,
+      hasFragment: !!fragment.html,
+      fragmentHtmlLength: fragment.html?.length || 0,
+      fragmentHtmlPreview: fragment.html?.substring(0, 100),
+      overflowHtmlLength: fragment.overflowHtml?.length || 0,
+      fitsInBox: fragment.fitsInBox,
+    }
+  );
+
+  // Si todavía no hay fragmento, usar el texto del elemento head directamente
+  if (!fragment.html) {
+    const headElement = state.customElements[headId];
+    const rawText = headElement?.text || '';
+    return {
+      text: rawText,
+      displayHtml: rawText ? `<p>${rawText}</p>` : '',
+      overflowHtml: '',
+      fitsInBox: true,
+      isLastInChain
+    };
+  }
+
+  // Solo mostrar overflow en la última caja de la cadena
+  const overflowHtml = isLastInChain ? (fragment.overflowHtml || '') : '';
+
+  return {
+    text: fragment.html ? fragment.html.replace(/<[^>]*>/g, '') : '',
+    displayHtml: fragment.html || '',
+    overflowHtml,
+    fitsInBox: fragment.fitsInBox ?? true,
+    isLastInChain
+  };
+};
+
 const editorElements = computed(() => {
   const baseTextElements = [
     { id: 'title', type: 'text', label: 'Titulo', fieldKey: 'title', text: state.content.title },
@@ -972,7 +1137,9 @@ const editorElements = computed(() => {
     type: element.type,
     label: element.label ?? 'Elemento',
     fieldKey: element.fieldKey ?? null,
-    text: element.type === 'text' ? linkedFieldText(element.fieldKey, element.text ?? '') : '',
+    text: element.type === 'text' ? linkedFieldText(element.fieldKey, element.text ?? '') : (element.type === 'linkedText' ? getLinkedTextBoxText(id).text : ''),
+    linkedTextDisplayHtml: element.type === 'linkedText' ? getLinkedTextBoxText(id).displayHtml : '',
+    linkedTextOverflowHtml: element.type === 'linkedText' ? getLinkedTextBoxText(id).overflowHtml : '',
     src: element.type === 'image' ? element.src : null,
     shapeKind: element.type === 'shape' ? element.shapeKind : null,
   }));
@@ -1026,7 +1193,7 @@ const readonlyPageElements = (pageState) => {
     type: element.type,
     label: element.label ?? 'Elemento',
     fieldKey: element.fieldKey ?? null,
-    text: element.type === 'text' ? linkedPageFieldText(content, element.fieldKey, element.text ?? '') : '',
+    text: element.type === 'text' ? linkedPageFieldText(content, element.fieldKey, element.text ?? '') : (element.type === 'linkedText' ? (element.text ?? '') : ''),
     src: element.type === 'image' ? element.src : null,
     shapeKind: element.type === 'shape' ? element.shapeKind : null,
   }));
@@ -1223,6 +1390,7 @@ const {
   swapShapeGradientStops,
   elementBoxStyle,
   isTextElement,
+  isLinkedTextElement,
   isAspectLockedResizeElement,
   shapeStyleFromKind,
   shapeStyle,
@@ -1920,6 +2088,186 @@ const addTextElement = (presetId) => {
     [id]: layout,
   };
   state.selectedElementId = id;
+};
+
+const addLinkedTextElement = () => {
+  activateVisibleDocumentPage();
+  const groupId = `linked-group-${Date.now()}`;
+  const id = `linked-text-${Date.now()}`;
+  const layout = buildDefaultLayout({
+    w: 300,
+    h: 120,
+    fontSize: 18,
+    fontWeight: 'regular',
+    lineHeight: 1.4,
+    color: '#ffffff',
+    shadow: false,
+    x: getInsertX(300),
+    y: 90,
+    linkedTextGroupId: groupId,
+    linkedTextNext: null,
+    linkedTextPrev: null,
+    linkedTextChainIndex: 0,
+    paragraphStyles: [{
+      fontSize: 18,
+      color: '#ffffff',
+      fontFamily: 'Poppins, sans-serif',
+      fontWeight: 'regular',
+      italic: false,
+      underline: false,
+      uppercase: false,
+      textAlign: 'left',
+      letterSpacing: 0,
+      lineHeight: 1.4,
+    }],
+  });
+
+  placeInsideCanvas(layout);
+  state.customElements = {
+    ...(state.customElements ?? {}),
+    [id]: {
+      id,
+      type: 'linkedText',
+      label: 'Texto enlazado',
+      text: 'Escribe tu texto aquí...',
+    },
+  };
+  state.elementLayout = {
+    ...(state.elementLayout ?? {}),
+    [id]: layout,
+  };
+  state.selectedElementId = id;
+};
+
+const handleLinkedTextLinkStart = ({ event, id }) => {
+  linkedTextLink.active = true;
+  linkedTextLink.sourceId = id;
+  linkedTextLink.currentX = event.clientX;
+  linkedTextLink.currentY = event.clientY;
+  event.target.setPointerCapture(event.pointerId);
+};
+
+const handleLinkedTextLinkMove = (event) => {
+  if (!linkedTextLink.active) return;
+  linkedTextLink.currentX = event.clientX;
+  linkedTextLink.currentY = event.clientY;
+  if (canvasRef.value) {
+    const rect = canvasRef.value.getBoundingClientRect();
+    linkedTextLink.canvasX = event.clientX - rect.left;
+    linkedTextLink.canvasY = event.clientY - rect.top;
+  }
+  const targetElement = document.elementFromPoint(event.clientX, event.clientY);
+  const targetEditorElement = targetElement?.closest('[data-editor-element="true"]');
+  const targetId = targetEditorElement?.dataset.editorId;
+  if (targetId && state.customElements?.[targetId]?.type === 'linkedText' && targetId !== linkedTextLink.sourceId) {
+    linkedTextLink.hoverTargetId = targetId;
+  } else {
+    linkedTextLink.hoverTargetId = null;
+    linkedTextLink._lastHoverId = null;
+  }
+};
+
+const handleLinkedTextLinkEnd = ({ event, targetId }) => {
+  if (!linkedTextLink.active || !linkedTextLink.sourceId) return;
+
+  if (targetId && targetId !== linkedTextLink.sourceId) {
+    const sourceLayout = state.elementLayout[linkedTextLink.sourceId];
+    const targetLayout = state.elementLayout[targetId];
+    if (sourceLayout && targetLayout) {
+      // Si el source ya tenía un siguiente, romper ese enlace
+      const oldNextId = sourceLayout.linkedTextNext;
+      if (oldNextId && oldNextId !== targetId) {
+        const oldNextLayout = state.elementLayout[oldNextId];
+        if (oldNextLayout) {
+          oldNextLayout.linkedTextPrev = null;
+        }
+      }
+
+      // Obtener el groupId unificado
+      const sourceGroupId = sourceLayout.linkedTextGroupId;
+      const targetGroupId = targetLayout.linkedTextGroupId;
+      const newGroupId = sourceGroupId || targetGroupId || `linked-group-${Date.now()}`;
+
+      // Enlazar source -> target
+      sourceLayout.linkedTextGroupId = newGroupId;
+      sourceLayout.linkedTextNext = targetId;
+
+      // Enlazar target <- source
+      targetLayout.linkedTextGroupId = newGroupId;
+      targetLayout.linkedTextPrev = linkedTextLink.sourceId;
+
+      // Actualizar índices de la cadena
+      const chain = getLinkedTextChain(linkedTextLink.sourceId);
+      chain.forEach((item, index) => {
+        item.layout.linkedTextChainIndex = index;
+        item.layout.linkedTextGroupId = newGroupId;
+      });
+
+      // Recalcular asignaciones de texto
+      recalculateLinkedTextAllocations(linkedTextLink.sourceId);
+    }
+  }
+
+  linkedTextLink.active = false;
+  linkedTextLink.sourceId = null;
+  linkedTextLink.hoverTargetId = null;
+  event.target.releasePointerCapture(event.pointerId);
+};
+
+const redistributeLinkedText = (startId) => {
+  const headId = getLinkedTextChainHead(startId);
+  const sourceElement = state.customElements[headId];
+  if (!sourceElement || sourceElement.type !== 'linkedText') return;
+  const fullText = sourceElement.text || '';
+  const chain = getLinkedTextChain(headId);
+  if (chain.length < 2) return;
+  const chainLayouts = chain.map((item) => {
+    const l = state.elementLayout[item.id];
+    return {
+      w: l?.w || 300,
+      h: l?.h || 120,
+      fontSize: l?.fontSize || 18,
+      fontFamily: l?.fontFamily || 'Poppins, sans-serif',
+      fontWeight: l?.fontWeight || 'regular',
+      italic: l?.italic || false,
+      letterSpacing: l?.letterSpacing || 0,
+      lineHeight: l?.lineHeight || 1.4,
+      paragraphStyles: l?.paragraphStyles || [],
+    };
+  });
+  const distributed = distributeTextInLinkedChain(fullText, chainLayouts);
+  chain.forEach((item, index) => {
+    const element = state.customElements[item.id];
+    if (element && element.type === 'linkedText') {
+      element.text = distributed[index] || '';
+    }
+  });
+};
+
+const onLinkedTextUpdate = (id, value) => {
+  const element = state.customElements?.[id];
+  if (!element || element.type !== 'linkedText') return;
+
+  element.text = value;
+
+  const layout = state.elementLayout[id];
+  if (!layout?.linkedTextGroupId) return;
+
+  const headId = getLinkedTextChainHead(id);
+  recalculateLinkedTextAllocations(headId);
+};
+
+const onRichEditorHtmlUpdate = (id, html) => {
+  const element = state.customElements?.[id];
+  if (!element || element.type !== 'linkedText') return;
+
+  element.html = html;
+
+  const layout = state.elementLayout[id];
+  if (!layout?.linkedTextGroupId) return;
+
+  const headId = getLinkedTextChainHead(id);
+  recalculateLinkedTextAllocations(headId);
 };
 
 const addTemplateFieldElement = (fieldKey) => {
@@ -3535,48 +3883,46 @@ const onRichEditorSelectionChange = (id, { paragraphIndex, selectedIndexes }) =>
 };
 
 const onRichEditorTextUpdate = (id, newText) => {
-    // Solo aceptar texto emitido por el editor que está en edición activa.
-    // Los RichTextEditor no editables también pueden emitir update al remontarse,
-    // perder foco o reconstruir su documento interno; aceptar esos eventos puede
-    // restaurar versiones antiguas justo al abrir el asistente.
-    if (editingElementId.value !== id) return;
-    if (!state.elementLayout[id]) return;
-  const normalizedText = newText == null ? '' : String(newText);
-  const linkedFieldKey = state.customElements?.[id]?.fieldKey ?? null;
-
-  if (linkedFieldKey) {
-    updateLinkedContentField(linkedFieldKey, normalizedText);
-    recalculateTextHeight(id);
+  const baseTextKeys = ['title', 'subtitle', 'meta', 'contact', 'extra'];
+  if (baseTextKeys.includes(id)) {
+    if (id === 'meta') {
+      const parts = newText.split(' · ');
+      state.content.date = parts[0] || '';
+      state.content.time = parts[1] || '';
+    } else {
+      state.content[id] = newText;
+    }
     return;
   }
 
-    switch (id) {
-        case 'title':
-        case 'subtitle':
-        case 'contact':
-        case 'extra':
-      updateLinkedContentField(id, normalizedText);
-      recalculateTextHeight(id);
-            break;
-        case 'meta': {
-            updateLinkedContentField('meta', normalizedText);
-            recalculateTextHeight(id);
-            break;
-        }
-        default:
-          if (state.customElements?.[id]?.type === 'text') {
-      state.customElements[id].text = normalizedText;
-          }
-          if (state.elementLayout[id] && typeof state.elementLayout[id] === 'object') {
-            state.elementLayout[id].text = normalizedText;
-            recalculateTextHeight(id);
+  if (state.customElements?.[id]?.fieldKey) {
+    const linkedFieldKey = state.customElements[id].fieldKey;
+    if (linkedFieldKey === 'meta') {
+      const parts = newText.split(' · ');
+      state.content.date = parts[0] || '';
+      state.content.time = parts[1] || '';
+    } else {
+      state.content[linkedFieldKey] = newText;
     }
+  }
+
+  const element = state.customElements?.[id];
+  if (!element) return;
+
+  if (element.type === 'linkedText') {
+    onLinkedTextUpdate(id, newText);
+    return;
+  }
+
+  if (element.type === 'text') {
+    element.text = newText;
   }
 };
 
 const recalculateTextHeight = (id) => {
   const layout = state.elementLayout[id];
   if (!layout || !isTextElement(id)) return;
+  if (isLinkedTextElement(id)) return;
   const text = getElementText(id);
   const estimatedHeight = getEstimatedTextHeight(layout, text);
   if (estimatedHeight > 0) {
@@ -3671,11 +4017,23 @@ const {
   getElementText: (...args) => getElementText(...args),
   ensureParagraphStyles: (...args) => ensureParagraphStyles(...args),
   isTextElement: (...args) => isTextElement(...args),
+  isLinkedTextElement: (...args) => isLinkedTextElement(...args),
   isAspectLockedResizeElement: (...args) => isAspectLockedResizeElement(...args),
   applyParagraphStyleField: (...args) => applyParagraphStyleField(...args),
 });
 
 const handleDocumentPointerEnd = async (event) => {
+  if (linkedTextLink.active && linkedTextLink.sourceId) {
+    const targetId = linkedTextLink.hoverTargetId;
+    if (targetId && targetId !== linkedTextLink.sourceId) {
+      handleLinkedTextLinkEnd({ event, targetId });
+    } else {
+      linkedTextLink.active = false;
+      linkedTextLink.sourceId = null;
+      linkedTextLink.hoverTargetId = null;
+    }
+  }
+
   const draggedIds = drag.active && drag.mode === 'multi'
     ? [...multiSelectionIds.value]
     : (drag.active && drag.elementId ? [drag.elementId] : []);
@@ -3723,6 +4081,14 @@ const beginTextEdit = async (id, focusToEnd = false) => {
     return;
   }
 
+  if (state.customElements?.[id]?.type === 'linkedText') {
+    activeLinkedTextBox.value = id;
+    const layout = state.elementLayout[id];
+    if (layout?.linkedTextGroupId) {
+      linkedTextBoxSystem.startEditing(layout.linkedTextGroupId, id);
+    }
+  }
+
     state.selectedElementId = id;
     editingBoxHeight.value = elementMeasurements[id]?.height ?? null;
     selectedParagraphIndex.value = 0;
@@ -3745,30 +4111,42 @@ const commitTextEdit = () => {
     const id = editingElementId.value;
     const editorRef = richEditorRefs.value[id];
 
-    // El texto ya se sincroniza en vivo desde @update:text. Volver a leerlo
-    // aquí puede reintroducir contenido viejo si TipTap conserva un documento
-    // interno desfasado al abrir controles externos como el asistente.
-
     if (editorRef?.getParagraphStyles) {
       onRichEditorStylesUpdate(id, editorRef.getParagraphStyles());
     }
 
-    // Recalcular altura al finalizar la edición
     recalculateTextHeight(id);
+
+    // Si es linkedText, detener edición en el sistema
+    if (state.customElements?.[id]?.type === 'linkedText') {
+      const layout = state.elementLayout[id];
+      if (layout?.linkedTextGroupId) {
+        linkedTextBoxSystem.stopEditing(layout.linkedTextGroupId);
+      }
+    }
 
     paragraphSelection.start = selectedParagraphIndex.value;
     paragraphSelection.end = selectedParagraphIndex.value;
     paragraphSelection.active = false;
     editingElementId.value = null;
     editingBoxHeight.value = null;
+    activeLinkedTextBox.value = null;
 };
 
 const cancelTextEdit = () => {
+    const id = editingElementId.value;
+    if (state.customElements?.[id]?.type === 'linkedText') {
+      const layout = state.elementLayout[id];
+      if (layout?.linkedTextGroupId) {
+        linkedTextBoxSystem.stopEditing(layout.linkedTextGroupId);
+      }
+    }
     editingElementId.value = null;
     editingBoxHeight.value = null;
     paragraphSelection.start = selectedParagraphIndex.value;
     paragraphSelection.end = selectedParagraphIndex.value;
     paragraphSelection.active = false;
+    activeLinkedTextBox.value = null;
 };
 
 
@@ -3787,6 +4165,7 @@ onMounted(() => {
   document.addEventListener('pointerdown', handleGlobalPointerDown, true);
   document.addEventListener('pointermove', handlePinchPointerMove, { passive: false });
   document.addEventListener('pointermove', moveDrag, { passive: false });
+  document.addEventListener('pointermove', handleLinkedTextLinkMove, { passive: false });
   document.addEventListener('pointerup', handleDocumentPointerEnd);
   document.addEventListener('pointerup', handlePinchPointerEnd);
   document.addEventListener('pointercancel', handleDocumentPointerEnd);
@@ -3897,6 +4276,28 @@ watch(
     // ...el guardado ahora lo hace flushDesignerStateWithThumbnail
   },
   { deep: true }
+);
+
+watch(
+  () => {
+    const linkedLayouts = {};
+    Object.entries(state.elementLayout).forEach(([key, layout]) => {
+      if (layout.linkedTextGroupId) {
+        linkedLayouts[key] = { w: layout.w, h: layout.h, groupId: layout.linkedTextGroupId };
+      }
+    });
+    return JSON.stringify(linkedLayouts);
+  },
+  () => {
+    const handledGroups = new Set();
+    Object.keys(state.elementLayout).forEach((key) => {
+      const layout = state.elementLayout[key];
+      if (layout?.linkedTextGroupId && !handledGroups.has(layout.linkedTextGroupId)) {
+        handledGroups.add(layout.linkedTextGroupId);
+        recalculateLinkedTextAllocations(getLinkedTextChainHead(key));
+      }
+    });
+  }
 );
 
 const closeOptionsPanel = () => {
@@ -4663,6 +5064,7 @@ watch(
             @open-image-panel="openImageInsertPanel"
             @open-shape-panel="openShapeInsertPanel"
             @select-background-panel="openBackgroundPanel"
+            @add-linked-text="addLinkedTextElement"
           />
 
           <!-- Panel de Opciones (condicionalmente visible) -->
@@ -4848,6 +5250,8 @@ watch(
                   :shape-render-model="shapeRenderModel"
                   :canvas-ref-setter="setCanvasRef"
                   :rich-editor-ref-setter="setRichEditorRef"
+                  :linked-text-link="linkedTextLink"
+                  :active-linked-text-box="activeLinkedTextBox"
                   @canvas-pointer-down="handleCanvasPointerDownWithPinch"
                   @canvas-click="handleCanvasClick"
                   @canvas-file-drag-enter="handleCanvasFileDragEnter"
@@ -4859,10 +5263,12 @@ watch(
                   @element-pointer-down="handleElementPointerDown($event.event, $event.id)"
                   @rich-editor-text-update="onRichEditorTextUpdate($event.id, $event.value)"
                   @rich-editor-styles-update="onRichEditorStylesUpdate($event.id, $event.value)"
+                  @rich-editor-html-update="onRichEditorHtmlUpdate($event.id, $event.value)"
                   @rich-editor-selection-change="onRichEditorSelectionChange($event.id, $event.value)"
                   @rich-editor-blur="onRichEditorBlur($event.id, $event.event)"
                   @cancel-text-edit="cancelTextEdit"
                   @commit-text-edit="commitTextEdit"
+                  @linked-text-link-start="handleLinkedTextLinkStart"
                 >
                   <template #overlay>
                     <SelectionOverlay

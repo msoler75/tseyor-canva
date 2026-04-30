@@ -1,8 +1,12 @@
 <script setup>
 import { computed, defineAsyncComponent } from 'vue';
 import { foldGuidePositionsForFormat } from '../../data/designer';
+import { useLinkedTextBoxSystem } from '../../composables/useLinkedTextBoxSystem';
+import { useFrontendLog } from '../../composables/useFrontendLog';
 
 const RichTextEditor = defineAsyncComponent(() => import('./RichTextEditor.vue'));
+const linkedTextBoxSystem = useLinkedTextBoxSystem();
+const frontendLog = useFrontendLog();
 
 const props = defineProps({
   canvasGridStyle: Object,
@@ -38,6 +42,8 @@ const props = defineProps({
   activePage: Boolean,
   canvasRefSetter: Function,
   richEditorRefSetter: Function,
+  linkedTextLink: Object,
+  activeLinkedTextBox: String,
 });
 
 const emit = defineEmits([
@@ -48,6 +54,7 @@ const emit = defineEmits([
   'elementPointerDown',
   'richEditorTextUpdate',
   'richEditorStylesUpdate',
+  'richEditorHtmlUpdate',
   'richEditorSelectionChange',
   'richEditorBlur',
   'cancelTextEdit',
@@ -56,6 +63,7 @@ const emit = defineEmits([
   'canvasFileDragOver',
   'canvasFileDragLeave',
   'canvasFileDrop',
+  'linkedTextLinkStart',
 ]);
 
 const assignRichEditorRef = (id, element) => {
@@ -63,6 +71,110 @@ const assignRichEditorRef = (id, element) => {
 };
 
 const foldGuidePositions = computed(() => foldGuidePositionsForFormat(props.state?.format));
+
+const getLinkSourcePosition = computed(() => {
+  if (!props.linkedTextLink?.active || !props.linkedTextLink.sourceId) return null;
+  const layout = props.state?.elementLayout?.[props.linkedTextLink.sourceId];
+  if (!layout) return null;
+  return {
+    x: layout.x + (layout.w ?? 300),
+    y: layout.y + (layout.h ?? 120),
+  };
+});
+
+const permanentLinkLines = computed(() => {
+  const selectedId = props.state?.selectedElementId;
+  if (!selectedId) return [];
+  const el = props.state?.customElements?.[selectedId];
+  if (!el || el.type !== 'linkedText') return [];
+  const layout = props.state?.elementLayout?.[selectedId];
+  const groupId = layout?.linkedTextGroupId;
+  if (!groupId) return [];
+  const chainIds = [];
+  const visited = new Set();
+  let current = selectedId;
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    const l = props.state?.elementLayout?.[current];
+    if (!l) break;
+    if (l.linkedTextPrev) {
+      current = l.linkedTextPrev;
+    } else {
+      break;
+    }
+  }
+  const head = current;
+  current = head;
+  visited.clear();
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    chainIds.push(current);
+    const l = props.state?.elementLayout?.[current];
+    if (!l) break;
+    current = l.linkedTextNext;
+  }
+  const lines = [];
+  for (let i = 0; i < chainIds.length - 1; i++) {
+    const a = props.state?.elementLayout?.[chainIds[i]];
+    const b = props.state?.elementLayout?.[chainIds[i + 1]];
+    if (!a || !b) continue;
+    lines.push({
+      x1: a.x + (a.w ?? 300),
+      y1: a.y + (a.h ?? 120),
+      x2: b.x + (b.w ?? 300),
+      y2: b.y + (b.h ?? 120),
+    });
+  }
+  return lines;
+});
+
+const getLinkedTextChainHead = (boxId) => {
+  let currentId = boxId;
+  const visited = new Set();
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const l = props.state?.elementLayout?.[currentId];
+    if (!l) break;
+    if (l.linkedTextPrev) {
+      currentId = l.linkedTextPrev;
+    } else {
+      return currentId;
+    }
+  }
+  return boxId;
+};
+
+const getLinkedTextChain = (headId) => {
+  const chain = [];
+  let currentId = headId;
+  const visited = new Set();
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const l = props.state?.elementLayout?.[currentId];
+    if (!l) break;
+    chain.push(currentId);
+    currentId = l.linkedTextNext;
+  }
+  return chain;
+};
+
+const isLinkedTextInChainBeingEdited = (boxId) => {
+  // Si no hay ninguna caja activa editándose, mostrar modo display para todas
+  if (!props.activeLinkedTextBox) return true;
+  
+  // Si esta caja ES la que está siendo editada, NO está en modo display
+  if (boxId === props.activeLinkedTextBox) return false;
+  
+  // Verificar que ambas cajas pertenecen al mismo grupo
+  const boxLayout = props.state?.elementLayout?.[boxId];
+  const activeLayout = props.state?.elementLayout?.[props.activeLinkedTextBox];
+  
+  if (!boxLayout?.linkedTextGroupId || !activeLayout?.linkedTextGroupId) return true;
+  if (boxLayout.linkedTextGroupId !== activeLayout.linkedTextGroupId) return true;
+  
+  // Otra caja del mismo grupo está siendo editada, esta debe estar en modo display
+  return true;
+};
 </script>
 
 <template>
@@ -141,12 +253,14 @@ const foldGuidePositions = computed(() => foldGuidePositionsForFormat(props.stat
                     : 'border-2 border-dashed border-cyan-300 bg-white/8 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'))
             : (showFieldLabels && item.fieldKey
                 ? 'z-10 border-2 border-dashed border-accent bg-accent/10 shadow-[0_0_0_3px_rgba(251,191,36,.20)]'
-                : 'z-10 border border-transparent hover:border-white/20')"
+                : (linkedTextLink?.active && linkedTextLink.hoverTargetId === item.id
+                    ? 'z-10 border-2 border-solid border-emerald-400 bg-emerald-400/15 shadow-[0_0_0_3px_rgba(52,211,153,.25)]'
+                    : 'z-10 border border-transparent hover:border-white/20'))"
           @click="emit('elementClick', { event: $event, id: item.id })"
           @dblclick="emit('beginTextEdit', item.id)"
           @pointerdown="emit('elementPointerDown', { event: $event, id: item.id })"
         >
-          <div class="relative" :class="item.type === 'text' ? '' : 'h-full w-full'" :style="elementContentStyle(item.id)">
+          <div class="relative" :class="(item.type === 'text' || item.type === 'linkedText') ? '' : 'h-full w-full'" :style="elementContentStyle(item.id)">
             <div
               v-if="item.fieldKey"
               class="pointer-events-none absolute -top-6 left-0 z-20 transition group-hover:opacity-100"
@@ -156,7 +270,7 @@ const foldGuidePositions = computed(() => foldGuidePositionsForFormat(props.stat
                 {{ item.label }}
               </span>
             </div>
-            <template v-if="item.type === 'text'">
+            <template v-if="item.type === 'text' || item.type === 'linkedText'">
               <RichTextEditor
                 :key="`${item.id}-${state.templateRevision ?? 0}`"
                 :ref="(el) => assignRichEditorRef(item.id, el)"
@@ -166,8 +280,15 @@ const foldGuidePositions = computed(() => foldGuidePositionsForFormat(props.stat
                 :editor-style="richEditorContainerStyle(item.id)"
                 :color-override="neonColorOverride(item.id)"
                 :transparent-fill="!!state.elementLayout[item.id]?.hollowText"
+                :is-linked-text="item.type === 'linkedText'"
+                :linked-text-next="item.type === 'linkedText' ? (state.elementLayout[item.id]?.linkedTextNext ?? null) : null"
+                :box-dimensions="item.type === 'linkedText' ? { w: state.elementLayout[item.id]?.w, h: state.elementLayout[item.id]?.h, fontSize: state.elementLayout[item.id]?.fontSize, lineHeight: state.elementLayout[item.id]?.lineHeight } : null"
+                :display-mode="item.type === 'linkedText' && editingElementId !== item.id && isLinkedTextInChainBeingEdited(item.id)"
+                :display-html="item.type === 'linkedText' ? (item.linkedTextDisplayHtml ?? '') : ''"
+                :overflow-html="item.type === 'linkedText' ? (item.linkedTextOverflowHtml ?? '') : ''"
                 @update:text="emit('richEditorTextUpdate', { id: item.id, value: $event })"
                 @update:paragraph-styles="emit('richEditorStylesUpdate', { id: item.id, value: $event })"
+                @update:html="emit('richEditorHtmlUpdate', { id: item.id, value: $event })"
                 @selection-change="emit('richEditorSelectionChange', { id: item.id, value: $event })"
                 @blur="emit('richEditorBlur', { id: item.id, event: $event })"
                 @keydown.escape.stop="emit('cancelTextEdit')"
@@ -178,6 +299,17 @@ const foldGuidePositions = computed(() => foldGuidePositionsForFormat(props.stat
                 @dblclick.stop="emit('beginTextEdit', item.id)"
                 @click.stop="editingElementId === item.id ? null : emit('elementClick', { event: $event, id: item.id })"
               />
+              <button
+                v-if="item.type === 'linkedText'"
+                type="button"
+                class="linked-text-link-btn absolute bottom-1 right-1 z-20 flex h-6 w-6 cursor-grab items-center justify-center rounded-full bg-primary/80 text-white shadow-md transition hover:bg-primary active:cursor-grabbing"
+                title="Arrastra para conectar con otro texto enlazado"
+                @pointerdown.stop="emit('linkedTextLinkStart', { event: $event, id: item.id })"
+              >
+                <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+              </button>
             </template>
             <template v-else-if="item.type === 'image'">
               <div class="relative h-full w-full overflow-hidden rounded-xl" :style="imageFrameStyle(item.id)">
@@ -228,6 +360,43 @@ const foldGuidePositions = computed(() => foldGuidePositionsForFormat(props.stat
             </template>
           </div>
         </div>
+
+        <svg
+          v-if="linkedTextLink?.active && linkedTextLink.sourceId"
+          class="pointer-events-none absolute inset-0 z-50 overflow-visible"
+          style="width: 100%; height: 100%;"
+        >
+          <line
+            v-if="getLinkSourcePosition"
+            :x1="getLinkSourcePosition.x"
+            :y1="getLinkSourcePosition.y"
+            :x2="linkedTextLink.canvasX"
+            :y2="linkedTextLink.canvasY"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-dasharray="5,5"
+            class="text-primary"
+          />
+        </svg>
+
+        <svg
+          v-if="permanentLinkLines.length"
+          class="pointer-events-none absolute inset-0 z-40 overflow-visible"
+          style="width: 100%; height: 100%;"
+        >
+          <line
+            v-for="(line, idx) in permanentLinkLines"
+            :key="idx"
+            :x1="line.x1"
+            :y1="line.y1"
+            :x2="line.x2"
+            :y2="line.y2"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-dasharray="5,5"
+            class="text-emerald-400"
+          />
+        </svg>
 
         <slot name="overlay" />
       </div>

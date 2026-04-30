@@ -1,11 +1,42 @@
 <script setup>
-import { watch, onBeforeUnmount } from 'vue';
+import { watch, onBeforeUnmount, onMounted, nextTick, ref, computed } from 'vue';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
 import { TextAlign } from '@tiptap/extension-text-align';
-import { Node } from '@tiptap/core';
+import { Node, Mark } from '@tiptap/core';
+import { useFrontendLog } from '../../composables/useFrontendLog';
+
+const frontendLog = useFrontendLog();
 
 const STYLE_ATTRS = ['fontSize', 'color', 'fontFamily', 'fontWeight', 'italic', 'underline', 'uppercase', 'textAlign', 'letterSpacing', 'lineHeight'];
+
+const StyledTextMark = Mark.create({
+    name: 'styledText',
+    keepOnSplit: false,
+    addAttributes() {
+        return {
+            color: { default: null },
+            fontWeight: { default: null },
+            fontStyle: { default: null },
+            textDecoration: { default: null },
+            fontSize: { default: null },
+            fontFamily: { default: null },
+        };
+    },
+    parseHTML() {
+        return [{ tag: 'span[style]' }];
+    },
+    renderHTML({ HTMLAttributes }) {
+        const style = [];
+        if (HTMLAttributes.color) style.push(`color:${HTMLAttributes.color}`);
+        if (HTMLAttributes.fontWeight) style.push(`font-weight:${HTMLAttributes.fontWeight === 'bold' ? 700 : 500}`);
+        if (HTMLAttributes.fontStyle) style.push(`font-style:${HTMLAttributes.fontStyle}`);
+        if (HTMLAttributes.textDecoration) style.push(`text-decoration:${HTMLAttributes.textDecoration}`);
+        if (HTMLAttributes.fontSize) style.push(`font-size:${HTMLAttributes.fontSize}px`);
+        if (HTMLAttributes.fontFamily) style.push(`font-family:${HTMLAttributes.fontFamily}`);
+        return ['span', { ...HTMLAttributes, style: style.join(';') }, 0];
+    },
+});
 
 const attrsToStyle = (attrs) => {
     const parts = [];
@@ -22,7 +53,6 @@ const attrsToStyle = (attrs) => {
     return parts.join(';');
 };
 
-// Extiende el nodo Paragraph nativo con atributos de estilo propios
 const StyledParagraph = Node.create({
     name: 'paragraph',
     priority: 1001,
@@ -49,11 +79,16 @@ const props = defineProps({
     editorStyle: { type: Object, default: () => ({}) },
     colorOverride: { type: String, default: null },
     transparentFill: { type: Boolean, default: false },
+    isLinkedText: { type: Boolean, default: false },
+    linkedTextNext: { type: String, default: null },
+    boxDimensions: { type: Object, default: null },
     editable: { type: Boolean, default: false },
+    displayMode: { type: Boolean, default: false },
+    displayHtml: { type: String, default: '' },
+    overflowHtml: { type: String, default: '' },
 });
-const emit = defineEmits(['update:text', 'update:paragraphStyles', 'selectionChange', 'blur']);
+const emit = defineEmits(['update:text', 'update:paragraphStyles', 'update:html', 'selectionChange', 'blur']);
 
-// Construye el documento TipTap desde el texto plano + array de paragraphStyles
 const buildDoc = (text, styles) => {
     const lines = String(text ?? '').replace(/\r\n/g, '\n').split('\n');
     return {
@@ -81,7 +116,6 @@ const buildDoc = (text, styles) => {
     };
 };
 
-// Extrae texto plano y paragraphStyles desde el doc TipTap
 const extractFromDoc = (doc) => {
     const lines = [];
     const styles = [];
@@ -109,24 +143,65 @@ const extractFromDoc = (doc) => {
 
 let suppressWatch = false;
 
+const wrapperRef = ref(null);
+const overflowRef = ref(null);
+
+const wrapperStyle = computed(() => {
+    return props.colorOverride ? { '--neon-override-color': props.colorOverride } : {};
+});
+
 const editor = useEditor({
     extensions: [
         StarterKit.configure({ paragraph: false, bold: false, italic: false, code: false, codeBlock: false, blockquote: false, horizontalRule: false, heading: false }),
         TextAlign.configure({ types: ['paragraph'] }),
         StyledParagraph,
+        StyledTextMark,
     ],
-    editable: props.editable,
+    editable: props.editable && !props.displayMode,
     content: buildDoc(props.text, props.paragraphStyles),
     editorProps: {
         attributes: {
             class: props.editorClass,
             spellcheck: 'false',
         },
+        handlePaste({ editor: ed, event }) {
+            if (!props.isLinkedText) return false;
+
+            const pastedText = event.clipboardData?.getData('text/plain') || '';
+            const htmlBefore = ed.getHTML();
+            const textBefore = ed.getText();
+            const charsBefore = textBefore.length;
+
+            // El paste ocurre antes del onUpdate, así que usamos nextTick
+            nextTick(() => {
+                const htmlAfter = ed.getHTML();
+                const textAfter = ed.getText();
+                const charsAfter = textAfter.length;
+                const charsAdded = charsAfter - charsBefore;
+
+                frontendLog.info('paste', 
+                    `Texto pegado en linkedText`, 
+                    {
+                        boxId: wrapperRef.value?.closest('[data-editor-id]')?.dataset?.editorId,
+                        pastedLength: pastedText.length,
+                        pastedPreview: pastedText.substring(0, 200),
+                        charsBefore,
+                        charsAfter,
+                        charsAdded,
+                        htmlBeforeLength: htmlBefore.length,
+                        htmlAfterLength: htmlAfter.length,
+                        htmlAfterPreview: htmlAfter.substring(0, 300),
+                    }
+                );
+            });
+
+            return false; // Dejar que TipTap maneje el paste normalmente
+        },
     },
     onUpdate({ editor: ed }) {
         const { text, styles } = extractFromDoc(ed.state.doc);
 
-        if (!props.editable) {
+        if (!props.editable || props.displayMode) {
             emit('update:paragraphStyles', styles);
             return;
         }
@@ -134,6 +209,7 @@ const editor = useEditor({
         suppressWatch = true;
         emit('update:text', text);
         emit('update:paragraphStyles', styles);
+        emit('update:html', ed.getHTML());
         suppressWatch = false;
     },
     onSelectionUpdate({ editor: ed }) {
@@ -169,9 +245,8 @@ const editor = useEditor({
     },
 });
 
-// Aplica un campo de estilo a los párrafos actualmente seleccionados en el editor
 const applyStyle = (field, value) => {
-    if (!editor.value) return;
+    if (!editor?.value) return;
     const { from, to } = editor.value.state.selection;
     const patches = [];
     editor.value.state.doc.forEach((node, offset) => {
@@ -188,9 +263,8 @@ const applyStyle = (field, value) => {
     editor.value.view.dispatch(tr);
 };
 
-// Aplica un campo de estilo a TODOS los párrafos (modo sin edición: caja completa)
 const applyStyleAll = (field, value) => {
-    if (!editor.value) return;
+    if (!editor?.value) return;
     const patches = [];
     editor.value.state.doc.forEach((node, offset) => {
         if (node.type.name === 'paragraph') patches.push({ pos: offset + 1, attrs: { ...node.attrs } });
@@ -203,9 +277,8 @@ const applyStyleAll = (field, value) => {
     editor.value.view.dispatch(tr);
 };
 
-// Devuelve los atributos del párrafo donde está el cursor
 const getActiveAttrs = () => {
-    if (!editor.value) return {};
+    if (!editor?.value) return {};
     const { from } = editor.value.state.selection;
     const resolved = editor.value.state.doc.resolve(from);
     const parent = resolved.parent;
@@ -222,31 +295,104 @@ const getActiveAttrs = () => {
 };
 
 const focusAtEnd = () => {
-    if (!editor.value) return;
+    if (!editor?.value) return;
+    editor.value.commands.focus('end');
+};
+
+const focusAtPosition = (pos) => {
+    if (!editor?.value) return;
     editor.value.commands.focus('end');
 };
 
 const getPlainText = () => {
-    if (!editor.value) return '';
+    if (!editor?.value) return props.text || '';
     return extractFromDoc(editor.value.state.doc).text;
 };
 
 const getParagraphStyles = () => {
-    if (!editor.value) return [];
+    if (!editor?.value) return props.paragraphStyles || [];
     return extractFromDoc(editor.value.state.doc).styles;
 };
 
-// Expone API para que EditorPage pueda llamar
-defineExpose({ applyStyle, applyStyleAll, getActiveAttrs, focusAtEnd, getPlainText, getParagraphStyles });
+const applyMarkStyle = (markType, attrs = {}) => {
+    if (!editor?.value) return;
+    const { from, to } = editor.value.state.selection;
+    if (from === to) return;
+    const mark = editor.value.schema.marks[markType];
+    if (!mark) return;
+    const tr = editor.value.state.tr.addMark(from, to, mark.create(attrs));
+    editor.value.view.dispatch(tr);
+};
 
-// Cuando cambia el prop editable, actualizar el editor
-watch(() => props.editable, (val) => {
-    editor.value?.setEditable(val);
+const removeMarkStyle = (markType) => {
+    if (!editor?.value) return;
+    const { from, to } = editor.value.state.selection;
+    if (from === to) return;
+    const mark = editor.value.schema.marks[markType];
+    if (!mark) return;
+    const tr = editor.value.state.tr.removeMark(from, to, mark);
+    editor.value.view.dispatch(tr);
+};
+
+const toggleMarkStyle = (markType, attrs = {}) => {
+    if (!editor?.value) return;
+    const { from, to } = editor.value.state.selection;
+    if (from === to) return;
+    const mark = editor.value.schema.marks[markType];
+    if (!mark) return;
+    let hasMark = false;
+    editor.value.state.doc.nodesBetween(from, to, (node) => {
+        if (node.marks?.some((m) => m.type.name === markType)) hasMark = true;
+    });
+    if (hasMark) {
+        removeMarkStyle(markType);
+    } else {
+        applyMarkStyle(markType, attrs);
+    }
+};
+
+const setContentDirect = (html) => {
+    if (!editor?.value) return;
+    editor.value.commands.setContent(html, false);
+};
+
+const getHtml = () => {
+    if (!editor?.value) return '';
+    return editor.value.getHTML();
+};
+
+defineExpose({
+    applyStyle,
+    applyStyleAll,
+    getActiveAttrs,
+    focusAtEnd,
+    focusAtPosition,
+    getPlainText,
+    getParagraphStyles,
+    getHtml,
+    applyMarkStyle,
+    removeMarkStyle,
+    toggleMarkStyle,
+    setContentDirect
 });
 
-// Si el texto externo cambia (por sync con state), reconstruimos el doc
+watch(() => props.editable, (val) => {
+    editor?.value?.setEditable(val && !props.displayMode);
+});
+
+watch(() => props.displayMode, (val) => {
+    editor?.value?.setEditable(props.editable && !val);
+    
+    // Log de estilos cuando cambia el modo display
+    if (props.isLinkedText) {
+        nextTick(() => {
+            logLinkedTextStyles();
+        });
+    }
+});
+
 watch(() => [props.text, props.paragraphStyles], ([newText, newStyles]) => {
-    if (suppressWatch || !editor.value) return;
+    if (suppressWatch || !editor?.value || props.displayMode) return;
     const current = extractFromDoc(editor.value.state.doc);
     const textChanged = current.text !== newText;
     const stylesChanged = JSON.stringify(current.styles) !== JSON.stringify(newStyles ?? []);
@@ -256,17 +402,118 @@ watch(() => [props.text, props.paragraphStyles], ([newText, newStyles]) => {
     }
 }, { deep: true });
 
-onBeforeUnmount(() => {
-    editor.value?.destroy();
+// Log de estilos cuando se monta el componente
+onMounted(() => {
+    if (props.isLinkedText) {
+        nextTick(() => {
+            logLinkedTextStyles();
+        });
+    }
 });
+
+onBeforeUnmount(() => {
+    editor?.value?.destroy();
+});
+
+/**
+ * Registrar y comparar estilos CSS entre modo display y modo edición.
+ */
+const logLinkedTextStyles = () => {
+    if (!props.isLinkedText) return;
+    
+    const boxId = wrapperRef.value?.closest('[data-editor-id]')?.dataset?.editorId;
+    if (!boxId) return;
+
+    // Obtener estilos del contenedor padre (elementContentStyle)
+    const parentElement = wrapperRef.value?.parentElement;
+    const parentStyles = parentElement ? window.getComputedStyle(parentElement) : null;
+    
+    // Obtener estilos del contenedor display o editor
+    let contentElement = null;
+    let mode = 'unknown';
+    
+    if (props.displayMode) {
+        contentElement = wrapperRef.value?.querySelector('.linked-text-display');
+        mode = 'display';
+    } else {
+        contentElement = wrapperRef.value?.querySelector('.ProseMirror');
+        mode = 'edit';
+    }
+    
+    const contentStyles = contentElement ? window.getComputedStyle(contentElement) : null;
+    
+    // Registrar estilos
+    const parentStyleData = parentStyles ? frontendLog.logElementStyles(
+        boxId, 
+        `${mode}-parent`, 
+        parentElement, 
+        parentStyles
+    ) : {};
+    
+    const contentStyleData = contentStyles ? frontendLog.logElementStyles(
+        boxId, 
+        mode, 
+        contentElement, 
+        contentStyles
+    ) : {};
+    
+    // Si tenemos ambos modos, comparar
+    if (props.displayMode) {
+        // Guardar estilos display para comparación posterior
+        window.__linkedTextDisplayStyles = window.__linkedTextDisplayStyles || {};
+        window.__linkedTextDisplayStyles[boxId] = {
+            parent: parentStyleData,
+            content: contentStyleData,
+        };
+    } else {
+        // Comparar con estilos display guardados
+        const savedStyles = window.__linkedTextDisplayStyles?.[boxId];
+        if (savedStyles) {
+            frontendLog.logLinkedTextStyleComparison(
+                boxId,
+                savedStyles.content,
+                contentStyleData,
+                {
+                    displayParentStyles: savedStyles.parent,
+                    editParentStyles: parentStyleData,
+                    displayMode: props.displayMode,
+                    editable: props.editable,
+                    editorStyle: props.editorStyle,
+                }
+            );
+        }
+    }
+};
 </script>
 
 <template>
     <div
-        :class="{ 'neon-active': !!props.colorOverride, 'hollow-active': props.transparentFill }"
-        :style="props.colorOverride ? { '--neon-override-color': props.colorOverride } : {}"
+        ref="wrapperRef"
+        :class="{
+            'neon-active': !!props.colorOverride,
+            'hollow-active': props.transparentFill,
+            'linked-text-display-mode': props.displayMode
+        }"
+        :style="wrapperStyle"
     >
-        <EditorContent :editor="editor" :style="editorStyle" />
+        <div
+            v-if="props.displayMode"
+            class="linked-text-display"
+            :style="props.editorStyle"
+            v-html="props.displayHtml"
+        ></div>
+        <EditorContent
+            v-else
+            :editor="editor"
+            :style="props.editorStyle"
+        />
+        <div
+            v-if="props.overflowHtml && props.displayMode"
+            ref="overflowRef"
+            class="linked-text-overflow"
+            :style="{ opacity: 0.5, color: 'inherit' }"
+            v-html="props.overflowHtml"
+        ></div>
     </div>
 </template>
 
@@ -283,6 +530,7 @@ onBeforeUnmount(() => {
     outline: none;
     white-space: pre-wrap;
     word-break: break-word;
+    overflow-wrap: break-word;
     cursor: text;
     color: inherit;
     text-shadow: inherit;
@@ -293,5 +541,42 @@ onBeforeUnmount(() => {
     padding: 0;
     text-shadow: inherit;
     -webkit-text-stroke: inherit;
+}
+.linked-text-display {
+    outline: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    cursor: text;
+    color: inherit;
+    text-shadow: inherit;
+    -webkit-text-stroke: inherit;
+    overflow: visible;
+}
+.linked-text-display p {
+    margin: 0;
+    padding: 0;
+    text-shadow: inherit;
+    -webkit-text-stroke: inherit;
+}
+.linked-text-display-mode {
+    position: relative;
+    height: 100%;
+    overflow: visible;
+}
+.linked-text-display-mode .linked-text-display {
+    overflow: visible;
+    height: 100%;
+    box-sizing: border-box;
+    position: relative;
+}
+.linked-text-overflow {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
 }
 </style>

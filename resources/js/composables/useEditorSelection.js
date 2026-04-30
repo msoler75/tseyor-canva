@@ -51,7 +51,7 @@ export const useEditorSelection = ({
     return editorElements.value.find((item) => item.id === state.selectedElementId)?.label ?? 'Elemento';
   });
   const selectedElementType = computed(() => editorElements.value.find((item) => item.id === state.selectedElementId)?.type ?? null);
-  const hasTextSelection = computed(() => hasSelection.value && selectedElementType.value === 'text');
+  const hasTextSelection = computed(() => hasSelection.value && (selectedElementType.value === 'text' || selectedElementType.value === 'linkedText'));
 
   const getGroupIdForElement = (id) => {
     for (const [groupId, group] of Object.entries(groupedElements)) {

@@ -45,6 +45,7 @@ export const useEditorInteractions = ({
   getElementText,
   ensureParagraphStyles,
   isTextElement,
+  isLinkedTextElement,
   isAspectLockedResizeElement,
   applyParagraphStyleField,
 }) => {
@@ -449,6 +450,7 @@ export const useEditorInteractions = ({
     const boundsHeight = logicalBounds.height;
     const layout = drag.groupId ? groupedElements[drag.groupId]?.layout : state.elementLayout[drag.elementId];
     const isText = drag.groupId ? false : isTextElement(drag.elementId);
+    const isLinkedText = drag.groupId ? false : isLinkedTextElement?.(drag.elementId) ?? false;
     if (!layout) return;
 
     if (drag.groupId) {
@@ -617,7 +619,7 @@ export const useEditorInteractions = ({
       const horizontalDelta = handle.includes('e') ? deltaX : -deltaX;
       const maxTextWidth = Math.max(120, boundsWidth - 8);
 
-      if (!isText) {
+      if (!isText || isLinkedText) {
         const currentHeight = drag.startH || layout.h || 140;
         const minHeight = 4;
         const minWidth = 4;

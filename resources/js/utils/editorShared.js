@@ -714,7 +714,7 @@ export function buildElementContentStyle(layout = {}, { elementType = null } = {
   };
 }
 
-export function buildElementBoxStyle(layout = {}, { isText = false } = {}) {
+export function buildElementBoxStyle(layout = {}, { isText = false, isLinkedText = false } = {}) {
   const rotation = Number(layout.rotation ?? 0);
 
   return {
@@ -722,10 +722,11 @@ export function buildElementBoxStyle(layout = {}, { isText = false } = {}) {
     left: `${layout.x ?? 0}px`,
     top: `${layout.y ?? 0}px`,
     width: `${layout.w ?? 160}px`,
-    height: isText ? 'auto' : `${layout.h ?? 140}px`,
+    height: (isText && !isLinkedText) ? 'auto' : `${layout.h ?? 140}px`,
     zIndex: `${layout.zIndex ?? 1}`,
     transform: `rotate(${rotation}deg)`,
     transformOrigin: 'center center',
+    ...(isLinkedText ? { overflow: 'visible' } : {}),
   };
 }
 
@@ -805,3 +806,192 @@ export function applyFormatToDimensions(dimensions, format) {
 
   return dimensions;
 }
+
+// Text measurement with Canvas API for pixel-perfect text layout
+
+let TEXT_MEASURE_CANVAS = null;
+let TEXT_MEASURE_CTX = null;
+
+function getMeasureCanvas() {
+  if (!TEXT_MEASURE_CANVAS) {
+    TEXT_MEASURE_CANVAS = document.createElement('canvas');
+    TEXT_MEASURE_CANVAS.style.position = 'absolute';
+    TEXT_MEASURE_CANVAS.style.visibility = 'hidden';
+    TEXT_MEASURE_CANVAS.style.pointerEvents = 'none';
+    TEXT_MEASURE_CANVAS.style.left = '-9999px';
+    TEXT_MEASURE_CANVAS.style.top = '-9999px';
+    TEXT_MEASURE_CANVAS.style.width = '0';
+    TEXT_MEASURE_CANVAS.style.height = '0';
+    document.body.appendChild(TEXT_MEASURE_CANVAS);
+    TEXT_MEASURE_CTX = TEXT_MEASURE_CANVAS.getContext('2d');
+  }
+  return TEXT_MEASURE_CANVAS;
+}
+
+function buildFontString(style = {}) {
+  const {
+    fontSize = 18,
+    fontFamily = 'Inter, sans-serif',
+    fontWeight = 'regular',
+    italic = false,
+    letterSpacing = 0,
+  } = style;
+  const weight = fontWeight === 'bold' ? '700' : fontWeight === 'regular' ? '400' : String(fontWeight);
+  const italicStr = italic ? 'italic ' : '';
+  return `${italicStr}${weight} ${fontSize}px ${fontFamily}`;
+}
+
+function measureTextWidth(text, style = {}) {
+  if (!text) return 0;
+  const ctx = getMeasureCanvas().getContext('2d');
+  const fontStr = buildFontString(style);
+  ctx.font = fontStr;
+  const metrics = ctx.measureText(text);
+  let width = metrics.width;
+  if (style.letterSpacing > 0) {
+    width += (text.length - 1) * style.letterSpacing;
+  }
+  return width;
+}
+
+function getTextHeight(style = {}) {
+  const fs = style.fontSize || 18;
+  const lh = style.lineHeight || 1.4;
+  return fs * lh;
+}
+
+export function fitTextInBox(text, styles = [], maxWidth, maxHeight) {
+  if (!text && (!styles || styles.length === 0)) return { fitting: '', overflow: '', fittingHeight: 0 };
+  const style = styles[0] || styles[styles.length - 1] || {};
+  const fs = style.fontSize || 18;
+  const lh = style.lineHeight || 1.4;
+  const lineHeightPx = fs * lh;
+  const maxLines = Math.max(1, Math.floor(maxHeight / lineHeightPx));
+  if (maxLines <= 0) return { fitting: '', overflow: text, fittingHeight: 0 };
+  if (maxWidth <= 0) return { fitting: '', overflow: text, fittingHeight: 0 };
+
+  const ctx = getMeasureCanvas().getContext('2d');
+  ctx.font = buildFontString(style);
+  const lines = text.split('\n');
+  const fittingLines = [];
+  let overflowParts = [];
+  let currentHeight = 0;
+
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    if (currentHeight + lineHeightPx > maxHeight) {
+      const restLines = lines.slice(li + 1);
+      if (restLines.length) overflowParts.push(...restLines);
+      break;
+    }
+    const words = line.split(' ');
+    let currentLine = '';
+    for (let wi = 0; wi < words.length; wi++) {
+      const word = words[wi];
+      if (fittingLines.length >= maxLines) {
+        const rest = words.slice(wi);
+        if (rest.length) overflowParts.push(...rest);
+        const laterLines = lines.slice(li + 1);
+        if (laterLines.length) overflowParts.push(...laterLines);
+        break;
+      }
+      const testLine = currentLine ? currentLine + ' ' + word : word;
+      let testWidth = ctx.measureText(testLine).width;
+      if (style.letterSpacing > 0) {
+        testWidth += (testLine.length - 1) * style.letterSpacing;
+      }
+      if (testWidth <= maxWidth) {
+        currentLine = testLine;
+      } else {
+        if (!currentLine) {
+          let partWord = '';
+          for (const ch of word) {
+            let chWidth = ctx.measureText(ch).width;
+            if (style.letterSpacing > 0) chWidth += style.letterSpacing;
+            if (ctx.measureText(partWord + ch).width + (partWord.length > 0 ? style.letterSpacing : 0) <= maxWidth) {
+              partWord += ch;
+            } else break;
+          }
+          if (partWord) {
+            fittingLines.push(partWord);
+            currentHeight += lineHeightPx;
+          }
+          overflowParts.push(word.substring(partWord.length));
+          const rest = words.slice(wi + 1);
+          if (rest.length) overflowParts.push(...rest);
+        } else {
+          fittingLines.push(currentLine);
+          currentHeight += lineHeightPx;
+          overflowParts.push(word);
+          const rest = words.slice(wi + 1);
+          if (rest.length) overflowParts.push(...rest);
+          currentLine = '';
+        }
+        if (fittingLines.length >= maxLines) {
+          const laterLines = lines.slice(li + 1);
+          if (laterLines.length) overflowParts.push(...laterLines);
+          break;
+        }
+      }
+    }
+    if (fittingLines.length >= maxLines) {
+      const laterLines = lines.slice(li + 1);
+      if (laterLines.length) overflowParts.push(...laterLines);
+      break;
+    }
+    if (currentLine) {
+      fittingLines.push(currentLine);
+      currentHeight += lineHeightPx;
+    }
+  }
+
+  return {
+    fitting: fittingLines.join('\n'),
+    overflow: overflowParts.join(' '),
+    fittingHeight: currentHeight,
+  };
+}
+
+export function distributeTextInLinkedChain(fullText, chainLayouts) {
+  if (!chainLayouts || chainLayouts.length === 0) return [];
+  if (!fullText) return chainLayouts.map(() => '');
+  const results = chainLayouts.map(() => '');
+  let remaining = fullText;
+  for (let i = 0; i < chainLayouts.length; i++) {
+    const { w, h, fontSize, fontFamily, fontWeight, italic, letterSpacing, lineHeight, paragraphStyles } = chainLayouts[i];
+    const style = (paragraphStyles && paragraphStyles[0]) || {
+      fontSize: fontSize || 18,
+      fontFamily: fontFamily || 'Inter, sans-serif',
+      fontWeight: fontWeight || 'regular',
+      italic: italic || false,
+      letterSpacing: letterSpacing || 0,
+      lineHeight: lineHeight || 1.4,
+    };
+    const boxW = w || 300;
+    const boxH = h || 120;
+    if (!remaining) {
+      results[i] = '';
+      continue;
+    }
+    if (i === chainLayouts.length - 1) {
+      results[i] = remaining;
+      remaining = '';
+    } else {
+      const { fitting, overflow } = fitTextInBox(remaining, [style], boxW, boxH);
+      results[i] = fitting;
+      remaining = overflow;
+    }
+  }
+  return results;
+}
+
+export function getOverflowTextForBox(text, styles, maxWidth, maxHeight, hasNextBox) {
+  if (!text) return { fitting: text, overflow: '', fittingHeight: 0 };
+  const result = fitTextInBox(text, styles, maxWidth, maxHeight);
+  if (hasNextBox) {
+    return { fitting: result.fitting, overflow: '', fittingHeight: result.fittingHeight };
+  }
+  return { fitting: result.fitting, overflow: result.overflow, fittingHeight: result.fittingHeight };
+}
+
+export { measureTextWidth, buildFontString, getTextHeight };

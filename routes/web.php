@@ -7,6 +7,7 @@ use App\Http\Controllers\DesignController;
 use App\Http\Controllers\DesignTemplateController;
 use App\Http\Controllers\DesignerController;
 use App\Http\Controllers\FontController;
+use App\Http\Controllers\FrontendLogController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [DesignerController::class, 'welcome'])->name('designer.welcome');
@@ -49,6 +50,8 @@ Route::prefix('designer')->group(function (): void {
     Route::get('/assets', [DesignAssetController::class, 'index'])->name('designer.assets.index');
     Route::post('/assets', [DesignAssetController::class, 'store'])->name('designer.assets.store');
 });
+
+Route::post('/api/logs', [FrontendLogController::class, 'store'])->name('api.logs.store');
 
 Route::post('/deploy/build', [DeployController::class, 'build'])->name('deploy.build');
 
