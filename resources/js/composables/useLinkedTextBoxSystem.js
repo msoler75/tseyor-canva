@@ -131,35 +131,82 @@ export function createLinkedTextBoxSystem() {
      }
      const totalWords = allWords.length;
 
-     // Crear UN solo div de medición (reutilizar)
-     let measureDiv = document.getElementById('measure');
-     if(!measureDiv) {
-        measureDiv = document.createElement("div")
-        measureDiv.id = 'measure'
-        measureDiv.style.position = 'absolute';
-        measureDiv.style.left = '-9999px';
-        measureDiv.style.visibility = 'hidden';
-        measureDiv.style.overflow = 'visible';
-        measureDiv.style.whiteSpace = 'pre-wrap';
-        measureDiv.style.wordBreak = 'break-word';
-        measureDiv.style.overflowWrap = 'break-word';
-        document.body.appendChild(measureDiv);
-     }
+      // Crear UN solo div de medición (reutilizar)
+      let measureDiv = document.getElementById('measure');
+      if(!measureDiv) {
+         measureDiv = document.createElement("div")
+         measureDiv.id = 'measure';
+         measureDiv.style.position = 'fixed';
+         measureDiv.style.left = '200px';
+         measureDiv.style.top = '200px';
+         measureDiv.style.zIndex = '999999';
+         measureDiv.style.visibility = 'visible';
+         measureDiv.style.background = 'orange';
+         measureDiv.style.minHeight = '100px';
+         measureDiv.style.padding = '0'; // SIN PADDING (para no alterar ancho)
+         document.body.appendChild(measureDiv);
+      }
 
-     // Función para aplicar estilos del contenedor al div de medición
-     const applyContainerStylesToMeasure = () => {
-       if (!containerStyle) return;
-       const criticalStyles = [
-         'fontSize', 'fontFamily', 'lineHeight', 'letterSpacing',
-         'wordSpacing', 'padding', 'fontWeight', 'fontStyle'
-       ];
-       criticalStyles.forEach(prop => {
-         if (containerStyle[prop]) {
-           measureDiv.style[prop] = containerStyle[prop];
-         }
-       });
-     };
-     applyContainerStylesToMeasure();
+      // Función para configurar el div de medición DINÁMICO
+      const setupMeasureDiv = (layout) => {
+        if (!layout) return null;
+
+        // Limpiar measureDiv
+        measureDiv.innerHTML = '';
+
+        // Hacer el measureDiv contenedor visible y sin padding
+        measureDiv.style.padding = '0';
+        measureDiv.style.border = '0px';
+
+        // Crear div interno para medición
+        const innerDiv = document.createElement('div');
+
+        // Hacerlo MUY VISIBLE para depuración
+        innerDiv.style.cssText = `
+          display: block !important;
+          visibility: visible !important;
+          opacity: 1 !important;
+          height: auto !important;
+          overflow: visible !important;
+          white-space: pre-wrap !important;
+          word-break: break-word !important;
+          overflow-wrap: break-word !important;
+          box-sizing: border-box !important;
+          border: 0 !important;
+          background: gray !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        `;
+
+        // ANCHO DINÁMICO: intentar usar el ancho del elemento real
+        let width = layout.w || 300;
+        const realElement = document.getElementById(layout.id);
+        if (realElement) {
+          const computedStyle = window.getComputedStyle(realElement);
+          const computedWidth = computedStyle.width;
+          if (computedWidth && computedWidth !== 'auto') {
+            width = parseInt(computedWidth);
+          }
+        }
+        innerDiv.style.width = `${width}px`;
+
+        // Copiar estilos de fuente desde el layout
+        if (layout.fontSize) innerDiv.style.fontSize = `${layout.fontSize}px`;
+        if (layout.fontFamily) innerDiv.style.fontFamily = layout.fontFamily;
+        if (layout.lineHeight) innerDiv.style.lineHeight = String(layout.lineHeight);
+        if (layout.letterSpacing !== undefined) innerDiv.style.letterSpacing = `${layout.letterSpacing}px`;
+        if (layout.fontWeight) innerDiv.style.fontWeight = layout.fontWeight;
+        if (layout.fontStyle) innerDiv.style.fontStyle = layout.fontStyle;
+        if (layout.color) innerDiv.style.color = layout.color;
+
+        // Copiar clases CSS (para heredar estilos como .linked-text-display)
+        innerDiv.className = 'linked-text-display';
+
+        // Añadir al measureDiv
+        measureDiv.appendChild(innerDiv);
+
+        return innerDiv;
+      };
 
       /**
        * Construir HTML desde un slice de palabras (manteniendo estructura de párrafos)
@@ -197,7 +244,7 @@ export function createLinkedTextBoxSystem() {
         }).join('');
       };
 
-      // Procesar cada caja en la cadena secuencialmente
+       // Procesar cada caja en la cadena secuencialmente
       let wordIdx = 0; // índice de la próxima palabra a colocar
       chainLayouts.forEach((layout, boxIndex) => {
         // Si ya no quedan palabras, la caja actual y las siguientes quedan vacías
@@ -214,17 +261,21 @@ export function createLinkedTextBoxSystem() {
         // Texto de entrada completo para esta caja (antes de recortar por altura)
         const inputSlice = allWords.slice(wordIdx, totalWords);
 
-        // Dimensiones disponibles de la caja (restando padding y botón de enlace)
-        const paddingVertical = 0;
-        const paddingHorizontal = 0;
-        const maxHeight = (layout.h || 50) - paddingVertical;
-        const maxWidth = (layout.w || 100) - paddingHorizontal;
+        // Configurar el div de medición para esta caja (clonar o fallback)
+        const measureNode = setupMeasureDiv(layout);
+        if (!measureNode) {
+          // Si no hay nodo, no podemos medir
+          system.fragments[layout.id] = {
+            html: '',
+            overflowHtml: buildHtmlFromWordSlice(allWords.slice(wordIdx)),
+            fullTextHtml: buildHtmlFromWordSlice(inputSlice),
+            fitsInBox: false
+          };
+          return;
+        }
 
-        // Aplicar estilos del contenedor (puede variar por caja, pero usamos el mismo containerStyle global)
-        applyContainerStylesToMeasure();
-        measureDiv.style.width = `${maxWidth}px`;
-
-        // Búsqueda binaria para encontrar cuántas palabras caben en esta caja
+        // La altura máxima es la altura de la caja
+        const maxHeight = (layout.h || 50);
         let left = 0;
         let right = totalWords - wordIdx;
         let bestFit = 0;
@@ -233,8 +284,8 @@ export function createLinkedTextBoxSystem() {
           const mid = Math.floor((left + right) / 2);
           const testSlice = allWords.slice(wordIdx, wordIdx + mid);
           const html = buildHtmlFromWordSlice(testSlice);
-          measureDiv.innerHTML = html;
-          const height = measureDiv.offsetHeight;
+          measureNode.innerHTML = html;  // Usar el NODO retornado por setupMeasureDiv
+          const height = measureNode.offsetHeight;
 
           if (height <= maxHeight) {
             // Cabe: intentar con más palabras
@@ -365,7 +416,7 @@ export function createLinkedTextBoxSystem() {
 
   function applyContainerStyles(el, containerStyle) {
     if (containerStyle.padding) el.style.padding = containerStyle.padding;
-    else el.style.padding = '8px';
+    else el.style.padding = '0px';
     if (containerStyle.fontSize) el.style.fontSize = `${containerStyle.fontSize}px`;
     if (containerStyle.fontFamily) el.style.fontFamily = containerStyle.fontFamily;
     if (containerStyle.lineHeight) el.style.lineHeight = containerStyle.lineHeight;
