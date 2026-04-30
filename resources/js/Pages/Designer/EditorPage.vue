@@ -1242,8 +1242,7 @@ const readonlyPageElements = (pageState) => {
   }));
 
   return [...baseTextElements, ...customElements]
-    .filter((item) => layout[item.id])
-    .sort((a, b) => (layout[a.id]?.zIndex ?? 0) - (layout[b.id]?.zIndex ?? 0));
+    .sort((a, b) => ((layout[a.id] ?? {}).zIndex ?? 0) - ((layout[b.id] ?? {}).zIndex ?? 0));
 };
 const readonlyPageSurfaceStyle = (pageState) => ({
   ...canvasElementStyle.value,
@@ -4278,7 +4277,6 @@ watch(
       syncActivePageSnapshot();
       return;
     }
-    syncActivePageSnapshot();
     scheduleHistorySnapshot();
     flushDesignerStateWithThumbnail();
   },
