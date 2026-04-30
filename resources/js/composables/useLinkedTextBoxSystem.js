@@ -3,7 +3,7 @@ import { useFrontendLog } from './useFrontendLog';
 
 /**
  * useLinkedTextBoxSystem - "Single Source, Multiple Viewports"
- * 
+ *
  * Arquitectura:
  * - UN solo editor TipTap (fuente única de verdad)
  * - Múltiples frames que muestran fragmentos del contenido
@@ -59,7 +59,7 @@ export function createLinkedTextBoxSystem() {
   function rebuildChainFromState(headId, state) {
     const chain = [];
     let currentId = headId;
-    
+
     while (currentId) {
       chain.push(currentId);
       const layout = state.elementLayout?.[currentId];
@@ -93,10 +93,10 @@ export function createLinkedTextBoxSystem() {
 
     // Parsear el HTML en párrafos con estilos
     const paragraphs = parseHtmlIntoParagraphs(fullHtml);
-    
+
     // Log de párrafos parseados
-    frontendLog.info('parseHtml', 
-      `HTML parseado en ${paragraphs.length} párrafos`, 
+    frontendLog.info('parseHtml',
+      `HTML parseado en ${paragraphs.length} párrafos`,
       {
         groupId,
         inputHtml: fullHtml.substring(0, 300),
@@ -108,13 +108,13 @@ export function createLinkedTextBoxSystem() {
         })),
       }
     );
-    
+
     // Distribuir palabras entre frames
     const fragments = distributeWordsToFragments(paragraphs, chainLayouts, containerStyle);
 
     // Log de fragmentos generados
-    frontendLog.info('buildFragments', 
-      `Generados ${fragments.length} fragmentos`, 
+    frontendLog.info('buildFragments',
+      `Generados ${fragments.length} fragmentos`,
       {
         groupId,
         fragments: fragments.map((f, i) => ({
@@ -151,10 +151,10 @@ export function createLinkedTextBoxSystem() {
   function parseHtmlIntoParagraphs(html) {
     const temp = document.createElement('div');
     temp.innerHTML = html;
-    
+
     const paragraphs = [];
     const nodes = Array.from(temp.childNodes);
-    
+
     for (const node of nodes) {
       if (node.nodeType === Node.TEXT_NODE) {
         // Texto sin envolver - tratar como párrafo sin estilo
@@ -178,28 +178,28 @@ export function createLinkedTextBoxSystem() {
         }
       }
     }
-    
+
     return paragraphs;
   }
 
   /**
    * Distribuir palabras entre fragments usando medición del navegador
    */
-  function distributeWordsToFragments(paragraphs, chainLayouts, containerStyle) {
+function distributeWordsToFragments(paragraphs, chainLayouts, containerStyle) {
     const results = [];
-    let currentFrameIndex = 0;
-    let currentFrameHtml = '';
-    let currentFrameWords = [];
-    let currentParagraphIndex = 0;
-    let currentWordIndex = 0;
-    let totalWordsProcessed = 0;
-    const cutPoints = []; // Registrar dónde se corta cada frame
+    const cutPoints = [];
+    const paddingVertical = 2; // Padding mínimo
+    const HEIGHT_TOLERANCE = 22; // Permite ~1 línea extra visualmente
+
+    // Contar total de palabras
+    const totalWords = paragraphs.reduce((sum, p) => sum + p.words.length, 0);
 
     // Crear contenedor de medición
     const measureDiv = document.createElement('div');
     measureDiv.style.position = 'absolute';
     measureDiv.style.left = '-9999px';
-    measureDiv.style.height = 'auto';
+    measureDiv.style.top = '0';
+    measureDiv.style.width = `${chainLayouts[0]?.w || 300}px`;
     measureDiv.style.overflow = 'visible';
     measureDiv.style.whiteSpace = 'pre-wrap';
     measureDiv.style.wordBreak = 'break-word';
@@ -207,148 +207,124 @@ export function createLinkedTextBoxSystem() {
     applyContainerStyles(measureDiv, containerStyle);
     document.body.appendChild(measureDiv);
 
-    let frameHeight = chainLayouts[currentFrameIndex]?.h || 120;
-    let frameWidth = chainLayouts[currentFrameIndex]?.w || 300;
-    measureDiv.style.width = `${frameWidth}px`;
+    const availableHeight = (chainLayouts[0]?.h || 120) - paddingVertical;
 
-    // Contar total de palabras
-    const totalWords = paragraphs.reduce((sum, p) => sum + p.words.length, 0);
+// Recorrer TODAS las palabras y medir dónde corta
+    // También guardar de qué párrafo viene cada palabra para mantener estilos
+    let wordsThatFit = [];
+    let allOverflowWords = []; // Array de {word, paragraph}
+    let splitIndex = 0;
 
-    while (currentParagraphIndex < paragraphs.length) {
-      const paragraph = paragraphs[currentParagraphIndex];
-      
-      while (currentWordIndex < paragraph.words.length) {
-        const word = paragraph.words[currentWordIndex];
-        
-        // Construir HTML de prueba con la palabra añadida
-        const testWords = [...currentFrameWords, word];
-        const testHtml = buildHtmlFromWords(paragraphs, currentParagraphIndex, currentWordIndex, testWords, currentFrameHtml);
-        
-        // Medir altura
+    for (let p = 0; p < paragraphs.length; p++) {
+      const paragraph = paragraphs[p];
+
+      for (let w = 0; w < paragraph.words.length; w++) {
+        const testWords = [...wordsThatFit.map(ow => ow.word), paragraph.words[w]];
+        const testHtml = buildHtmlFromWords(paragraphs, p, w, testWords, '');
+
         measureDiv.innerHTML = testHtml;
         const newHeight = measureDiv.offsetHeight;
-        
-        if (newHeight <= frameHeight || currentFrameWords.length === 0) {
-          // Cabe en el frame actual
-          currentFrameWords.push(word);
-          currentWordIndex++;
-          totalWordsProcessed++;
-        } else {
-          // No cabe - guardar frame actual y empezar nuevo
-          cutPoints.push({
-            frameIndex: results.length,
-            wordsInFrame: currentFrameWords.length,
-            measuredHeight: newHeight,
-            frameHeight,
-            frameWidth,
-            lastWordThatFit: currentFrameWords[currentFrameWords.length - 1],
-            wordThatOverflowed: word,
-          });
 
-          if (currentFrameWords.length > 0) {
-            const html = buildHtmlFromWords(paragraphs, currentParagraphIndex, currentWordIndex - 1, currentFrameWords, '');
-            results.push({
-              html,
-              overflowHtml: '',
-              fitsInBox: true,
-            });
-          }
-          
-          // Empezar nuevo frame
-          currentFrameWords = [word];
-          currentWordIndex++;
-          totalWordsProcessed++;
-          currentFrameIndex++;
-          
-          if (currentFrameIndex >= chainLayouts.length) {
-            // No más frames disponibles - el resto es overflow
-            break;
-          }
-          
-          // Actualizar contenedor de medición
-          frameHeight = chainLayouts[currentFrameIndex]?.h || 120;
-          frameWidth = chainLayouts[currentFrameIndex]?.w || 300;
-          measureDiv.style.width = `${frameWidth}px`;
+        if (newHeight <= availableHeight + HEIGHT_TOLERANCE) {
+          wordsThatFit.push({word: paragraph.words[w], paragraphIndex: p});
+          splitIndex++;
+        } else {
+          // Esta palabra no cabe - empieza el overflow
+          allOverflowWords.push({word: paragraph.words[w], paragraphIndex: p});
         }
       }
-      
-      if (currentFrameIndex >= chainLayouts.length) {
-        break;
-      }
-      
-      // Pasar al siguiente párrafo
-      currentParagraphIndex++;
-      currentWordIndex = 0;
     }
-    
+
     document.body.removeChild(measureDiv);
-    
-    // Guardar el último frame si tiene contenido
-    const lastValidParagraphIndex = Math.min(currentParagraphIndex, paragraphs.length - 1);
-    if (currentFrameWords.length > 0 && currentFrameIndex < chainLayouts.length) {
-      const html = buildHtmlFromWords(paragraphs, lastValidParagraphIndex, currentWordIndex - 1, currentFrameWords, '');
-      results.push({
-        html,
-        overflowHtml: '',
-        fitsInBox: true,
-      });
-    }
-    
-    // Calcular overflow si hay contenido restante
-    let overflowWordCount = 0;
-    if (currentFrameIndex >= chainLayouts.length && currentParagraphIndex < paragraphs.length) {
-      const overflowWords = [];
-      
-      // Recoger palabras restantes del párrafo actual
-      for (let i = currentWordIndex; i < paragraphs[currentParagraphIndex].words.length; i++) {
-        overflowWords.push(paragraphs[currentParagraphIndex].words[i]);
-      }
-      
-      // Recoger párrafos restantes
-      for (let i = currentParagraphIndex + 1; i < paragraphs.length; i++) {
-        overflowWords.push(...paragraphs[i].words);
-      }
-      
-      overflowWordCount = overflowWords.length;
-      
-      if (overflowWords.length > 0) {
-        // Usar el estilo del párrafo actual para el overflow
-        const paragraph = paragraphs[currentParagraphIndex];
-        const style = paragraph.style || '';
-        const tag = paragraph.tag || 'p';
-        const styleAttr = style ? ` style="${style}"` : '';
-        const overflowHtml = `<${tag}${styleAttr}>${overflowWords.join(' ')}</${tag}>`;
-        
-        // Agregar overflow al último frame
-        if (results.length > 0) {
-          results[results.length - 1].overflowHtml = overflowHtml;
-          results[results.length - 1].fitsInBox = false;
+
+    // Extraer solo las palabras de wordsThatFit para buildHtmlFromWords
+    const fitWords = wordsThatFit.map(ow => ow.word);
+    const html = buildHtmlFromWords(paragraphs, 0, 0, fitWords, '');
+
+    // Para overflow, reconstruir con los párrafos originales manteniendo estilos
+    let overflowHtml = '';
+    if (allOverflowWords.length > 0) {
+      // Agrupar palabras de overflow por párrafo
+      let overflowParagraphs = [];
+      let currentParaIndex = -1;
+      let currentPara = null;
+
+      for (const ow of allOverflowWords) {
+        if (ow.paragraphIndex !== currentParaIndex) {
+          if (currentPara) {
+            overflowParagraphs.push(currentPara);
+          }
+          currentParaIndex = ow.paragraphIndex;
+          currentPara = {
+            ...paragraphs[currentParaIndex],
+            words: [ow.word]
+          };
+        } else {
+          currentPara.words.push(ow.word);
         }
       }
+      if (currentPara) {
+        overflowParagraphs.push(currentPara);
+      }
+
+      // Construir HTML del overflow con estilos preservados
+      overflowHtml = overflowParagraphs.map(p => {
+        const styleAttr = p.style ? ` style="${p.style}"` : '';
+        const wordsHtml = p.words.join(' ');
+        return `<${p.tag || 'p'}${styleAttr}>${wordsHtml}</${p.tag || 'p'}>`;
+      }).join('');
     }
+
+    const fitsInBox = allOverflowWords.length === 0;
+
+    results.push({
+      html,
+      overflowHtml,
+      fitsInBox,
+    });
+
+    const overflowWordCount = allOverflowWords.length;
 
     // Log detallado de la fragmentación
     const frontendLog = useFrontendLog();
-    frontendLog.info('fragmentDetail', 
-      `Fragmentación completada: ${results.length} frames, ${overflowWordCount} palabras overflow`, 
+
+    const wordsFitCount = wordsThatFit.length;
+
+    frontendLog.info('fragmentDetail',
+      `Fragmentación: ${wordsFitCount}/${totalWords} palabras caben, splitIndex=${splitIndex}, overflow=${overflowWordCount}`,
       {
         totalWords,
-        totalWordsProcessed,
+        wordsFitCount,
+        splitIndex,
         overflowWordCount,
+        hasOverflow: overflowWordCount > 0,
         framesCount: chainLayouts.length,
-        fragmentsGenerated: results.length,
-        cutPoints,
+        results: results.map(r => ({
+          html: r.html?.substring(0, 100),
+          overflowHtml: r.overflowHtml?.substring(0, 100),
+          fitsInBox: r.fitsInBox,
+        })),
         frameDimensions: chainLayouts.map(l => ({
           id: l.id,
-          w: l.w,
           h: l.h,
-          fontSize: l.fontSize,
-          fontFamily: l.fontFamily,
+          availableHeight: l.h - 16,
         })),
-        containerStyle,
+        relationship: {
+          explanation: 'Si box.h aumenta → wordsFitCount aumenta. Si box.h reduce → wordsFitCount reduce',
+          boxHeightVsWordsFit: chainLayouts.map((l, i) => ({
+            boxHeight: l.h,
+            wordsFit: results[i]?.html?.split(/\s+/).filter(w => w).length || 0,
+          })),
+        },
+        containerStyle: containerStyle,
+        measureSettings: {
+          padding: containerStyle.padding || '8px',
+          fontSize: containerStyle.fontSize || 18,
+          lineHeight: containerStyle.lineHeight || 1.4,
+        },
       }
     );
-    
+
     return results;
   }
 
@@ -357,36 +333,20 @@ export function createLinkedTextBoxSystem() {
    */
   function buildHtmlFromWords(paragraphs, currentParagraphIndex, currentWordIndex, words, existingHtml) {
     if (words.length === 0) return existingHtml;
-    
+
     // Verificar que el índice sea válido
     if (currentParagraphIndex < 0 || currentParagraphIndex >= paragraphs.length) {
       return existingHtml || `<p>${words.join(' ')}</p>`;
     }
-    
+
     const paragraph = paragraphs[currentParagraphIndex];
     const style = paragraph.style || '';
     const tag = paragraph.tag || 'p';
-    
+
     // Construir HTML con las palabras y el estilo del párrafo actual
     const styleAttr = style ? ` style="${style}"` : '';
     const result = `<${tag}${styleAttr}>${words.join(' ')}</${tag}>`;
-    
-    // Log detallado para debugging
-    const frontendLog = useFrontendLog();
-    frontendLog.debug('buildHtmlFromWords', 
-      'Construyendo HTML desde palabras', 
-      {
-        currentParagraphIndex,
-        wordsCount: words.length,
-        firstWord: words[0],
-        tag,
-        style: style?.substring(0, 100),
-        hasStyle: !!style,
-        styleAttr: styleAttr?.substring(0, 100),
-        result: result?.substring(0, 200),
-      }
-    );
-    
+
     return result;
   }
 

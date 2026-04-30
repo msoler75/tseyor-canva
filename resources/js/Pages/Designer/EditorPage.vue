@@ -577,24 +577,25 @@ const drag = reactive({
   groupId: null,
   groupSnapshot: null,
   multiSnapshot: null,
-    handle: null,
-    offsetX: 0,
-    offsetY: 0,
-    startClientX: 0,
-    startClientY: 0,
-    startX: 0,
-    startY: 0,
-    startW: 0,
-    startH: 0,
-    startRotation: 0,
-    startAngle: 0,
-    centerX: 0,
-    centerY: 0,
-    lastClientX: 0,
-    lastClientY: 0,
-    startFontSize: 0,
-    startParagraphStyles: [],
+  handle: null,
+  offsetX: 0,
+  offsetY: 0,
+  startClientX: 0,
+  startClientY: 0,
+  startX: 0,
+  startY: 0,
+  startW: 0,
+  startH: 0,
+  startRotation: 0,
+  startAngle: 0,
+  centerX: 0,
+  centerY: 0,
+  lastClientX: 0,
+  lastClientY: 0,
+  startFontSize: 0,
+  startParagraphStyles: [],
 });
+const hoveredFieldKey = ref(null);
 const touchIntent = reactive({
     pointerId: null,
     startX: 0,
@@ -1132,17 +1133,40 @@ const editorElements = computed(() => {
     { id: 'contact', type: 'text', label: 'Contacto', fieldKey: 'contact', text: state.content.contact },
     { id: 'extra', type: 'text', label: 'Texto adicional', fieldKey: 'extra', text: state.content.extra },
   ];
-  const customElements = Object.entries(state.customElements ?? {}).map(([id, element]) => ({
-    id,
-    type: element.type,
-    label: element.label ?? 'Elemento',
-    fieldKey: element.fieldKey ?? null,
-    text: element.type === 'text' ? linkedFieldText(element.fieldKey, element.text ?? '') : (element.type === 'linkedText' ? getLinkedTextBoxText(id).text : ''),
-    linkedTextDisplayHtml: element.type === 'linkedText' ? getLinkedTextBoxText(id).displayHtml : '',
-    linkedTextOverflowHtml: element.type === 'linkedText' ? getLinkedTextBoxText(id).overflowHtml : '',
-    src: element.type === 'image' ? element.src : null,
-    shapeKind: element.type === 'shape' ? element.shapeKind : null,
-  }));
+  const customElements = Object.entries(state.customElements ?? {}).map(([id, element]) => {
+    const isBeingEdited = editingElementId.value === id;
+    const linkedTextBoxData = element.type === 'linkedText' ? getLinkedTextBoxText(id) : null;
+    
+    // Regla 3: Si está en edición, el texto debe ser el COMPLETO (del head), no el fragmento
+    let elementText;
+    if (element.type === 'text') {
+      elementText = linkedFieldText(element.fieldKey, element.text ?? '');
+    } else if (element.type === 'linkedText') {
+      if (isBeingEdited) {
+        // En edición: usar el texto completo del head
+        const headId = getLinkedTextChainHead(id);
+        const headElement = state.customElements[headId];
+        elementText = headElement?.text ?? '';
+      } else {
+        // En display: usar el fragmento
+        elementText = linkedTextBoxData?.text ?? '';
+      }
+    } else {
+      elementText = '';
+    }
+    
+    return {
+      id,
+      type: element.type,
+      label: element.label ?? 'Elemento',
+      fieldKey: element.fieldKey ?? null,
+      text: elementText,
+      linkedTextDisplayHtml: element.type === 'linkedText' ? (linkedTextBoxData?.displayHtml ?? '') : '',
+      linkedTextOverflowHtml: element.type === 'linkedText' ? (linkedTextBoxData?.overflowHtml ?? '') : '',
+      src: element.type === 'image' ? element.src : null,
+      shapeKind: element.type === 'shape' ? element.shapeKind : null,
+    };
+  });
 
   return [...baseTextElements, ...customElements]
     .filter((item) => state.elementLayout[item.id])
@@ -5252,8 +5276,10 @@ watch(
                   :rich-editor-ref-setter="setRichEditorRef"
                   :linked-text-link="linkedTextLink"
                   :active-linked-text-box="activeLinkedTextBox"
+                  :hovered-field-key="hoveredFieldKey"
                   @canvas-pointer-down="handleCanvasPointerDownWithPinch"
                   @canvas-click="handleCanvasClick"
+                  @field-hover="hoveredFieldKey = $event"
                   @canvas-file-drag-enter="handleCanvasFileDragEnter"
                   @canvas-file-drag-over="handleCanvasFileDragOver"
                   @canvas-file-drag-leave="handleCanvasFileDragLeave"

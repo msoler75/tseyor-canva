@@ -37,7 +37,7 @@ La caja de texto enlazable tiene unas dimensiones fijas (`w` y `h`) que **solo c
 │ cabe en la   │    │ cabe en la   │
 │ caja         │    │ caja         │
 └──────────────┘    └──────────────┘
-  Texto restante      ← overflow 50% opacity
+  Texto restante      ← texto overflow 50% opacity (solo visible cuando elementos activos/focus)
   visible debajo
 ```
 
@@ -58,7 +58,7 @@ El texto es un **flujo continuo** que se distribuye entre las cajas de la cadena
 
 1. El texto se escribe en la **primera caja** (head) de la cadena
 2. Cuando la primera caja se llena, el texto restante fluye a la **siguiente caja**
-3. Si no hay más cajas en la cadena, el texto restante se muestra como **overflow** con opacidad 50%
+3. Si no hay más cajas en la cadena, el texto restante se muestra como **overflow** con opacidad 50% (y solo se muestra si la cadena de elementos de texto está enfocada o activa)
 
 ---
 
@@ -68,8 +68,9 @@ Cuando el usuario está editando un texto enlazable:
 
 - **La caja mantiene sus dimensiones fijas** (NO crece)
 - El editor TipTap permite escribir **todo el texto que se quiera**
-- El texto que desborda la caja es **visible** (overflow: visible) cuando cualquier caja de texto enlazable de una misma cadena está seleccionada o en edición, para que el usuario pueda ver lo que escribe. Si no hay ningun elemento de texto enlazable de la cadena seleccionado, el texto overflow es **invisible**!
-- El cursor se mantiene al final del texto, permitiendo seguir escribiendo, incluido espacios
+- El texto que desborda la caja es **visible** (overflow: visible) cuando cualquier caja de texto enlazable de una misma cadena está seleccionada o en edición, para que el usuario pueda ver lo que escribe. 
+- Si no hay ningun elemento de texto enlazable de la cadena seleccionado, activo o en edición, el texto overflow es **invisible**! (es como que se aplica overflow: hidden en la caja)
+- El cursor inicia al final del texto, permitiendo seguir escribiendo, incluido espacios. Luego se puede mover el cursor libremente hacia otros puntos del texto.
 - **se redistribuye** texto entre cajas **dinámicamente** después **de cada edición, inserción o modificación del texto o su estilo**
 
 ---
@@ -146,3 +147,4 @@ El texto en modo display y modo edición debe verse **idéntico**:
 - Mismo `white-space` y `word-break`
 
 Para garantizar esto, los estilos CSS de `.ProseMirror` (edición) y `.linked-text-display` (display) deben ser **idénticos**.
+

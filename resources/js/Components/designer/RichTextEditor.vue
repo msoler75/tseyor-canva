@@ -86,6 +86,8 @@ const props = defineProps({
     displayMode: { type: Boolean, default: false },
     displayHtml: { type: String, default: '' },
     overflowHtml: { type: String, default: '' },
+    showOverflow: { type: Boolean, default: false },
+    linkedTextActive: { type: Boolean, default: false },
 });
 const emit = defineEmits(['update:text', 'update:paragraphStyles', 'update:html', 'selectionChange', 'blur']);
 
@@ -147,7 +149,15 @@ const wrapperRef = ref(null);
 const overflowRef = ref(null);
 
 const wrapperStyle = computed(() => {
-    return props.colorOverride ? { '--neon-override-color': props.colorOverride } : {};
+    const style = props.colorOverride ? { '--neon-override-color': props.colorOverride } : {};
+    
+    // Regla 3/4: Overflow invisible cuando la cadena no está activa/seleccionada/edición
+    // Cuando está activa, usamos overflow:visible para permitir ver el overflow
+    if (props.isLinkedText) {
+        style.overflow = props.linkedTextActive ? 'visible' : 'hidden';
+    }
+    
+    return style;
 });
 
 const editor = useEditor({
@@ -165,9 +175,9 @@ const editor = useEditor({
             spellcheck: 'false',
         },
         handlePaste({ editor: ed, event }) {
-            if (!props.isLinkedText) return false;
-
-            const pastedText = event.clipboardData?.getData('text/plain') || '';
+            if (!props.isLinkedText || !ed) return false;
+            
+            const pastedText = event?.clipboardData?.getData('text/plain') || '';
             const htmlBefore = ed.getHTML();
             const textBefore = ed.getText();
             const charsBefore = textBefore.length;
@@ -488,17 +498,19 @@ const logLinkedTextStyles = () => {
 
 <template>
     <div
-        ref="wrapperRef"
-        :class="{
-            'neon-active': !!props.colorOverride,
-            'hollow-active': props.transparentFill,
-            'linked-text-display-mode': props.displayMode
-        }"
-        :style="wrapperStyle"
-    >
+            ref="wrapperRef"
+            :class="{
+                'neon-active': !!props.colorOverride,
+                'hollow-active': props.transparentFill,
+                'linked-text-display-mode': props.displayMode,
+                'linked-text-active': props.isLinkedText && props.linkedTextActive
+            }"
+            :style="wrapperStyle"
+        >
         <div
             v-if="props.displayMode"
             class="linked-text-display"
+            :class="{ 'linked-text-clipped': props.isLinkedText && !props.linkedTextActive }"
             :style="props.editorStyle"
             v-html="props.displayHtml"
         ></div>
@@ -508,10 +520,9 @@ const logLinkedTextStyles = () => {
             :style="props.editorStyle"
         />
         <div
-            v-if="props.overflowHtml && props.displayMode"
+            v-if="props.overflowHtml && props.showOverflow"
             ref="overflowRef"
             class="linked-text-overflow"
-            :style="{ opacity: 0.5, color: 'inherit' }"
             v-html="props.overflowHtml"
         ></div>
     </div>
@@ -570,13 +581,45 @@ const logLinkedTextStyles = () => {
     box-sizing: border-box;
     position: relative;
 }
+.linked-text-display-mode .linked-text-display.linked-text-clipped {
+    overflow: hidden;
+    height: 100%;
+}
+.linked-text-active .linked-text-display {
+    overflow: hidden;
+}
 .linked-text-overflow {
     position: absolute;
     left: 0;
-    top: 0;
+    top: 100%;
     width: 100%;
-    height: 100%;
     pointer-events: none;
     z-index: 10;
+    opacity: 0.5;
+}
+.linked-text-display-mode .linked-text-display.linked-text-clipped {
+    overflow: hidden;
+    height: 100%;
+}
+.linked-text-overflow {
+    position: absolute;
+    left: 0;
+    top: 100%;
+    width: 100%;
+    pointer-events: none;
+    z-index: 10;
+    opacity: 0.5;
+}
+.linked-text-active .linked-text-display {
+    overflow: hidden !important;
+}
+.linked-text-overflow {
+    position: absolute;
+    left: 0;
+    top: 100%;
+    width: 100%;
+    pointer-events: none;
+    z-index: 10;
+    opacity: 0.5;
 }
 </style>

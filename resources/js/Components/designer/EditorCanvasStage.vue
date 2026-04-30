@@ -39,6 +39,7 @@ const props = defineProps({
   templateMode: Boolean,
   templateWatermark: String,
   showFieldLabels: Boolean,
+  hoveredFieldKey: String,
   activePage: Boolean,
   canvasRefSetter: Function,
   richEditorRefSetter: Function,
@@ -64,6 +65,7 @@ const emit = defineEmits([
   'canvasFileDragLeave',
   'canvasFileDrop',
   'linkedTextLinkStart',
+  'fieldHover',
 ]);
 
 const assignRichEditorRef = (id, element) => {
@@ -175,6 +177,31 @@ const isLinkedTextInChainBeingEdited = (boxId) => {
   // Otra caja del mismo grupo está siendo editada, esta debe estar en modo display
   return true;
 };
+
+// Regla 3/4/6: Overflow visible solo cuando algún elemento de la cadena está seleccionado O en edición
+const isLinkedTextChainActive = (boxId) => {
+  const boxLayout = props.state?.elementLayout?.[boxId];
+  if (!boxLayout?.linkedTextGroupId) return false;
+  
+  // Si hay edición activa en cualquier caja de la cadena
+  if (props.editingElementId) {
+    const editingLayout = props.state?.elementLayout?.[props.editingElementId];
+    if (editingLayout?.linkedTextGroupId === boxLayout.linkedTextGroupId) {
+      return true;
+    }
+  }
+  
+  // Si hay selección activa en cualquier caja de la cadena
+  const selectedId = props.state?.selectedElementId;
+  if (selectedId) {
+    const selectedLayout = props.state?.elementLayout?.[selectedId];
+    if (selectedLayout?.linkedTextGroupId === boxLayout.linkedTextGroupId) {
+      return true;
+    }
+  }
+  
+  return false;
+};
 </script>
 
 <template>
@@ -247,23 +274,25 @@ const isLinkedTextInChainBeingEdited = (boxId) => {
           :style="elementBoxStyle(item.id)"
           :class="isElementSelected(item.id)
             ? (editingElementId === item.id
-                ? 'border-2 border-solid border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.35)] editor-editing-pulse'
+                ? 'ring-2 ring-cyan-300/70 bg-white/10 editor-editing-pulse'
                 : (drag.active && drag.elementId === item.id
-                    ? 'border-2 border-dashed border-cyan-300 bg-white/10 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'
-                    : 'border-2 border-dashed border-cyan-300 bg-white/8 shadow-[0_0_0_3px_rgba(103,232,249,.18)]'))
+                    ? 'ring-2 ring-cyan-300/50 bg-white/10'
+                    : 'ring-2 ring-cyan-300/50 bg-white/8'))
             : (showFieldLabels && item.fieldKey
-                ? 'z-10 border-2 border-dashed border-accent bg-accent/10 shadow-[0_0_0_3px_rgba(251,191,36,.20)]'
+                ? (item.fieldKey === props.hoveredFieldKey ? 'z-[70] ring-2 ring-accent/50 bg-accent/10' : 'z-50 ring-2 ring-accent/50 bg-accent/10')
                 : (linkedTextLink?.active && linkedTextLink.hoverTargetId === item.id
-                    ? 'z-10 border-2 border-solid border-emerald-400 bg-emerald-400/15 shadow-[0_0_0_3px_rgba(52,211,153,.25)]'
-                    : 'z-10 border border-transparent hover:border-white/20'))"
+                    ? 'z-40 ring-2 ring-emerald-400/70 bg-emerald-400/15'
+                    : 'z-10'))"
           @click="emit('elementClick', { event: $event, id: item.id })"
           @dblclick="emit('beginTextEdit', item.id)"
           @pointerdown="emit('elementPointerDown', { event: $event, id: item.id })"
+          @mouseenter="item.fieldKey && emit('fieldHover', item.fieldKey)"
+          @mouseleave="item.fieldKey && emit('fieldHover', null)"
         >
           <div class="relative" :class="(item.type === 'text' || item.type === 'linkedText') ? '' : 'h-full w-full'" :style="elementContentStyle(item.id)">
             <div
               v-if="item.fieldKey"
-              class="pointer-events-none absolute -top-6 left-0 z-20 transition group-hover:opacity-100"
+              class="pointer-events-none absolute -top-6 left-0 z-[100] transition group-hover:z-[120] group-hover:opacity-100 isolate"
               :class="showFieldLabels ? 'opacity-100' : 'opacity-0'"
             >
               <span class="badge badge-xs badge-accent shadow-md">
@@ -281,11 +310,13 @@ const isLinkedTextInChainBeingEdited = (boxId) => {
                 :color-override="neonColorOverride(item.id)"
                 :transparent-fill="!!state.elementLayout[item.id]?.hollowText"
                 :is-linked-text="item.type === 'linkedText'"
+                :linked-text-active="item.type === 'linkedText' && isLinkedTextChainActive(item.id)"
                 :linked-text-next="item.type === 'linkedText' ? (state.elementLayout[item.id]?.linkedTextNext ?? null) : null"
                 :box-dimensions="item.type === 'linkedText' ? { w: state.elementLayout[item.id]?.w, h: state.elementLayout[item.id]?.h, fontSize: state.elementLayout[item.id]?.fontSize, lineHeight: state.elementLayout[item.id]?.lineHeight } : null"
                 :display-mode="item.type === 'linkedText' && editingElementId !== item.id && isLinkedTextInChainBeingEdited(item.id)"
                 :display-html="item.type === 'linkedText' ? (item.linkedTextDisplayHtml ?? '') : ''"
                 :overflow-html="item.type === 'linkedText' ? (item.linkedTextOverflowHtml ?? '') : ''"
+                :show-overflow="item.type === 'linkedText' && isLinkedTextChainActive(item.id)"
                 @update:text="emit('richEditorTextUpdate', { id: item.id, value: $event })"
                 @update:paragraph-styles="emit('richEditorStylesUpdate', { id: item.id, value: $event })"
                 @update:html="emit('richEditorHtmlUpdate', { id: item.id, value: $event })"
