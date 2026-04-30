@@ -150,13 +150,13 @@ const overflowRef = ref(null);
 
 const wrapperStyle = computed(() => {
     const style = props.colorOverride ? { '--neon-override-color': props.colorOverride } : {};
-    
+
     // Regla 3/4: Overflow invisible cuando la cadena no está activa/seleccionada/edición
     // Cuando está activa, usamos overflow:visible para permitir ver el overflow
     if (props.isLinkedText) {
         style.overflow = props.linkedTextActive ? 'visible' : 'hidden';
     }
-    
+
     return style;
 });
 
@@ -176,7 +176,7 @@ const editor = useEditor({
         },
         handlePaste({ editor: ed, event }) {
             if (!props.isLinkedText || !ed) return false;
-            
+
             const pastedText = event?.clipboardData?.getData('text/plain') || '';
             const htmlBefore = ed.getHTML();
             const textBefore = ed.getText();
@@ -189,8 +189,8 @@ const editor = useEditor({
                 const charsAfter = textAfter.length;
                 const charsAdded = charsAfter - charsBefore;
 
-                frontendLog.info('paste', 
-                    `Texto pegado en linkedText`, 
+                frontendLog.info('paste',
+                    `Texto pegado en linkedText`,
                     {
                         boxId: wrapperRef.value?.closest('[data-editor-id]')?.dataset?.editorId,
                         pastedLength: pastedText.length,
@@ -392,7 +392,7 @@ watch(() => props.editable, (val) => {
 
 watch(() => props.displayMode, (val) => {
     editor?.value?.setEditable(props.editable && !val);
-    
+
     // Log de estilos cuando cambia el modo display
     if (props.isLinkedText) {
         nextTick(() => {
@@ -430,18 +430,18 @@ onBeforeUnmount(() => {
  */
 const logLinkedTextStyles = () => {
     if (!props.isLinkedText) return;
-    
+
     const boxId = wrapperRef.value?.closest('[data-editor-id]')?.dataset?.editorId;
     if (!boxId) return;
 
     // Obtener estilos del contenedor padre (elementContentStyle)
     const parentElement = wrapperRef.value?.parentElement;
     const parentStyles = parentElement ? window.getComputedStyle(parentElement) : null;
-    
+
     // Obtener estilos del contenedor display o editor
     let contentElement = null;
     let mode = 'unknown';
-    
+
     if (props.displayMode) {
         contentElement = wrapperRef.value?.querySelector('.linked-text-display');
         mode = 'display';
@@ -449,24 +449,24 @@ const logLinkedTextStyles = () => {
         contentElement = wrapperRef.value?.querySelector('.ProseMirror');
         mode = 'edit';
     }
-    
+
     const contentStyles = contentElement ? window.getComputedStyle(contentElement) : null;
-    
+
     // Registrar estilos
     const parentStyleData = parentStyles ? frontendLog.logElementStyles(
-        boxId, 
-        `${mode}-parent`, 
-        parentElement, 
+        boxId,
+        `${mode}-parent`,
+        parentElement,
         parentStyles
     ) : {};
-    
+
     const contentStyleData = contentStyles ? frontendLog.logElementStyles(
-        boxId, 
-        mode, 
-        contentElement, 
+        boxId,
+        mode,
+        contentElement,
         contentStyles
     ) : {};
-    
+
     // Si tenemos ambos modos, comparar
     if (props.displayMode) {
         // Guardar estilos display para comparación posterior
@@ -507,6 +507,16 @@ const logLinkedTextStyles = () => {
             }"
             :style="wrapperStyle"
         >
+        <!-- Nueva estrategia: dos capas -->
+        <!-- Capa inferior: texto completo (sin límite inferior), opacidad 50% -->
+        <div
+            v-if="props.isLinkedText && props.showOverflow && props.overflowHtml"
+            class="linked-text-base-layer"
+            :style="props.editorStyle"
+            v-html="props.overflowHtml"
+        ></div>
+
+        <!-- Capa superior: texto visible (recortado) -->
         <div
             v-if="props.displayMode"
             class="linked-text-display"
@@ -519,12 +529,6 @@ const logLinkedTextStyles = () => {
             :editor="editor"
             :style="props.editorStyle"
         />
-        <div
-            v-if="props.overflowHtml && props.showOverflow"
-            ref="overflowRef"
-            class="linked-text-overflow"
-            v-html="props.overflowHtml"
-        ></div>
     </div>
 </template>
 
@@ -546,6 +550,8 @@ const logLinkedTextStyles = () => {
     color: inherit;
     text-shadow: inherit;
     -webkit-text-stroke: inherit;
+    position: relative;
+    z-index: 20;
 }
 .ProseMirror p {
     margin: 0;
@@ -563,6 +569,8 @@ const logLinkedTextStyles = () => {
     text-shadow: inherit;
     -webkit-text-stroke: inherit;
     overflow: visible;
+    position: relative;
+    z-index: 20;
 }
 .linked-text-display p {
     margin: 0;
@@ -587,6 +595,25 @@ const logLinkedTextStyles = () => {
 }
 .linked-text-active .linked-text-display {
     overflow: hidden;
+}
+/* Nueva estrategia: capa base con texto completo */
+.linked-text-base-layer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    pointer-events: auto;
+    z-index: 5;
+    color: gray !important;
+    opacity: 0.25 !important;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+/* Cuando está activa, la capa visible recorta */
+.linked-text-active .linked-text-display {
+    overflow: hidden;
+    height: 100%;
 }
 .linked-text-overflow {
     position: absolute;

@@ -183,23 +183,28 @@ export function createLinkedTextBoxSystem() {
   }
 
   /**
-   * Distribuir palabras entre fragments usando medición del navegador
+   * Distribuir palabras usando búsqueda binaria jerárquica (2 niveles)
+   * REGLAS del experto:
+   * - Un solo measureDiv reutilizado
+   * - Sin HEIGHT_TOLERANCE
+   * - Nivel 1: búsqueda por párrafos completos
+   * - Nivel 2: búsqueda por palabras en el párrafo parcial
    */
 function distributeWordsToFragments(paragraphs, chainLayouts, containerStyle) {
     const results = [];
-    const cutPoints = [];
-    const paddingVertical = 2; // Padding mínimo
-    const HEIGHT_TOLERANCE = 22; // Permite ~1 línea extra visualmente
+    const paddingVertical = 2;
+    const paddingHorizontal = 16;
+    const linkBtnWidth = 28;
 
-    // Contar total de palabras
-    const totalWords = paragraphs.reduce((sum, p) => sum + p.words.length, 0);
+    const maxHeight = (chainLayouts[0]?.h || 120) - paddingVertical;
+    const maxWidth = (chainLayouts[0]?.w || 300) - paddingHorizontal - linkBtnWidth;
 
-    // Crear contenedor de medición
+    // Crear UN solo div de medición (reutilizar)
     const measureDiv = document.createElement('div');
     measureDiv.style.position = 'absolute';
     measureDiv.style.left = '-9999px';
-    measureDiv.style.top = '0';
-    measureDiv.style.width = `${chainLayouts[0]?.w || 300}px`;
+    measureDiv.style.visibility = 'hidden';
+    measureDiv.style.width = `${maxWidth}px`;
     measureDiv.style.overflow = 'visible';
     measureDiv.style.whiteSpace = 'pre-wrap';
     measureDiv.style.wordBreak = 'break-word';
@@ -207,121 +212,139 @@ function distributeWordsToFragments(paragraphs, chainLayouts, containerStyle) {
     applyContainerStyles(measureDiv, containerStyle);
     document.body.appendChild(measureDiv);
 
-    const availableHeight = (chainLayouts[0]?.h || 120) - paddingVertical;
+    // ==========================================
+    // NIVEL 1: BÚSQUEDA BINARIA POR PÁRRAFOS
+    // ==========================================
+    let leftPara = 0;
+    let rightPara = paragraphs.length;
+    let fullParagraphsFit = 0;
 
-// Recorrer TODAS las palabras y medir dónde corta
-    // También guardar de qué párrafo viene cada palabra para mantener estilos
-    let wordsThatFit = [];
-    let allOverflowWords = []; // Array de {word, paragraph}
-    let splitIndex = 0;
+    while (leftPara <= rightPara) {
+      const midPara = Math.floor((leftPara + rightPara) / 2);
+      const html = buildHtmlFromParagraphs(paragraphs.slice(0, midPara));
 
-    for (let p = 0; p < paragraphs.length; p++) {
-      const paragraph = paragraphs[p];
+      measureDiv.innerHTML = html;
+      const height = measureDiv.offsetHeight;
 
-      for (let w = 0; w < paragraph.words.length; w++) {
-        const testWords = [...wordsThatFit.map(ow => ow.word), paragraph.words[w]];
-        const testHtml = buildHtmlFromWords(paragraphs, p, w, testWords, '');
-
-        measureDiv.innerHTML = testHtml;
-        const newHeight = measureDiv.offsetHeight;
-
-        if (newHeight <= availableHeight + HEIGHT_TOLERANCE) {
-          wordsThatFit.push({word: paragraph.words[w], paragraphIndex: p});
-          splitIndex++;
-        } else {
-          // Esta palabra no cabe - empieza el overflow
-          allOverflowWords.push({word: paragraph.words[w], paragraphIndex: p});
-        }
+      if (height <= maxHeight) {
+        fullParagraphsFit = midPara;
+        leftPara = midPara + 1;
+      } else {
+        rightPara = midPara - 1;
       }
     }
 
+    // ==========================================
+    // NIVEL 2: BÚSQUEDA BINARIA POR PALABRAS
+    // Solo en el siguiente párrafo (si existe)
+    // ==========================================
+    let partialParagraphWords = 0;
+
+    if (fullParagraphsFit < paragraphs.length) {
+      const nextParagraph = paragraphs[fullParagraphsFit];
+      const words = nextParagraph.words;
+
+      let leftWord = 0;
+      let rightWord = words.length;
+      let wordsFit = 0;
+
+      while (leftWord <= rightWord) {
+        const midWord = Math.floor((leftWord + rightWord) / 2);
+
+        // Construir HTML: párrafos completos + palabras parciales
+        const htmlParts = [];
+        if (fullParagraphsFit > 0) {
+          htmlParts.push(buildHtmlFromParagraphs(paragraphs.slice(0, fullParagraphsFit)));
+        }
+        if (midWord > 0) {
+          const partialPara = { ...nextParagraph, words: words.slice(0, midWord) };
+          htmlParts.push(buildHtmlFromParagraphs([partialPara]));
+        }
+
+        const html = htmlParts.join('');
+        measureDiv.innerHTML = html;
+        const height = measureDiv.offsetHeight;
+
+        if (height <= maxHeight) {
+          wordsFit = midWord;
+          leftWord = midWord + 1;
+        } else {
+          rightWord = midWord - 1;
+        }
+      }
+
+      partialParagraphWords = wordsFit;
+    }
+
+    // Limpiar
     document.body.removeChild(measureDiv);
 
-    // Extraer solo las palabras de wordsThatFit para buildHtmlFromWords
-    const fitWords = wordsThatFit.map(ow => ow.word);
-    const html = buildHtmlFromWords(paragraphs, 0, 0, fitWords, '');
-
-    // Para overflow, reconstruir con los párrafos originales manteniendo estilos
-    let overflowHtml = '';
-    if (allOverflowWords.length > 0) {
-      // Agrupar palabras de overflow por párrafo
-      let overflowParagraphs = [];
-      let currentParaIndex = -1;
-      let currentPara = null;
-
-      for (const ow of allOverflowWords) {
-        if (ow.paragraphIndex !== currentParaIndex) {
-          if (currentPara) {
-            overflowParagraphs.push(currentPara);
-          }
-          currentParaIndex = ow.paragraphIndex;
-          currentPara = {
-            ...paragraphs[currentParaIndex],
-            words: [ow.word]
-          };
-        } else {
-          currentPara.words.push(ow.word);
-        }
-      }
-      if (currentPara) {
-        overflowParagraphs.push(currentPara);
-      }
-
-      // Construir HTML del overflow con estilos preservados
-      overflowHtml = overflowParagraphs.map(p => {
-        const styleAttr = p.style ? ` style="${p.style}"` : '';
-        const wordsHtml = p.words.join(' ');
-        return `<${p.tag || 'p'}${styleAttr}>${wordsHtml}</${p.tag || 'p'}>`;
-      }).join('');
+    // ==========================================
+    // CONSTRUIR RESULTADO FINAL
+    // ==========================================
+// Nueva estrategia: 
+    // - html: texto que cabe (recortado por la caja visible)
+    // - overflowHtml: TODO el texto completo (para la caja base sin límite)
+    
+    // Texto visible (lo que cabe en la caja)
+    const visibleParts = [];
+    if (fullParagraphsFit > 0) {
+      visibleParts.push(buildHtmlFromParagraphs(paragraphs.slice(0, fullParagraphsFit)));
     }
-
-    const fitsInBox = allOverflowWords.length === 0;
-
+    if (partialParagraphWords > 0 && fullParagraphsFit < paragraphs.length) {
+      const partialPara = {
+        ...paragraphs[fullParagraphsFit],
+        words: paragraphs[fullParagraphsFit].words.slice(0, partialParagraphWords)
+      };
+      visibleParts.push(buildHtmlFromParagraphs([partialPara]));
+    }
+    
+    // Texto completo (para la caja base sin límite inferior)
+    const fullTextParts = [];
+    if (fullParagraphsFit > 0) {
+      fullTextParts.push(buildHtmlFromParagraphs(paragraphs.slice(0, fullParagraphsFit)));
+    }
+    if (partialParagraphWords > 0 && fullParagraphsFit < paragraphs.length) {
+      const partialPara = {
+        ...paragraphs[fullParagraphsFit],
+        words: paragraphs[fullParagraphsFit].words.slice(0, partialParagraphWords)
+      };
+      fullTextParts.push(buildHtmlFromParagraphs([partialPara]));
+    }
+    // Añadir el resto del texto (lo que no cabe)
+    if (fullParagraphsFit < paragraphs.length) {
+      const remainingWords = paragraphs[fullParagraphsFit].words.slice(partialParagraphWords);
+      if (remainingWords.length > 0) {
+        const remainingPara = { ...paragraphs[fullParagraphsFit], words: remainingWords };
+        fullTextParts.push(buildHtmlFromParagraphs([remainingPara]));
+      }
+      if (fullParagraphsFit + 1 < paragraphs.length) {
+        fullTextParts.push(buildHtmlFromParagraphs(paragraphs.slice(fullParagraphsFit + 1)));
+      }
+    }
+    
+    const visibleHtml = visibleParts.join('');
+    const fullTextHtml = fullTextParts.join('');
+    const fitsInBox = fullParagraphsFit === paragraphs.length && partialParagraphWords === paragraphs[fullParagraphsFit]?.words?.length;
+    
     results.push({
-      html,
-      overflowHtml,
-      fitsInBox,
+      html: visibleHtml,
+      overflowHtml: fullTextHtml, // TODO el texto para la caja base
+      fitsInBox: fitsInBox
     });
 
-    const overflowWordCount = allOverflowWords.length;
+    // Log
+    const totalWords = paragraphs.reduce((sum, p) => sum + p.words.length, 0);
+    const wordsBeforeParagraph = paragraphs.slice(0, fullParagraphsFit).reduce((sum, p) => sum + p.words.length, 0);
+    const wordsFit = wordsBeforeParagraph + partialParagraphWords;
 
-    // Log detallado de la fragmentación
     const frontendLog = useFrontendLog();
-
-    const wordsFitCount = wordsThatFit.length;
-
-    frontendLog.info('fragmentDetail',
-      `Fragmentación: ${wordsFitCount}/${totalWords} palabras caben, splitIndex=${splitIndex}, overflow=${overflowWordCount}`,
+    frontendLog.info('hierarchicalSearch',
+      `Búsqueda jerárquica: ${wordsFit}/${totalWords} palabras caben`,
       {
-        totalWords,
-        wordsFitCount,
-        splitIndex,
-        overflowWordCount,
-        hasOverflow: overflowWordCount > 0,
-        framesCount: chainLayouts.length,
-        results: results.map(r => ({
-          html: r.html?.substring(0, 100),
-          overflowHtml: r.overflowHtml?.substring(0, 100),
-          fitsInBox: r.fitsInBox,
-        })),
-        frameDimensions: chainLayouts.map(l => ({
-          id: l.id,
-          h: l.h,
-          availableHeight: l.h - 16,
-        })),
-        relationship: {
-          explanation: 'Si box.h aumenta → wordsFitCount aumenta. Si box.h reduce → wordsFitCount reduce',
-          boxHeightVsWordsFit: chainLayouts.map((l, i) => ({
-            boxHeight: l.h,
-            wordsFit: results[i]?.html?.split(/\s+/).filter(w => w).length || 0,
-          })),
-        },
-        containerStyle: containerStyle,
-        measureSettings: {
-          padding: containerStyle.padding || '8px',
-          fontSize: containerStyle.fontSize || 18,
-          lineHeight: containerStyle.lineHeight || 1.4,
-        },
+        level1: { paragraphsFit: fullParagraphsFit, totalParagraphs: paragraphs.length },
+        level2: { wordsFitInPartialParagraph: partialParagraphWords },
+        result: { wordsFit, totalWords, overflowWords: totalWords - wordsFit }
       }
     );
 
@@ -329,26 +352,19 @@ function distributeWordsToFragments(paragraphs, chainLayouts, containerStyle) {
   }
 
   /**
-   * Construir HTML a partir de palabras y estilos de párrafos
+   * Construir HTML desde array de párrafos
    */
-  function buildHtmlFromWords(paragraphs, currentParagraphIndex, currentWordIndex, words, existingHtml) {
-    if (words.length === 0) return existingHtml;
-
-    // Verificar que el índice sea válido
-    if (currentParagraphIndex < 0 || currentParagraphIndex >= paragraphs.length) {
-      return existingHtml || `<p>${words.join(' ')}</p>`;
-    }
-
-    const paragraph = paragraphs[currentParagraphIndex];
-    const style = paragraph.style || '';
-    const tag = paragraph.tag || 'p';
-
-    // Construir HTML con las palabras y el estilo del párrafo actual
-    const styleAttr = style ? ` style="${style}"` : '';
-    const result = `<${tag}${styleAttr}>${words.join(' ')}</${tag}>`;
-
-    return result;
+  function buildHtmlFromParagraphs(paragraphs) {
+    if (!paragraphs || paragraphs.length === 0) return '';
+    return paragraphs.map(para => {
+      const tag = para.tag || 'p';
+      const style = para.style || '';
+      const styleAttr = style ? ` style="${style}"` : '';
+      const text = para.words ? para.words.join(' ') : '';
+      return `<${tag}${styleAttr}>${text}</${tag}>`;
+    }).join('');
   }
+
 
   function applyContainerStyles(el, containerStyle) {
     if (containerStyle.padding) el.style.padding = containerStyle.padding;
