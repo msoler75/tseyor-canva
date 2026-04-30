@@ -92,7 +92,7 @@ export function createLinkedTextBoxSystem() {
       if (!fullHtml || fullHtml.trim() === '') {
         // Texto vacío: todas las cajas vacías
         chainLayouts.forEach(layout => {
-          system.fragments[layout.id] = { html: '', overflowHtml: '', fullTextHtml: '', fitsInBox: true };
+          system.fragments[layout.id] = { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, fitsInBox: true };
         });
         return;
       }
@@ -311,6 +311,7 @@ export function createLinkedTextBoxSystem() {
             html: '',
             overflowHtml: '',
             fullTextHtml: '', // No hay texto de entrada
+            editorTopOffset: 0,
             fitsInBox: true
           };
           return;
@@ -327,10 +328,15 @@ export function createLinkedTextBoxSystem() {
             html: '',
             overflowHtml: buildHtmlFromUnitSlice(allUnits.slice(unitIdx)),
             fullTextHtml: buildHtmlFromUnitSlice(inputSlice),
+            editorTopOffset: 0,
             fitsInBox: false
           };
           return;
         }
+
+        const prefixHtml = buildHtmlFromUnitSlice(allUnits.slice(0, unitIdx));
+        measureNode.innerHTML = prefixHtml;
+        const editorTopOffset = unitIdx > 0 ? measureNode.offsetHeight : 0;
 
         // La altura máxima es la altura de la caja
         const maxHeight = (layout.h || 50);
@@ -375,6 +381,7 @@ export function createLinkedTextBoxSystem() {
           html: visibleHtml,
           overflowHtml: overflowHtml,
           fullTextHtml: fullTextHtml, // Nuevo: texto completo para capa inferior (sin límite de altura)
+          editorTopOffset,
           fitsInBox: fitsInBox
         };
 
@@ -502,8 +509,8 @@ export function createLinkedTextBoxSystem() {
     */
    function getFragmentForBox(groupId, boxId) {
      const system = systemsMap.get(groupId);
-     if (!system) return { html: '', overflowHtml: '', fullTextHtml: '', fitsInBox: true };
-     return system.fragments[boxId] || { html: '', overflowHtml: '', fullTextHtml: '', fitsInBox: true };
+     if (!system) return { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, fitsInBox: true };
+     return system.fragments[boxId] || { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, fitsInBox: true };
    }
 
   /**

@@ -1005,6 +1005,11 @@ const getLinkedTextChainHead = (startId) => {
   return startId;
 };
 
+const getLinkedTextStyleSourceId = (id) => {
+  if (state.customElements?.[id]?.type !== 'linkedText') return id;
+  return getLinkedTextChainHead(id);
+};
+
 const recalculateLinkedTextAllocations = (headId) => {
   const chain = getLinkedTextChain(headId);
   if (chain.length === 0) return;
@@ -1068,7 +1073,7 @@ const recalculateLinkedTextAllocations = (headId) => {
 
   const getLinkedTextBoxText = (boxId) => {
     const layout = state.elementLayout[boxId];
-    if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fullTextHtml: '', fitsInBox: true };
+    if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, fitsInBox: true };
 
     const groupId = layout.linkedTextGroupId;
     const headId = getLinkedTextChainHead(boxId);
@@ -1111,6 +1116,7 @@ const recalculateLinkedTextAllocations = (headId) => {
         displayHtml: rawText ? `<p>${rawText}</p>` : '',
         overflowHtml: '',
         fullTextHtml: rawText ? `<p>${rawText}</p>` : '',
+        editorTopOffset: 0,
         fitsInBox: true,
         isLastInChain
       };
@@ -1124,6 +1130,7 @@ const recalculateLinkedTextAllocations = (headId) => {
       displayHtml: fragment.html || '',
       overflowHtml,
       fullTextHtml: fragment.fullTextHtml || '', // Nuevo: texto completo para capa inferior
+      editorTopOffset: fragment.editorTopOffset || 0,
       fitsInBox: fragment.fitsInBox ?? true,
       isLastInChain
     };
@@ -1140,6 +1147,8 @@ const editorElements = computed(() => {
   const customElements = Object.entries(state.customElements ?? {}).map(([id, element]) => {
     const isBeingEdited = editingElementId.value === id;
     const linkedTextBoxData = element.type === 'linkedText' ? getLinkedTextBoxText(id) : null;
+    const linkedTextStyleSourceId = element.type === 'linkedText' ? getLinkedTextStyleSourceId(id) : id;
+    const linkedTextStyleSourceLayout = state.elementLayout[linkedTextStyleSourceId] ?? null;
     
     // Regla 3: Si está en edición, el texto debe ser el COMPLETO (del head), no el fragmento
     let elementText;
@@ -1165,9 +1174,14 @@ const editorElements = computed(() => {
       label: element.label ?? 'Elemento',
       fieldKey: element.fieldKey ?? null,
       text: elementText,
+      linkedTextStyleSourceId,
+      linkedTextParagraphStyles: element.type === 'linkedText'
+        ? (linkedTextStyleSourceLayout?.paragraphStyles ?? [])
+        : null,
       linkedTextDisplayHtml: element.type === 'linkedText' ? (linkedTextBoxData?.displayHtml ?? '') : '',
       linkedTextOverflowHtml: element.type === 'linkedText' ? (linkedTextBoxData?.overflowHtml ?? '') : '',
       linkedTextFullTextHtml: element.type === 'linkedText' ? (linkedTextBoxData?.fullTextHtml ?? '') : '',
+      linkedTextEditorTopOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTopOffset ?? 0) : 0,
       src: element.type === 'image' ? element.src : null,
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
     };
@@ -1547,7 +1561,8 @@ const getTextSourceForSelectedElement = () => {
     return getElementText(state.selectedElementId);
 };
 const getParagraphStyleForElement = (id, index = 0, text = null) => {
-    const layout = state.elementLayout[id];
+    const styleSourceId = getLinkedTextStyleSourceId(id);
+    const layout = state.elementLayout[styleSourceId];
     if (!layout) return null;
 
     const sourceText = text ?? getElementText(id);
@@ -3995,7 +4010,8 @@ const handleClipboardKeydown = async (event) => {
 };
 
 const onRichEditorStylesUpdate = (id, newStyles) => {
-    const layout = state.elementLayout[id];
+    const styleSourceId = getLinkedTextStyleSourceId(id);
+    const layout = state.elementLayout[styleSourceId];
     if (!layout) return;
     layout.paragraphStyles = newStyles;
 };

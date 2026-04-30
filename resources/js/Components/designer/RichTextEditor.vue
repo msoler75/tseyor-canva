@@ -89,6 +89,7 @@ const props = defineProps({
     fullTextHtml: { type: String, default: '' },
     showOverflow: { type: Boolean, default: false },
     linkedTextActive: { type: Boolean, default: false },
+    editorTopOffset: { type: Number, default: 0 },
 });
 const emit = defineEmits(['update:text', 'update:paragraphStyles', 'update:html', 'selectionChange', 'blur']);
 
@@ -147,6 +148,7 @@ const extractFromDoc = (doc) => {
 let suppressWatch = false;
 
 const wrapperRef = ref(null);
+const editorViewportRef = ref(null);
 const overflowRef = ref(null);
 
 const wrapperStyle = computed(() => {
@@ -155,11 +157,18 @@ const wrapperStyle = computed(() => {
     // Regla 3/4: Overflow invisible cuando la cadena no está activa/seleccionada/edición
     // Cuando está activa, usamos overflow:visible para permitir ver el overflow
     if (props.isLinkedText) {
-        style.overflow = props.linkedTextActive ? 'visible' : 'hidden';
+        style.overflow = props.editable ? 'hidden' : (props.linkedTextActive ? 'visible' : 'hidden');
     }
 
     return style;
 });
+
+const syncEditorViewportOffset = async () => {
+    if (!props.isLinkedText || !props.editable) return;
+    await nextTick();
+    if (!editorViewportRef.value) return;
+    editorViewportRef.value.scrollTop = Math.max(0, props.editorTopOffset || 0);
+};
 
 const editor = useEditor({
     extensions: [
@@ -389,6 +398,11 @@ defineExpose({
 
 watch(() => props.editable, (val) => {
     editor?.value?.setEditable(val && !props.displayMode);
+    syncEditorViewportOffset();
+});
+
+watch(() => props.editorTopOffset, () => {
+    syncEditorViewportOffset();
 });
 
 watch(() => props.displayMode, (val) => {
@@ -415,6 +429,8 @@ watch(() => [props.text, props.paragraphStyles], ([newText, newStyles]) => {
 
 // Log de estilos cuando se monta el componente
 onMounted(() => {
+    syncEditorViewportOffset();
+
     if (props.isLinkedText) {
         nextTick(() => {
             logLinkedTextStyles();
@@ -525,6 +541,16 @@ const logLinkedTextStyles = () => {
             :style="props.editorStyle"
             v-html="props.displayHtml"
         ></div>
+        <div
+            v-else-if="props.isLinkedText && props.editable"
+            ref="editorViewportRef"
+            class="linked-text-editor-viewport"
+        >
+            <EditorContent
+                :editor="editor"
+                :style="props.editorStyle"
+            />
+        </div>
         <EditorContent
             v-else
             :editor="editor"
@@ -640,6 +666,12 @@ const logLinkedTextStyles = () => {
 }
 .linked-text-active .linked-text-display {
     overflow: hidden !important;
+}
+.linked-text-editor-viewport {
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+    z-index: 20;
 }
 .linked-text-overflow {
     position: absolute;

@@ -198,6 +198,12 @@ const getLinkedTextChainHead = (boxId) => {
   return boxId;
 };
 
+const getLinkedTextStyleSourceId = (item) => (
+  item?.type === 'linkedText'
+    ? (item.linkedTextStyleSourceId || getLinkedTextChainHead(item.id))
+    : item?.id
+);
+
 const getLinkedTextChain = (headId) => {
   const chain = [];
   let currentId = headId;
@@ -355,12 +361,12 @@ const isLinkedTextChainActive = (boxId) => {
               <RichTextEditor
                 :key="`${item.id}-${state.templateRevision ?? 0}`"
                 :ref="(el) => assignRichEditorRef(item.id, el)"
-                :paragraph-styles="state.elementLayout[item.id].paragraphStyles ?? []"
+                :paragraph-styles="item.type === 'linkedText' ? (item.linkedTextParagraphStyles ?? []) : (state.elementLayout[item.id].paragraphStyles ?? [])"
                 :text="item.text ?? ''"
                 :editable="editingElementId === item.id"
-                :editor-style="richEditorContainerStyle(item.id)"
-                :color-override="neonColorOverride(item.id)"
-                :transparent-fill="!!state.elementLayout[item.id]?.hollowText"
+                :editor-style="richEditorContainerStyle(getLinkedTextStyleSourceId(item))"
+                :color-override="neonColorOverride(getLinkedTextStyleSourceId(item))"
+                :transparent-fill="!!state.elementLayout[getLinkedTextStyleSourceId(item)]?.hollowText"
                 :is-linked-text="item.type === 'linkedText'"
                 :linked-text-active="item.type === 'linkedText' && isLinkedTextChainActive(item.id)"
                 :linked-text-next="item.type === 'linkedText' ? (state.elementLayout[item.id]?.linkedTextNext ?? null) : null"
@@ -369,6 +375,7 @@ const isLinkedTextChainActive = (boxId) => {
                 :display-html="item.type === 'linkedText' ? (item.linkedTextDisplayHtml ?? '') : ''"
                 :overflow-html="item.type === 'linkedText' ? (item.linkedTextOverflowHtml ?? '') : ''"
                 :full-text-html="item.type === 'linkedText' ? (item.linkedTextFullTextHtml ?? '') : ''"
+                :editor-top-offset="item.type === 'linkedText' ? (item.linkedTextEditorTopOffset ?? 0) : 0"
                 :show-overflow="item.type === 'linkedText' && isLinkedTextChainActive(item.id)"
                 @update:text="emit('richEditorTextUpdate', { id: item.id, value: $event })"
                 @update:paragraph-styles="emit('richEditorStylesUpdate', { id: item.id, value: $event })"
