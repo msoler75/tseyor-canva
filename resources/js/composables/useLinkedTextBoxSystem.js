@@ -161,40 +161,41 @@ export function createLinkedTextBoxSystem() {
      };
      applyContainerStylesToMeasure();
 
-     /**
-      * Construir HTML desde un slice de palabras (manteniendo estructura de párrafos)
-      * @param {Array} wordSlice Array de objetos {word, paragraphIndex, paragraph}
-      * @returns {string} HTML con párrafos adecuados
-      */
-     const buildHtmlFromWordSlice = (wordSlice) => {
-       if (!wordSlice || wordSlice.length === 0) return '';
-       // Agrupar palabras por párrafo original
-       const grouped = [];
-       let currentGroup = null;
-       for (const wObj of wordSlice) {
-         if (!currentGroup || currentGroup.paragraphIndex !== wObj.paragraphIndex) {
-           // Nuevo párrafo
-           currentGroup = {
-             paragraphIndex: wObj.paragraphIndex,
-             paragraph: wObj.paragraph,
-             words: [wObj.word]
-           };
-           grouped.push(currentGroup);
-         } else {
-           // Mismo párrafo
-           currentGroup.words.push(wObj.word);
-         }
-       }
-       // Construir HTML
-       return grouped.map(group => {
-         const para = group.paragraph;
-         const tag = para.tag || 'p';
-         const style = para.style || '';
-         const styleAttr = style ? ` style="${style}"` : '';
-         const text = group.words.join(' ');
-         return `<${tag}${styleAttr}>${text}</${tag}>`;
-       }).join('');
-     };
+      /**
+       * Construir HTML desde un slice de palabras (manteniendo estructura de párrafos)
+       * @param {Array} wordSlice Array de objetos {word, paragraphIndex, paragraph}
+       * @returns {string} HTML con párrafos adecuados
+       */
+      const buildHtmlFromWordSlice = (wordSlice) => {
+        if (!wordSlice || wordSlice.length === 0) return '';
+        // Agrupar palabras por párrafo original
+        const grouped = [];
+        let currentGroup = null;
+        for (const wObj of wordSlice) {
+          if (!currentGroup || currentGroup.paragraphIndex !== wObj.paragraphIndex) {
+            // Nuevo párrafo
+            currentGroup = {
+              paragraphIndex: wObj.paragraphIndex,
+              paragraph: wObj.paragraph,
+              words: [wObj.word]
+            };
+            grouped.push(currentGroup);
+          } else {
+            // Mismo párrafo
+            currentGroup.words.push(wObj.word);
+          }
+        }
+        // Construir HTML
+        return grouped.map(group => {
+          const para = group.paragraph;
+          const tag = para.tag || 'p';
+          const style = para.style || '';
+          const styleAttr = style ? ` style="${style}"` : '';
+          // Unir tokens sin añadir espacios extra (ya que los espacios son tokens independientes)
+          const text = group.words.join('');
+          return `<${tag}${styleAttr}>${text}</${tag}>`;
+        }).join('');
+      };
 
       // Procesar cada caja en la cadena secuencialmente
       let wordIdx = 0; // índice de la próxima palabra a colocar
@@ -214,11 +215,10 @@ export function createLinkedTextBoxSystem() {
         const inputSlice = allWords.slice(wordIdx, totalWords);
 
         // Dimensiones disponibles de la caja (restando padding y botón de enlace)
-        const paddingVertical = 2;
-        const paddingHorizontal = 16;
-        const linkBtnWidth = 28;
-        const maxHeight = (layout.h || 120) - paddingVertical;
-        const maxWidth = (layout.w || 300) - paddingHorizontal - linkBtnWidth;
+        const paddingVertical = 0;
+        const paddingHorizontal = 0;
+        const maxHeight = (layout.h || 50) - paddingVertical;
+        const maxWidth = (layout.w || 100) - paddingHorizontal;
 
         // Aplicar estilos del contenedor (puede variar por caja, pero usamos el mismo containerStyle global)
         applyContainerStylesToMeasure();
@@ -284,57 +284,83 @@ export function createLinkedTextBoxSystem() {
   };
 
   /**
-   * Parsear HTML en párrafos con sus estilos
-   */
-  function parseHtmlIntoParagraphs(html) {
-    const temp = document.createElement('div');
-    temp.innerHTML = html;
+    * Parsear HTML en párrafos con sus estilos
+    * Tokenización: conserva signos de puntuación y espacios como tokens independientes
+    */
+   function parseHtmlIntoParagraphs(html) {
+     const temp = document.createElement('div');
+     temp.innerHTML = html;
 
-    const paragraphs = [];
-    const nodes = Array.from(temp.childNodes);
+     const paragraphs = [];
+     const nodes = Array.from(temp.childNodes);
 
-    for (const node of nodes) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        // Texto sin envolver - tratar como párrafo sin estilo
-        const text = node.textContent.trim();
-        if (text) {
-          paragraphs.push({
-            style: '',
-            words: text.split(/\s+/).filter(w => w.length > 0),
-          });
-        }
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        // Elemento HTML - extraer estilo y palabras
-        const style = node.getAttribute('style') || '';
-        const text = node.textContent.trim();
-        if (text) {
-          paragraphs.push({
-            style,
-            words: text.split(/\s+/).filter(w => w.length > 0),
-            tag: node.tagName.toLowerCase(),
-          });
+     for (const node of nodes) {
+       if (node.nodeType === Node.TEXT_NODE) {
+         const text = node.textContent;
+         if (text && text.trim()) {
+           paragraphs.push({
+             style: '',
+             words: tokenizeText(text),
+           });
+         }
+       } else if (node.nodeType === Node.ELEMENT_NODE) {
+         const style = node.getAttribute('style') || '';
+         const text = node.textContent;
+         if (text && text.trim()) {
+           paragraphs.push({
+             style,
+             words: tokenizeText(text),
+             tag: node.tagName.toLowerCase(),
+           });
+         }
+       }
+     }
+
+     return paragraphs;
+   }
+
+   /**
+    * Tokenizar texto preservando signos y espacios como tokens independientes
+    * Ejemplo: "Hola, mundo!" => ["Hola", ",", " ", "mundo", "!"]
+    */
+   function tokenizeText(text) {
+      // Patrón: separa manteniendo signos de puntuación y espacios
+      // \s+ : espacios (se mantienen como tokens)
+      // [.,;:!?()\[\]{}"'`…]+ : signos de puntuación (se mantienen como tokens)
+      // \w+ : palabras alfanuméricas
+      // [^\s\w.,;:!?()\[\]{}"'`´…]+ : otros caracteres (emojis, etc.)
+      const regex = /(\s+)|([.,;:!?()[\]{}"'`…]+)|(\w+)|([^\s\w.,;:!?()[\]{}"'`´…]+)/g;
+      const tokens = [];
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        if (match[1]) {
+          // Espacios: preservar el texto original (puede ser espacios, tabs, newlines)
+          tokens.push(match[1]);
+        } else if (match[2] || match[3] || match[4]) {
+          tokens.push(match[0]);
         }
       }
+      return tokens.filter(t => t !== '');
     }
 
-    return paragraphs;
-  }
 
 
 
   /**
-   * Construir HTML desde array de párrafos
-   */
-  function buildHtmlFromParagraphs(paragraphs) {
-    if (!paragraphs || paragraphs.length === 0) return '';
-    return paragraphs.map(para => {
-      const tag = para.tag || 'p';
-      const style = para.style || '';
-      const styleAttr = style ? ` style="${style}"` : '';
-      const text = para.words ? para.words.join(' ') : '';
-      return `<${tag}${styleAttr}>${text}</${tag}>`;
-    }).join('');
-  }
+    * Construir HTML desde array de párrafos
+    * Las palabras ya incluyen signos y espacios como tokens independientes
+    */
+   function buildHtmlFromParagraphs(paragraphs) {
+     if (!paragraphs || paragraphs.length === 0) return '';
+     return paragraphs.map(para => {
+       const tag = para.tag || 'p';
+       const style = para.style || '';
+       const styleAttr = style ? ` style="${style}"` : '';
+       // Unir sin espacios extra (los espacios ya son tokens)
+       const text = para.words ? para.words.join('') : '';
+       return `<${tag}${styleAttr}>${text}</${tag}>`;
+     }).join('');
+   }
 
 
   function applyContainerStyles(el, containerStyle) {

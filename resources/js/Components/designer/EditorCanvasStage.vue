@@ -163,17 +163,17 @@ const getLinkedTextChain = (headId) => {
 const isLinkedTextInChainBeingEdited = (boxId) => {
   // Si no hay ninguna caja activa editándose, mostrar modo display para todas
   if (!props.activeLinkedTextBox) return true;
-  
+
   // Si esta caja ES la que está siendo editada, NO está en modo display
   if (boxId === props.activeLinkedTextBox) return false;
-  
+
   // Verificar que ambas cajas pertenecen al mismo grupo
   const boxLayout = props.state?.elementLayout?.[boxId];
   const activeLayout = props.state?.elementLayout?.[props.activeLinkedTextBox];
-  
+
   if (!boxLayout?.linkedTextGroupId || !activeLayout?.linkedTextGroupId) return true;
   if (boxLayout.linkedTextGroupId !== activeLayout.linkedTextGroupId) return true;
-  
+
   // Otra caja del mismo grupo está siendo editada, esta debe estar en modo display
   return true;
 };
@@ -182,7 +182,7 @@ const isLinkedTextInChainBeingEdited = (boxId) => {
 const isLinkedTextChainActive = (boxId) => {
   const boxLayout = props.state?.elementLayout?.[boxId];
   if (!boxLayout?.linkedTextGroupId) return false;
-  
+
   // Si hay edición activa en cualquier caja de la cadena
   if (props.editingElementId) {
     const editingLayout = props.state?.elementLayout?.[props.editingElementId];
@@ -190,7 +190,7 @@ const isLinkedTextChainActive = (boxId) => {
       return true;
     }
   }
-  
+
   // Si hay selección activa en cualquier caja de la cadena
   const selectedId = props.state?.selectedElementId;
   if (selectedId) {
@@ -199,7 +199,7 @@ const isLinkedTextChainActive = (boxId) => {
       return true;
     }
   }
-  
+
   return false;
 };
 </script>
@@ -334,7 +334,7 @@ const isLinkedTextChainActive = (boxId) => {
               <button
                 v-if="item.type === 'linkedText'"
                 type="button"
-                class="linked-text-link-btn absolute bottom-1 right-1 z-20 flex h-6 w-6 cursor-grab items-center justify-center rounded-full bg-primary/80 text-white shadow-md transition hover:bg-primary active:cursor-grabbing"
+                class="linked-text-link-btn absolute -bottom-4 right-1 z-20 flex h-6 w-6 cursor-grab items-center justify-center rounded-full bg-primary/80 text-white shadow-md transition hover:bg-primary active:cursor-grabbing"
                 title="Arrastra para conectar con otro texto enlazado"
                 @pointerdown.stop="emit('linkedTextLinkStart', { event: $event, id: item.id })"
               >
