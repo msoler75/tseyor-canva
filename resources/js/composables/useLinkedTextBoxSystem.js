@@ -88,14 +88,14 @@ export function createLinkedTextBoxSystem() {
      system.fullHtml = fullHtml;
      system.fragments = {};
 
-     if (!chainLayouts || chainLayouts.length === 0) return;
-     if (!fullHtml || fullHtml.trim() === '') {
-       // Texto vacío: todas las cajas vacías
-       chainLayouts.forEach(layout => {
-         system.fragments[layout.id] = { html: '', overflowHtml: '', fitsInBox: true };
-       });
-       return;
-     }
+      if (!chainLayouts || chainLayouts.length === 0) return;
+      if (!fullHtml || fullHtml.trim() === '') {
+        // Texto vacío: todas las cajas vacías
+        chainLayouts.forEach(layout => {
+          system.fragments[layout.id] = { html: '', overflowHtml: '', fullTextHtml: '', fitsInBox: true };
+        });
+        return;
+      }
 
      const frontendLog = useFrontendLog();
 
@@ -196,83 +196,90 @@ export function createLinkedTextBoxSystem() {
        }).join('');
      };
 
-     // Procesar cada caja en la cadena secuencialmente
-     let wordIdx = 0; // índice de la próxima palabra a colocar
-     chainLayouts.forEach((layout, boxIndex) => {
-       // Si ya no quedan palabras, la caja actual y las siguientes quedan vacías
-       if (wordIdx >= totalWords) {
-         system.fragments[layout.id] = {
-           html: '',
-           overflowHtml: '',
-           fitsInBox: true
-         };
-         return;
-       }
+      // Procesar cada caja en la cadena secuencialmente
+      let wordIdx = 0; // índice de la próxima palabra a colocar
+      chainLayouts.forEach((layout, boxIndex) => {
+        // Si ya no quedan palabras, la caja actual y las siguientes quedan vacías
+        if (wordIdx >= totalWords) {
+          system.fragments[layout.id] = {
+            html: '',
+            overflowHtml: '',
+            fullTextHtml: '', // No hay texto de entrada
+            fitsInBox: true
+          };
+          return;
+        }
 
-       // Dimensiones disponibles de la caja (restando padding y botón de enlace)
-       const paddingVertical = 2;
-       const paddingHorizontal = 16;
-       const linkBtnWidth = 28;
-       const maxHeight = (layout.h || 120) - paddingVertical;
-       const maxWidth = (layout.w || 300) - paddingHorizontal - linkBtnWidth;
+        // Texto de entrada completo para esta caja (antes de recortar por altura)
+        const inputSlice = allWords.slice(wordIdx, totalWords);
 
-       // Aplicar estilos del contenedor (puede variar por caja, pero usamos el mismo containerStyle global)
-       applyContainerStylesToMeasure();
-       measureDiv.style.width = `${maxWidth}px`;
+        // Dimensiones disponibles de la caja (restando padding y botón de enlace)
+        const paddingVertical = 2;
+        const paddingHorizontal = 16;
+        const linkBtnWidth = 28;
+        const maxHeight = (layout.h || 120) - paddingVertical;
+        const maxWidth = (layout.w || 300) - paddingHorizontal - linkBtnWidth;
 
-       // Búsqueda binaria para encontrar cuántas palabras caben en esta caja
-       let left = 0;
-       let right = totalWords - wordIdx;
-       let bestFit = 0;
+        // Aplicar estilos del contenedor (puede variar por caja, pero usamos el mismo containerStyle global)
+        applyContainerStylesToMeasure();
+        measureDiv.style.width = `${maxWidth}px`;
 
-       while (left <= right) {
-         const mid = Math.floor((left + right) / 2);
-         const testSlice = allWords.slice(wordIdx, wordIdx + mid);
-         const html = buildHtmlFromWordSlice(testSlice);
-         measureDiv.innerHTML = html;
-         const height = measureDiv.offsetHeight;
+        // Búsqueda binaria para encontrar cuántas palabras caben en esta caja
+        let left = 0;
+        let right = totalWords - wordIdx;
+        let bestFit = 0;
 
-         if (height <= maxHeight) {
-           // Cabe: intentar con más palabras
-           bestFit = mid;
-           left = mid + 1;
-         } else {
-           // No cabe: intentar con menos palabras
-           right = mid - 1;
-         }
-       }
+        while (left <= right) {
+          const mid = Math.floor((left + right) / 2);
+          const testSlice = allWords.slice(wordIdx, wordIdx + mid);
+          const html = buildHtmlFromWordSlice(testSlice);
+          measureDiv.innerHTML = html;
+          const height = measureDiv.offsetHeight;
 
-       const fitWords = bestFit;
-       const visibleSlice = allWords.slice(wordIdx, wordIdx + fitWords);
-       const overflowSlice = allWords.slice(wordIdx + fitWords); // resto para siguientes cajas
+          if (height <= maxHeight) {
+            // Cabe: intentar con más palabras
+            bestFit = mid;
+            left = mid + 1;
+          } else {
+            // No cabe: intentar con menos palabras
+            right = mid - 1;
+          }
+        }
 
-       const visibleHtml = buildHtmlFromWordSlice(visibleSlice);
-       const overflowHtml = buildHtmlFromWordSlice(overflowSlice); // Texto que no cabe en esta caja (pasará a la siguiente)
-       const fitsInBox = (wordIdx + fitWords) >= totalWords; // true si no hay más palabras después
+        const fitWords = bestFit;
+        const visibleSlice = allWords.slice(wordIdx, wordIdx + fitWords);
+        const overflowSlice = allWords.slice(wordIdx + fitWords); // resto para siguientes cajas
 
-       // Asignar fragmento a esta caja
-       system.fragments[layout.id] = {
-         html: visibleHtml,
-         overflowHtml: overflowHtml,
-         fitsInBox: fitsInBox
-       };
+        const visibleHtml = buildHtmlFromWordSlice(visibleSlice);
+        const overflowHtml = buildHtmlFromWordSlice(overflowSlice); // Texto que no cabe en esta caja (pasará a la siguiente)
+        const fullTextHtml = buildHtmlFromWordSlice(inputSlice); // TODO el texto de entrada para esta caja (para la capa inferior sin límite)
+        const fitsInBox = (wordIdx + fitWords) >= totalWords; // true si no hay más palabras después
 
-       // Actualizar índice para la siguiente caja
-       wordIdx += fitWords;
+        // Asignar fragmento a esta caja
+        system.fragments[layout.id] = {
+          html: visibleHtml,
+          overflowHtml: overflowHtml,
+          fullTextHtml: fullTextHtml, // Nuevo: texto completo para capa inferior (sin límite de altura)
+          fitsInBox: fitsInBox
+        };
 
-       // Log para esta caja (opcional)
-       frontendLog.info('boxFragment',
-         `Caja ${boxIndex + 1}: ${fitWords}/${totalWords - (wordIdx - fitWords)} palabras caben`,
-         {
-           boxIndex,
-           boxId: layout.id,
-           wordsFit: fitWords,
-           wordsRemaining: totalWords - wordIdx,
-           fitsInBox,
-           overflowLength: overflowSlice.length
-         }
-       );
-     });
+        // Actualizar índice para la siguiente caja
+        wordIdx += fitWords;
+
+        // Log para esta caja (opcional)
+        frontendLog.info('boxFragment',
+          `Caja ${boxIndex + 1}: ${fitWords}/${totalWords - (wordIdx - fitWords)} palabras caben`,
+          {
+            boxIndex,
+            boxId: layout.id,
+            wordsFit: fitWords,
+            wordsRemaining: totalWords - wordIdx,
+            fitsInBox,
+            overflowLength: overflowSlice.length,
+            fullTextLength: inputSlice.length
+          }
+        );
+      });
 
   };
 
@@ -340,13 +347,13 @@ export function createLinkedTextBoxSystem() {
   }
 
   /**
-   * Obtener fragmento para una caja específica
-   */
-  function getFragmentForBox(groupId, boxId) {
-    const system = systemsMap.get(groupId);
-    if (!system) return { html: '', overflowHtml: '', fitsInBox: true };
-    return system.fragments[boxId] || { html: '', overflowHtml: '', fitsInBox: true };
-  }
+    * Obtener fragmento para una caja específica
+    */
+   function getFragmentForBox(groupId, boxId) {
+     const system = systemsMap.get(groupId);
+     if (!system) return { html: '', overflowHtml: '', fullTextHtml: '', fitsInBox: true };
+     return system.fragments[boxId] || { html: '', overflowHtml: '', fullTextHtml: '', fitsInBox: true };
+   }
 
   /**
    * Activar edición en una caja específica

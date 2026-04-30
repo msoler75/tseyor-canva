@@ -316,6 +316,7 @@ const isLinkedTextChainActive = (boxId) => {
                 :display-mode="item.type === 'linkedText' && editingElementId !== item.id && isLinkedTextInChainBeingEdited(item.id)"
                 :display-html="item.type === 'linkedText' ? (item.linkedTextDisplayHtml ?? '') : ''"
                 :overflow-html="item.type === 'linkedText' ? (item.linkedTextOverflowHtml ?? '') : ''"
+                :full-text-html="item.type === 'linkedText' ? (item.linkedTextFullTextHtml ?? '') : ''"
                 :show-overflow="item.type === 'linkedText' && isLinkedTextChainActive(item.id)"
                 @update:text="emit('richEditorTextUpdate', { id: item.id, value: $event })"
                 @update:paragraph-styles="emit('richEditorStylesUpdate', { id: item.id, value: $event })"

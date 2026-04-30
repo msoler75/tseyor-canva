@@ -1065,65 +1065,68 @@ const recalculateLinkedTextAllocations = (headId) => {
   }
 };
 
-const getLinkedTextBoxText = (boxId) => {
-  const layout = state.elementLayout[boxId];
-  if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fitsInBox: true };
+  const getLinkedTextBoxText = (boxId) => {
+    const layout = state.elementLayout[boxId];
+    if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fullTextHtml: '', fitsInBox: true };
 
-  const groupId = layout.linkedTextGroupId;
-  const headId = getLinkedTextChainHead(boxId);
+    const groupId = layout.linkedTextGroupId;
+    const headId = getLinkedTextChainHead(boxId);
 
-  // Asegurar que el sistema tiene los fragmentos calculados
-  const system = linkedTextBoxSystem.getOrCreateSystem(groupId);
-  if (!system.fragments || Object.keys(system.fragments).length === 0) {
-    recalculateLinkedTextAllocations(headId);
-  }
-
-  // Determinar si es la última caja de la cadena
-  const chain = getLinkedTextChain(headId);
-  const isLastInChain = chain.length > 0 && chain[chain.length - 1].id === boxId;
-
-  const fragment = linkedTextBoxSystem.getFragmentForBox(groupId, boxId);
-
-  // Log del fragmento obtenido
-  frontendLog.debug('getFragment', 
-    `Obteniendo fragmento para caja ${boxId}`, 
-    {
-      boxId,
-      groupId,
-      headId,
-      isLastInChain,
-      hasFragment: !!fragment.html,
-      fragmentHtmlLength: fragment.html?.length || 0,
-      fragmentHtmlPreview: fragment.html?.substring(0, 100),
-      overflowHtmlLength: fragment.overflowHtml?.length || 0,
-      fitsInBox: fragment.fitsInBox,
+    // Asegurar que el sistema tiene los fragmentos calculados
+    const system = linkedTextBoxSystem.getOrCreateSystem(groupId);
+    if (!system.fragments || Object.keys(system.fragments).length === 0) {
+      recalculateLinkedTextAllocations(headId);
     }
-  );
 
-  // Si todavía no hay fragmento, usar el texto del elemento head directamente
-  if (!fragment.html) {
-    const headElement = state.customElements[headId];
-    const rawText = headElement?.text || '';
+    // Determinar si es la última caja de la cadena
+    const chain = getLinkedTextChain(headId);
+    const isLastInChain = chain.length > 0 && chain[chain.length - 1].id === boxId;
+
+    const fragment = linkedTextBoxSystem.getFragmentForBox(groupId, boxId);
+
+    // Log del fragmento obtenido
+    frontendLog.debug('getFragment', 
+      `Obteniendo fragmento para caja ${boxId}`, 
+      {
+        boxId,
+        groupId,
+        headId,
+        isLastInChain,
+        hasFragment: !!fragment.html,
+        fragmentHtmlLength: fragment.html?.length || 0,
+        fragmentHtmlPreview: fragment.html?.substring(0, 100),
+        overflowHtmlLength: fragment.overflowHtml?.length || 0,
+        fullTextHtmlLength: fragment.fullTextHtml?.length || 0,
+        fitsInBox: fragment.fitsInBox,
+      }
+    );
+
+    // Si todavía no hay fragmento, usar el texto del elemento head directamente
+    if (!fragment.html) {
+      const headElement = state.customElements[headId];
+      const rawText = headElement?.text || '';
+      return {
+        text: rawText,
+        displayHtml: rawText ? `<p>${rawText}</p>` : '',
+        overflowHtml: '',
+        fullTextHtml: rawText ? `<p>${rawText}</p>` : '',
+        fitsInBox: true,
+        isLastInChain
+      };
+    }
+
+    // Solo mostrar overflow en la última caja de la cadena
+    const overflowHtml = isLastInChain ? (fragment.overflowHtml || '') : '';
+
     return {
-      text: rawText,
-      displayHtml: rawText ? `<p>${rawText}</p>` : '',
-      overflowHtml: '',
-      fitsInBox: true,
+      text: fragment.html ? fragment.html.replace(/<[^>]*>/g, '') : '',
+      displayHtml: fragment.html || '',
+      overflowHtml,
+      fullTextHtml: fragment.fullTextHtml || '', // Nuevo: texto completo para capa inferior
+      fitsInBox: fragment.fitsInBox ?? true,
       isLastInChain
     };
-  }
-
-  // Solo mostrar overflow en la última caja de la cadena
-  const overflowHtml = isLastInChain ? (fragment.overflowHtml || '') : '';
-
-  return {
-    text: fragment.html ? fragment.html.replace(/<[^>]*>/g, '') : '',
-    displayHtml: fragment.html || '',
-    overflowHtml,
-    fitsInBox: fragment.fitsInBox ?? true,
-    isLastInChain
   };
-};
 
 const editorElements = computed(() => {
   const baseTextElements = [
@@ -1163,6 +1166,7 @@ const editorElements = computed(() => {
       text: elementText,
       linkedTextDisplayHtml: element.type === 'linkedText' ? (linkedTextBoxData?.displayHtml ?? '') : '',
       linkedTextOverflowHtml: element.type === 'linkedText' ? (linkedTextBoxData?.overflowHtml ?? '') : '',
+      linkedTextFullTextHtml: element.type === 'linkedText' ? (linkedTextBoxData?.fullTextHtml ?? '') : '',
       src: element.type === 'image' ? element.src : null,
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
     };

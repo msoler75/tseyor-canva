@@ -86,6 +86,7 @@ const props = defineProps({
     displayMode: { type: Boolean, default: false },
     displayHtml: { type: String, default: '' },
     overflowHtml: { type: String, default: '' },
+    fullTextHtml: { type: String, default: '' },
     showOverflow: { type: Boolean, default: false },
     linkedTextActive: { type: Boolean, default: false },
 });
@@ -510,10 +511,10 @@ const logLinkedTextStyles = () => {
         <!-- Nueva estrategia: dos capas -->
         <!-- Capa inferior: texto completo (sin límite inferior), opacidad 50% -->
         <div
-            v-if="props.isLinkedText && props.showOverflow && props.overflowHtml"
+            v-if="props.isLinkedText && props.showOverflow && props.fullTextHtml"
             class="linked-text-base-layer"
             :style="props.editorStyle"
-            v-html="props.overflowHtml"
+            v-html="props.fullTextHtml"
         ></div>
 
         <!-- Capa superior: texto visible (recortado) -->
