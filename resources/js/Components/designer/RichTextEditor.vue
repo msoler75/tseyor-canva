@@ -667,8 +667,8 @@ const logLinkedTextStyles = () => {
         <!-- Nueva estrategia: dos capas -->
         <!-- Capa inferior: texto completo (sin límite inferior), opacidad 50% -->
         <div
-            v-if="props.displayMode && props.isLinkedText && props.showOverflow && props.tailHtml"
-            class="linked-text-base-layer transform translate-x-4 translate-y-2"
+            v-if="props.isLinkedText && props.showOverflow && props.tailHtml"
+            class="linked-text-base-layer"
             :style="linkedTextBaseLayerStyle"
             v-html="props.tailHtml"
         ></div>
