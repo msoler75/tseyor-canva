@@ -1232,6 +1232,7 @@ const editorElements = computed(() => {
       linkedTextInitialHtml: element.type === 'linkedText' && isBeingEdited ? (linkedTextBoxData?.tailHtml ?? '') : '',
       linkedTextEditorTopOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTopOffset ?? 0) : 0,
       linkedTextEditorTextOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTextOffset ?? 0) : 0,
+      linkedTextIsLastInChain: element.type === 'linkedText' ? (linkedTextBoxData?.isLastInChain ?? false) : false,
       src: element.type === 'image' ? element.src : null,
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
     };

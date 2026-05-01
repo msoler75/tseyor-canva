@@ -129,6 +129,7 @@ const props = defineProps({
     linkedTextActive: { type: Boolean, default: false },
     editorTopOffset: { type: Number, default: 0 },
     editorTextOffset: { type: Number, default: 0 },
+    isLastInChain: { type: Boolean, default: false },
 });
 const emit = defineEmits(['update:text', 'update:paragraphStyles', 'update:html', 'selectionChange', 'blur']);
 
@@ -688,7 +689,7 @@ const logLinkedTextStyles = () => {
         <!-- Nueva estrategia: dos capas -->
         <!-- Capa inferior: texto completo (sin límite inferior), opacidad 50% -->
         <div
-            v-if="props.isLinkedText && props.showOverflow && props.tailHtml"
+            v-if="props.isLinkedText && props.showOverflow && props.tailHtml && props.isLastInChain"
             class="linked-text-base-layer"
             :style="linkedTextBaseLayerStyle"
             v-html="props.tailHtml"
