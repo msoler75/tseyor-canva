@@ -84,6 +84,7 @@ const props = defineProps({
     boxDimensions: { type: Object, default: null },
     editable: { type: Boolean, default: false },
     displayMode: { type: Boolean, default: false },
+    initialHtml: { type: String, default: '' },
     displayHtml: { type: String, default: '' },
     overflowHtml: { type: String, default: '' },
     fullTextHtml: { type: String, default: '' },
@@ -208,7 +209,7 @@ const editor = useEditor({
         StyledTextMark,
     ],
     editable: props.editable && !props.displayMode,
-    content: buildDoc(props.text, props.paragraphStyles),
+    content: props.initialHtml || buildDoc(props.text, props.paragraphStyles),
     editorProps: {
         attributes: {
             class: props.editorClass,
@@ -469,8 +470,19 @@ watch(() => props.displayMode, (val) => {
     }
 });
 
+watch(() => props.initialHtml, (html) => {
+    if (html && editor?.value && !props.displayMode) {
+        suppressWatch = true;
+        editor.value.commands.setContent(html, false);
+        nextTick(() => {
+            suppressWatch = false;
+        });
+    }
+});
+
 watch(() => [props.text, props.paragraphStyles], ([newText, newStyles]) => {
     if (suppressWatch || !editor?.value || props.displayMode) return;
+    if (props.initialHtml) return;
     const current = extractFromDoc(editor.value.state.doc);
     const textChanged = current.text !== newText;
     const stylesChanged = JSON.stringify(current.styles) !== JSON.stringify(newStyles ?? []);
@@ -586,10 +598,10 @@ const logLinkedTextStyles = () => {
          </teleport>
         <!-- Capa inferior: texto completo (sin límite inferior), opacidad 50% -->
         <div
-            v-if="props.isLinkedText && props.showOverflow && props.fullTextHtml"
-            class="linked-text-base-layer"
+            v-if="props.displayMode && props.isLinkedText && props.showOverflow && props.tailHtml"
+            class="linked-text-base-layer transform translate-x-4 translate-y-2"
             :style="linkedTextBaseLayerStyle"
-            v-html="props.fullTextHtml"
+            v-html="props.tailHtml"
         ></div>
 
         <!-- Capa superior: texto visible (recortado) -->

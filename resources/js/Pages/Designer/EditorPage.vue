@@ -1100,7 +1100,7 @@ const recalculateLinkedTextAllocations = (headId) => {
 
   const getLinkedTextBoxText = (boxId) => {
     const layout = state.elementLayout[boxId];
-    if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
+    if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
 
     const groupId = layout.linkedTextGroupId;
     const headId = getLinkedTextChainHead(boxId);
@@ -1144,6 +1144,7 @@ const recalculateLinkedTextAllocations = (headId) => {
         displayHtml: rawText ? `<p>${rawText}</p>` : '',
         overflowHtml: '',
         fullTextHtml: rawText ? `<p>${rawText}</p>` : '',
+        tailHtml: rawText ? `<p>${rawText}</p>` : '',
         editorTopOffset: 0,
         editorTextOffset: 0,
         fitsInBox: true,
@@ -1163,7 +1164,8 @@ const recalculateLinkedTextAllocations = (headId) => {
       text: fragment.html ? fragment.html.replace(/<[^>]*>/g, '') : '',
       displayHtml: fragment.html || '',
       overflowHtml,
-      fullTextHtml: fragment.fullTextHtml || '', // Nuevo: texto completo para capa inferior
+      fullTextHtml: fragment.fullTextHtml || '',
+      tailHtml: fragment.tailHtml || '',
       editorTopOffset: fragment.editorTopOffset || fallbackEditorTopOffset || 0,
       editorTextOffset: fragment.editorTextOffset || 0,
       fitsInBox: fragment.fitsInBox ?? true,
@@ -1216,6 +1218,8 @@ const editorElements = computed(() => {
       linkedTextDisplayHtml: element.type === 'linkedText' ? (linkedTextBoxData?.displayHtml ?? '') : '',
       linkedTextOverflowHtml: element.type === 'linkedText' ? (linkedTextBoxData?.overflowHtml ?? '') : '',
       linkedTextFullTextHtml: element.type === 'linkedText' ? (linkedTextBoxData?.fullTextHtml ?? '') : '',
+      linkedTextTailHtml: element.type === 'linkedText' ? (linkedTextBoxData?.tailHtml ?? '') : '',
+      linkedTextInitialHtml: element.type === 'linkedText' && isBeingEdited ? (linkedTextBoxData?.fullTextHtml ?? '') : '',
       linkedTextEditorTopOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTopOffset ?? 0) : 0,
       linkedTextEditorTextOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTextOffset ?? 0) : 0,
       src: element.type === 'image' ? element.src : null,
