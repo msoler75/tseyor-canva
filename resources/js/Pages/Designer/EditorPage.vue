@@ -447,8 +447,10 @@ const transferElementsToPage = async (elementIds, targetPageId, event, pointerOf
   let targetX = bounds?.x ?? 0;
   let targetY = bounds?.y ?? 0;
   if (surfaceRect && bounds) {
-    targetX = Math.round(((event.clientX - surfaceRect.left) / zoomScale.value) - (pointerOffset?.x ?? (bounds.w / 2)));
-    targetY = Math.round(((event.clientY - surfaceRect.top) / zoomScale.value) - (pointerOffset?.y ?? (bounds.h / 2)));
+    targetX = Math.round(((event.clientX - surfaceRect.left) / (zoomScale.value || 1)) - (pointerOffset?.x ?? (bounds.w / 2)));
+    targetY = Math.round(((event.clientY - surfaceRect.top) / (zoomScale.value || 1)) - (pointerOffset?.y ?? (bounds.h / 2)));
+    if (!Number.isFinite(targetX)) targetX = bounds.x;
+    if (!Number.isFinite(targetY)) targetY = bounds.y;
   }
   const dx = bounds ? targetX - bounds.x : 0;
   const dy = bounds ? targetY - bounds.y : 0;
@@ -1002,13 +1004,55 @@ const hasMeaningfulText = (value) => normalizePlainTextValue(value).length > 0;
 const templateFieldUsage = computed(() => Object.fromEntries(
   templateFieldDefinitions.value.map((field) => [field.id, Boolean(state.elementLayout?.[field.id])]),
 ));
+const linkedTextLayoutFromAnyPage = (id) => {
+  if (state.elementLayout?.[id]) return state.elementLayout[id];
+  for (const page of state.pages) {
+    if (page.elementLayout?.[id]) return page.elementLayout[id];
+  }
+  return null;
+};
+
+const linkedTextElementFromAnyPage = (id) => {
+  if (state.customElements?.[id]) return state.customElements[id];
+  for (const page of state.pages) {
+    if (page.customElements?.[id]) return page.customElements[id];
+  }
+  return null;
+};
+
+const linkedTextSetLayoutField = (id, field, value) => {
+  if (state.elementLayout?.[id]) {
+    state.elementLayout[id][field] = value;
+    return;
+  }
+  for (const page of state.pages) {
+    if (page.elementLayout?.[id]) {
+      page.elementLayout[id][field] = value;
+      return;
+    }
+  }
+};
+
+const linkedTextSetElementField = (id, field, value) => {
+  if (state.customElements?.[id]) {
+    state.customElements[id][field] = value;
+    return;
+  }
+  for (const page of state.pages) {
+    if (page.customElements?.[id]) {
+      page.customElements[id][field] = value;
+      return;
+    }
+  }
+};
+
 const getLinkedTextChain = (startId) => {
   const chain = [];
   let currentId = startId;
   const visited = new Set();
   while (currentId && !visited.has(currentId)) {
     visited.add(currentId);
-    const layout = state.elementLayout[currentId];
+    const layout = linkedTextLayoutFromAnyPage(currentId);
     if (!layout) break;
     chain.push({ id: currentId, layout });
     currentId = layout.linkedTextNext;
@@ -1021,7 +1065,7 @@ const getLinkedTextChainHead = (startId) => {
   const visited = new Set();
   while (currentId && !visited.has(currentId)) {
     visited.add(currentId);
-    const layout = state.elementLayout[currentId];
+    const layout = linkedTextLayoutFromAnyPage(currentId);
     if (!layout) break;
     if (layout.linkedTextPrev) {
       currentId = layout.linkedTextPrev;
@@ -1033,7 +1077,7 @@ const getLinkedTextChainHead = (startId) => {
 };
 
 const getLinkedTextStyleSourceId = (id) => {
-  if (state.customElements?.[id]?.type !== 'linkedText') return id;
+  if (linkedTextElementFromAnyPage(id)?.type !== 'linkedText') return id;
   return getLinkedTextChainHead(id);
 };
 
@@ -1041,16 +1085,16 @@ const recalculateLinkedTextAllocations = (headId) => {
   const chain = getLinkedTextChain(headId);
   if (chain.length === 0) return;
 
-  const headElement = state.customElements[headId];
+  const headElement = linkedTextElementFromAnyPage(headId);
   if (!headElement || headElement.type !== 'linkedText') return;
 
   const fullHtml = headElement.html || headElement.text || '';
-  const groupId = state.elementLayout[headId]?.linkedTextGroupId;
+  const groupId = linkedTextLayoutFromAnyPage(headId)?.linkedTextGroupId;
   if (!groupId) return;
 
   const chainLayouts = chain.map((item) => {
-    const l = state.elementLayout[item.id] || {};
-    const styleSourceLayout = state.elementLayout[getLinkedTextStyleSourceId(item.id)] || l;
+    const l = linkedTextLayoutFromAnyPage(item.id) || {};
+    const styleSourceLayout = linkedTextLayoutFromAnyPage(getLinkedTextStyleSourceId(item.id)) || l;
     return {
       id: item.id,
       w: l.w || 300,
@@ -1107,7 +1151,7 @@ const recalculateLinkedTextAllocations = (headId) => {
 };
 
   const getLinkedTextBoxText = (boxId) => {
-    const layout = state.elementLayout[boxId];
+    const layout = linkedTextLayoutFromAnyPage(boxId);
     if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', prefixHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
 
     const groupId = layout.linkedTextGroupId;
@@ -1126,26 +1170,9 @@ const recalculateLinkedTextAllocations = (headId) => {
     const hasFragment = Boolean(system.fragments && Object.prototype.hasOwnProperty.call(system.fragments, boxId));
     const fragment = linkedTextBoxSystem.getFragmentForBox(groupId, boxId);
 
-    // Log del fragmento obtenido
-    frontendLog.debug('getFragment',
-      `Obteniendo fragmento para caja ${boxId}`,
-      {
-        boxId,
-        groupId,
-        headId,
-        isLastInChain,
-        hasFragment,
-        fragmentHtmlLength: fragment.html?.length || 0,
-        fragmentHtmlPreview: fragment.html?.substring(0, 100),
-        overflowHtmlLength: fragment.overflowHtml?.length || 0,
-        fullTextHtmlLength: fragment.fullTextHtml?.length || 0,
-        fitsInBox: fragment.fitsInBox,
-      }
-    );
-
     // Si todavía no hay fragmento, usar el texto del elemento head directamente
     if (!hasFragment) {
-      const headElement = state.customElements[headId];
+      const headElement = linkedTextElementFromAnyPage(headId);
       const rawText = headElement?.text || '';
       return {
         text: rawText,
@@ -1282,15 +1309,27 @@ const readonlyPageElements = (pageState) => {
     { id: 'contact', type: 'text', label: 'Contacto', text: content.contact },
     { id: 'extra', type: 'text', label: 'Texto adicional', text: content.extra },
   ];
-  const customElements = Object.entries(custom).map(([id, element]) => ({
-    id,
-    type: element.type,
-    label: element.label ?? 'Elemento',
-    fieldKey: element.fieldKey ?? null,
-    text: element.type === 'text' ? linkedPageFieldText(content, element.fieldKey, element.text ?? '') : (element.type === 'linkedText' ? (element.text ?? '') : ''),
-    src: element.type === 'image' ? element.src : null,
-    shapeKind: element.type === 'shape' ? element.shapeKind : null,
-  }));
+  const customElements = Object.entries(custom).map(([id, element]) => {
+    let textValue = element.type === 'text' ? linkedPageFieldText(content, element.fieldKey, element.text ?? '') : '';
+    if (element.type === 'linkedText') {
+      const ltLayout = pageState?.elementLayout?.[id] || layout[id];
+      if (ltLayout?.linkedTextGroupId) {
+        const fragment = linkedTextBoxSystem.getFragmentForBox(ltLayout.linkedTextGroupId, id);
+        textValue = fragment.html ? fragment.html.replace(/<[^>]*>/g, '') : (element.text ?? '');
+      } else {
+        textValue = element.text ?? '';
+      }
+    }
+    return {
+      id,
+      type: element.type,
+      label: element.label ?? 'Elemento',
+      fieldKey: element.fieldKey ?? null,
+      text: textValue,
+      src: element.type === 'image' ? element.src : null,
+      shapeKind: element.type === 'shape' ? element.shapeKind : null,
+    };
+  });
 
   return [...baseTextElements, ...customElements]
     .sort((a, b) => ((layout[a.id] ?? {}).zIndex ?? 0) - ((layout[b.id] ?? {}).zIndex ?? 0));
@@ -2294,50 +2333,41 @@ const handleLinkedTextLinkEnd = ({ event, targetId }) => {
   if (!linkedTextLink.active || !linkedTextLink.sourceId) return;
 
   if (targetId && targetId !== linkedTextLink.sourceId) {
-    const sourceLayout = state.elementLayout[linkedTextLink.sourceId];
-    const targetLayout = state.elementLayout[targetId];
+    const sourceLayout = linkedTextLayoutFromAnyPage(linkedTextLink.sourceId);
+    const targetLayout = linkedTextLayoutFromAnyPage(targetId);
     if (sourceLayout && targetLayout) {
-      // Si el source ya tenía un siguiente, romper ese enlace
       const oldNextId = sourceLayout.linkedTextNext;
       if (oldNextId && oldNextId !== targetId) {
-        const oldNextLayout = state.elementLayout[oldNextId];
+        const oldNextLayout = linkedTextLayoutFromAnyPage(oldNextId);
         if (oldNextLayout) {
-          oldNextLayout.linkedTextPrev = null;
+          linkedTextSetLayoutField(oldNextId, 'linkedTextPrev', null);
         }
       }
 
-      // Si el target ya tenia un anterior, romper ese enlace para que cada
-      // caja tenga una unica entrada visual y logica. Ej.: C3 -> C2 elimina C1 -> C2.
       const oldPrevId = targetLayout.linkedTextPrev;
       if (oldPrevId && oldPrevId !== linkedTextLink.sourceId) {
-        const oldPrevLayout = state.elementLayout[oldPrevId];
+        const oldPrevLayout = linkedTextLayoutFromAnyPage(oldPrevId);
         if (oldPrevLayout?.linkedTextNext === targetId) {
-          oldPrevLayout.linkedTextNext = null;
+          linkedTextSetLayoutField(oldPrevId, 'linkedTextNext', null);
           recalculateLinkedTextAllocations(getLinkedTextChainHead(oldPrevId));
         }
       }
 
-      // Obtener el groupId unificado
       const sourceGroupId = sourceLayout.linkedTextGroupId;
       const targetGroupId = targetLayout.linkedTextGroupId;
       const newGroupId = sourceGroupId || targetGroupId || `linked-group-${Date.now()}`;
 
-      // Enlazar source -> target
-      sourceLayout.linkedTextGroupId = newGroupId;
-      sourceLayout.linkedTextNext = targetId;
+      linkedTextSetLayoutField(linkedTextLink.sourceId, 'linkedTextGroupId', newGroupId);
+      linkedTextSetLayoutField(linkedTextLink.sourceId, 'linkedTextNext', targetId);
+      linkedTextSetLayoutField(targetId, 'linkedTextGroupId', newGroupId);
+      linkedTextSetLayoutField(targetId, 'linkedTextPrev', linkedTextLink.sourceId);
 
-      // Enlazar target <- source
-      targetLayout.linkedTextGroupId = newGroupId;
-      targetLayout.linkedTextPrev = linkedTextLink.sourceId;
-
-      // Actualizar índices de la cadena
       const chain = getLinkedTextChain(linkedTextLink.sourceId);
       chain.forEach((item, index) => {
-        item.layout.linkedTextChainIndex = index;
-        item.layout.linkedTextGroupId = newGroupId;
+        linkedTextSetLayoutField(item.id, 'linkedTextChainIndex', index);
+        linkedTextSetLayoutField(item.id, 'linkedTextGroupId', newGroupId);
       });
 
-      // Recalcular asignaciones de texto
       recalculateLinkedTextAllocations(linkedTextLink.sourceId);
     }
   }
@@ -2350,35 +2380,35 @@ const handleLinkedTextLinkEnd = ({ event, targetId }) => {
 const handleLinkedTextLinkBreak = (event) => {
   const sourceId = linkedTextLink.sourceId;
   if (!sourceId) return;
-  const sourceLayout = state.elementLayout[sourceId];
+  const sourceLayout = linkedTextLayoutFromAnyPage(sourceId);
   if (!sourceLayout?.linkedTextNext) return;
 
   const nextId = sourceLayout.linkedTextNext;
-  const nextLayout = state.elementLayout[nextId];
+  const nextLayout = linkedTextLayoutFromAnyPage(nextId);
   if (!nextLayout) return;
 
   const groupId = sourceLayout.linkedTextGroupId;
   const fragment = linkedTextBoxSystem.getFragmentForBox(groupId, nextId);
   const nextHtml = fragment.tailHtml || fragment.html || '';
 
-  sourceLayout.linkedTextNext = null;
-  nextLayout.linkedTextPrev = null;
+  linkedTextSetLayoutField(sourceId, 'linkedTextNext', null);
+  linkedTextSetLayoutField(nextId, 'linkedTextPrev', null);
 
   const newGroupId = `linked-group-${Date.now()}`;
   let currentWalkId = nextId;
   const visited = new Set();
   while (currentWalkId && !visited.has(currentWalkId)) {
     visited.add(currentWalkId);
-    const walkLayout = state.elementLayout[currentWalkId];
+    const walkLayout = linkedTextLayoutFromAnyPage(currentWalkId);
     if (!walkLayout) break;
-    walkLayout.linkedTextGroupId = newGroupId;
+    linkedTextSetLayoutField(currentWalkId, 'linkedTextGroupId', newGroupId);
     currentWalkId = walkLayout.linkedTextNext;
   }
 
-  const nextElement = state.customElements[nextId];
+  const nextElement = linkedTextElementFromAnyPage(nextId);
   if (nextElement?.type === 'linkedText') {
-    nextElement.html = nextHtml;
-    nextElement.text = nextHtml.replace(/<[^>]*>/g, '');
+    linkedTextSetElementField(nextId, 'html', nextHtml);
+    linkedTextSetElementField(nextId, 'text', nextHtml.replace(/<[^>]*>/g, ''));
   }
 
   recalculateLinkedTextAllocations(sourceId);
@@ -2418,45 +2448,45 @@ const redistributeLinkedText = (startId) => {
 };
 
 const onLinkedTextUpdate = (id, value) => {
-  const element = state.customElements?.[id];
+  const element = linkedTextElementFromAnyPage(id);
   if (!element || element.type !== 'linkedText') return;
 
-  const layout = state.elementLayout[id];
+  const layout = linkedTextLayoutFromAnyPage(id);
   if (!layout?.linkedTextGroupId) {
-    element.text = value;
+    linkedTextSetElementField(id, 'text', value);
     return;
   }
 
   const headId = getLinkedTextChainHead(id);
-  const headElement = state.customElements?.[headId];
+  const headElement = linkedTextElementFromAnyPage(headId);
   if (headElement?.type === 'linkedText') {
     const fragment = linkedTextBoxSystem.getFragmentForBox(layout.linkedTextGroupId, id);
     const prefixHtml = fragment?.prefixHtml || '';
     const prefixText = prefixHtml ? (() => { const div = document.createElement('div'); div.innerHTML = prefixHtml; return div.textContent || ''; })() : '';
-    headElement.text = prefixText + value;
+    linkedTextSetElementField(headId, 'text', prefixText + value);
   } else {
-    element.text = value;
+    linkedTextSetElementField(id, 'text', value);
   }
   recalculateLinkedTextAllocations(headId);
 };
 
 const onRichEditorHtmlUpdate = (id, html) => {
-  const element = state.customElements?.[id];
+  const element = linkedTextElementFromAnyPage(id);
   if (!element || element.type !== 'linkedText') return;
 
-  const layout = state.elementLayout[id];
+  const layout = linkedTextLayoutFromAnyPage(id);
   if (!layout?.linkedTextGroupId) {
-    element.html = html;
+    linkedTextSetElementField(id, 'html', html);
     return;
   }
 
   const headId = getLinkedTextChainHead(id);
-  const headElement = state.customElements?.[headId];
+  const headElement = linkedTextElementFromAnyPage(headId);
   if (headElement?.type === 'linkedText') {
     const fragment = linkedTextBoxSystem.getFragmentForBox(layout.linkedTextGroupId, id);
-    headElement.html = (fragment.prefixHtml || '') + html;
+    linkedTextSetElementField(headId, 'html', (fragment.prefixHtml || '') + html);
   } else {
-    element.html = html;
+    linkedTextSetElementField(id, 'html', html);
   }
   recalculateLinkedTextAllocations(headId);
 };
@@ -3654,9 +3684,9 @@ const updateElementMeasurement = (id, node) => {
       cloneLayout.linkedTextPrev = sourceId;
       cloneLayout.linkedTextNext = oldNextId;
 
-      if (oldNextId && state.elementLayout?.[oldNextId]) {
-        state.elementLayout[oldNextId].linkedTextPrev = cloneId;
-        state.elementLayout[oldNextId].linkedTextGroupId = linkedTextGroupId;
+      if (oldNextId && linkedTextLayoutFromAnyPage(oldNextId)) {
+        linkedTextSetLayoutField(oldNextId, 'linkedTextPrev', cloneId);
+        linkedTextSetLayoutField(oldNextId, 'linkedTextGroupId', linkedTextGroupId);
       }
 
       state.customElements[cloneId] = {
@@ -3707,25 +3737,25 @@ const updateElementMeasurement = (id, node) => {
   };
 
 const removeLinkedTextFromChain = (id) => {
-    const layout = state.elementLayout[id];
-    if (!layout || state.customElements?.[id]?.type !== 'linkedText') return;
+    const layout = linkedTextLayoutFromAnyPage(id);
+    if (!layout || linkedTextElementFromAnyPage(id)?.type !== 'linkedText') return;
 
     const prevId = layout.linkedTextPrev;
     const nextId = layout.linkedTextNext;
 
-    if (prevId && state.elementLayout[prevId]) {
-      state.elementLayout[prevId].linkedTextNext = nextId;
+    if (prevId && linkedTextLayoutFromAnyPage(prevId)) {
+      linkedTextSetLayoutField(prevId, 'linkedTextNext', nextId);
     }
-    if (nextId && state.elementLayout[nextId]) {
-      state.elementLayout[nextId].linkedTextPrev = prevId;
+    if (nextId && linkedTextLayoutFromAnyPage(nextId)) {
+      linkedTextSetLayoutField(nextId, 'linkedTextPrev', prevId);
     }
 
-    const headElement = state.customElements?.[id];
+    const headElement = linkedTextElementFromAnyPage(id);
     if (!prevId && nextId) {
-      const nextElement = state.customElements?.[nextId];
+      const nextElement = linkedTextElementFromAnyPage(nextId);
       if (headElement?.type === 'linkedText' && nextElement?.type === 'linkedText') {
-        nextElement.html = headElement.html || headElement.text || '';
-        nextElement.text = headElement.text || '';
+        linkedTextSetElementField(nextId, 'html', headElement.html || headElement.text || '');
+        linkedTextSetElementField(nextId, 'text', headElement.text || '');
         recalculateLinkedTextAllocations(nextId);
       }
     } else if (prevId) {
@@ -4238,9 +4268,9 @@ const handleClipboardKeydown = async (event) => {
 
 const onRichEditorStylesUpdate = (id, newStyles) => {
     const styleSourceId = getLinkedTextStyleSourceId(id);
-    const layout = state.elementLayout[styleSourceId];
+    const layout = linkedTextLayoutFromAnyPage(styleSourceId);
     if (!layout) return;
-    layout.paragraphStyles = newStyles;
+    linkedTextSetLayoutField(styleSourceId, 'paragraphStyles', newStyles);
 };
 
 const {

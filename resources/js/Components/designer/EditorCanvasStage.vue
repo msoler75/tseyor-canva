@@ -131,17 +131,45 @@ const getLinkTargetPosition = computed(() => {
 const permanentLinkLines = computed(() => {
   const selectedId = props.state?.selectedElementId;
   if (!selectedId) return [];
-  const el = props.state?.customElements?.[selectedId];
+  const allPages = props.state?.pages ?? [];
+  const el = props.state?.customElements?.[selectedId]
+    ?? allPages.find(p => p.customElements?.[selectedId])?.customElements?.[selectedId];
   if (!el || el.type !== 'linkedText') return [];
-  const layout = props.state?.elementLayout?.[selectedId];
+  const layout = props.state?.elementLayout?.[selectedId]
+    ?? allPages.find(p => p.elementLayout?.[selectedId])?.elementLayout?.[selectedId];
   const groupId = layout?.linkedTextGroupId;
   if (!groupId) return [];
+
+  const lookupLayout = (id) => {
+    if (props.state?.elementLayout?.[id]) return props.state.elementLayout[id];
+    for (const page of allPages) {
+      if (page.elementLayout?.[id]) return page.elementLayout[id];
+    }
+    return null;
+  };
+
+  const activePageIndex = allPages.findIndex(p => p.id === props.state?.activePageId);
+  const findElementPageIndex = (id) => {
+    if (props.state?.elementLayout?.[id] || props.state?.customElements?.[id]) return activePageIndex;
+    for (let i = 0; i < allPages.length; i++) {
+      if (allPages[i].elementLayout?.[id] || allPages[i].customElements?.[id]) return i;
+    }
+    return activePageIndex;
+  };
+  const pageHeight = parseFloat(props.canvasElementStyle?.height) || 0;
+  const pageGap = 32;
+
+  const getElementYOffset = (id) => {
+    const pageIdx = findElementPageIndex(id);
+    return (pageIdx - activePageIndex) * (pageHeight + pageGap);
+  };
+
   const chainIds = [];
   const visited = new Set();
   let current = selectedId;
   while (current && !visited.has(current)) {
     visited.add(current);
-    const l = props.state?.elementLayout?.[current];
+    const l = lookupLayout(current);
     if (!l) break;
     if (l.linkedTextPrev) {
       current = l.linkedTextPrev;
@@ -155,28 +183,36 @@ const permanentLinkLines = computed(() => {
   while (current && !visited.has(current)) {
     visited.add(current);
     chainIds.push(current);
-    const l = props.state?.elementLayout?.[current];
+    const l = lookupLayout(current);
     if (!l) break;
     current = l.linkedTextNext;
   }
   const lines = [];
   const bw = 24, bh = 24;
   for (let i = 0; i < chainIds.length - 1; i++) {
-    const a = props.state?.elementLayout?.[chainIds[i]];
-    const b = props.state?.elementLayout?.[chainIds[i + 1]];
+    const a = lookupLayout(chainIds[i]);
+    const b = lookupLayout(chainIds[i + 1]);
     if (!a || !b) continue;
-    // Source: centro del botón en esquina inferior derecha de la caja A (con rotación)
-    const btnCenterX = a.x + (a.w ?? 300) - bw/2;
-    const btnCenterY = a.y + (a.h ?? 120) - bh/2;
-    const cxA = a.x + (a.w ?? 300) / 2;
-    const cyA = a.y + (a.h ?? 120) / 2;
-    const src = rotatePoint(btnCenterX, btnCenterY, cxA, cyA, a.rotation ?? 0);
-    // Target: esquina superior izquierda de la caja B (con rotación)
-    const tx = b.x ?? 0;
-    const ty = b.y ?? 0;
-    const cxB = tx + (b.w ?? 300) / 2;
-    const cyB = ty + (b.h ?? 120) / 2;
-    const tgt = rotatePoint(tx, ty, cxB, cyB, b.rotation ?? 0);
+
+    const allOnActivePage = findElementPageIndex(chainIds[i]) === activePageIndex
+      && findElementPageIndex(chainIds[i + 1]) === activePageIndex;
+    const offsetYA = allOnActivePage ? 0 : getElementYOffset(chainIds[i]);
+    const offsetYB = allOnActivePage ? 0 : getElementYOffset(chainIds[i + 1]);
+
+    const fin = (v, fallback) => Number.isFinite(v) ? v : fallback;
+
+    const btnCenterX = fin(a.x, 0) + fin(a.w, 300) - bw/2;
+    const btnCenterY = fin(a.y, 0) + fin(a.h, 120) - bh/2 + offsetYA;
+    const cxA = fin(a.x, 0) + fin(a.w, 300) / 2;
+    const cyA = fin(a.y, 0) + fin(a.h, 120) / 2 + offsetYA;
+    const src = rotatePoint(btnCenterX, btnCenterY, cxA, cyA, fin(a.rotation, 0));
+
+    const tx = fin(b.x, 0);
+    const ty = fin(b.y, 0) + offsetYB;
+    const cxB = tx + fin(b.w, 300) / 2;
+    const cyB = ty + fin(b.h, 120) / 2;
+    const tgt = rotatePoint(tx, ty, cxB, cyB, fin(b.rotation, 0));
+
     lines.push({ x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y });
   }
   return lines;
