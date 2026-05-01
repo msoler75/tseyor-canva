@@ -582,6 +582,8 @@ const fileDragActive = ref(false);
 const backgroundDropPreview = ref(false);
 const templatePanelHover = ref(false);
 let thumbnailTimer = null;
+let pendingStateFlush = false;
+let stateFlushRequestedDuringPending = false;
 const toolbarPosition = reactive({ x: 0, y: 3 });
 const toolbarDrag = reactive({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
 const pinchPointers = new Map();
@@ -2443,6 +2445,7 @@ const addTemplateFieldElement = (fieldKey) => {
 
 const removeTemplateFieldElement = (fieldKey) => {
   if (!fieldKey || !state.elementLayout?.[fieldKey]) return;
+  clearContentForRemovedTextElement(fieldKey);
   delete state.elementLayout[fieldKey];
   if (state.customElements?.[fieldKey]) {
     const next = { ...(state.customElements ?? {}) };
@@ -2452,6 +2455,20 @@ const removeTemplateFieldElement = (fieldKey) => {
   if (state.selectedElementId === fieldKey) {
     state.selectedElementId = null;
     activePropertyPanel.value = null;
+  }
+};
+
+const clearContentForRemovedTextElement = (id) => {
+  if (!id) return;
+
+  if (templateContentFieldIds.has(id)) {
+    state.content[id] = '';
+    return;
+  }
+
+  if (id === 'meta') {
+    state.content.date = '';
+    state.content.time = '';
   }
 };
 
@@ -2491,21 +2508,22 @@ const generateThumbnailAndThen = (cb) => {
     thumbnailTimer = null;
     await nextTick();
     setTimeout(async () => {
-      if (!canvasRef.value) return;
       try {
-        const { toJpegExport } = await import('../../utils/useHtml2Image');
-        const dataUrl = await toJpegExport(canvasRef.value, {
-          quality: 0.6,
-          pixelRatio: 0.35,
-          backgroundColor: resolveThumbnailBackgroundColor(),
-          filter: (node) => !(node instanceof Element && node.closest?.('[data-editor-control="true"]')),
-        });
-        const hash = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(dataUrl));
-        const hashArray = Array.from(new Uint8Array(hash));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        setDesignerThumbnailDataUrl(dataUrl, hashHex);
+        if (canvasRef.value) {
+          const { toJpegExport } = await import('../../utils/useHtml2Image');
+          const dataUrl = await toJpegExport(canvasRef.value, {
+            quality: 0.6,
+            pixelRatio: 0.35,
+            backgroundColor: resolveThumbnailBackgroundColor(),
+            filter: (node) => !(node instanceof Element && node.closest?.('[data-editor-control="true"]')),
+          });
+          const hash = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(dataUrl));
+          const hashArray = Array.from(new Uint8Array(hash));
+          const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          setDesignerThumbnailDataUrl(dataUrl, hashHex);
+        }
       } catch (error) {
-        // Error generando thumbnail
+        // Error generando thumbnail; el estado debe guardarse igualmente.
       } finally {
         if (typeof cb === 'function') {
           await cb();
@@ -3580,6 +3598,8 @@ const updateElementMeasurement = (id, node) => {
       commitTextEdit();
     }
 
+    clearContentForRemovedTextElement(id);
+
     if (state.customElements?.[id]) {
       delete state.customElements[id];
     }
@@ -3817,6 +3837,7 @@ const cloneElementsByIds = (ids) => {
       if (editingElementId.value === id) {
         commitTextEdit();
       }
+      clearContentForRemovedTextElement(id);
       if (state.customElements?.[id]) {
         delete state.customElements[id];
       }
@@ -4296,18 +4317,26 @@ onMounted(() => {
 
 // --- SIEMPRE GENERAR MINIATURA ANTES DE GUARDAR ESTADO ---
 // Debounce para evitar capturas excesivas
-let pendingFlush = false;
 const flushDesignerStateWithThumbnail = async () => {
-  if (pendingFlush) return;
-  pendingFlush = true;
+  if (pendingStateFlush) {
+    stateFlushRequestedDuringPending = true;
+    return;
+  }
+  pendingStateFlush = true;
+  stateFlushRequestedDuringPending = false;
   syncActivePageSnapshot();
   generateThumbnailAndThen(async () => {
-    pendingFlush = false;
     try {
       syncActivePageSnapshot();
       await flushDesignerStatePersistence();
     } catch (error) {
       console.error('No se pudo guardar el estado del diseño automáticamente', error);
+    } finally {
+      pendingStateFlush = false;
+      if (stateFlushRequestedDuringPending) {
+        stateFlushRequestedDuringPending = false;
+        flushDesignerStateWithThumbnail();
+      }
     }
   });
 };

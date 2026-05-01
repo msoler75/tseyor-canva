@@ -821,11 +821,13 @@ class DesignerController extends Controller
      */
     private function isPersistableDesignerState(array $state): bool
     {
+        $titleText = trim((string) ($state['content']['title'] ?? ''));
+
         return isset($state['mode'])
             && is_array($state['content'] ?? null)
             && is_array($state['elementLayout'] ?? null)
             && is_array($state['elementLayout']['background'] ?? null)
-            && is_array($state['elementLayout']['title'] ?? null)
+            && (is_array($state['elementLayout']['title'] ?? null) || $titleText === '')
             && (! isset($state['customElements']) || is_array($state['customElements']))
             && (! isset($state['pages']) || is_array($state['pages']))
             && (! isset($state['userUploadedImages']) || is_array($state['userUploadedImages']));

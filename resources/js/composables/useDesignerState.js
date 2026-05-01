@@ -404,6 +404,8 @@ function bootstrapPersistence(saveEndpoint) {
 }
 
 function isPersistableDesignerStateSnapshot(snapshot) {
+    const titleText = String(snapshot?.content?.title ?? '').trim();
+
     return Boolean(
         snapshot
         && typeof snapshot === 'object'
@@ -413,7 +415,7 @@ function isPersistableDesignerStateSnapshot(snapshot) {
         && snapshot.elementLayout
         && typeof snapshot.elementLayout === 'object'
         && snapshot.elementLayout.background
-        && snapshot.elementLayout.title
+        && (snapshot.elementLayout.title || titleText === '')
         && (snapshot.customElements == null || typeof snapshot.customElements === 'object')
         && (snapshot.userUploadedImages == null || Array.isArray(snapshot.userUploadedImages))
     );

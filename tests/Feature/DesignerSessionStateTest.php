@@ -139,6 +139,48 @@ class DesignerSessionStateTest extends TestCase
         $this->assertArrayHasKey('title', $design->state['elementLayout']);
     }
 
+    public function test_autosave_persists_deleted_title_element_when_title_content_is_empty(): void
+    {
+        $user = User::factory()->create();
+        $state = $this->validDesignerState([
+            'designTitle' => 'Estado con título borrado',
+            'designTitleManual' => true,
+        ]);
+
+        $design = Design::query()->create([
+            'user_id' => $user->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Estado con título borrado',
+            'name_manual' => true,
+            'objective' => 'event_presential',
+            'output_type' => 'print',
+            'format' => 'vertical',
+            'size_label' => 'A4',
+            'state' => [
+                ...$state,
+                'currentDesignUuid' => null,
+            ],
+            'status' => 'draft',
+            'last_opened_at' => now(),
+        ]);
+
+        $state['currentDesignUuid'] = $design->uuid;
+        $state['content']['title'] = '';
+        unset($state['elementLayout']['title']);
+
+        $this->actingAs($user)
+            ->putJson('/designer/state', ['state' => $state])
+            ->assertOk()
+            ->assertJson([
+                'saved' => true,
+                'designUuid' => $design->uuid,
+            ]);
+
+        $design->refresh();
+        $this->assertSame('', $design->state['content']['title']);
+        $this->assertArrayNotHasKey('title', $design->state['elementLayout']);
+    }
+
     public function test_repeated_create_with_same_client_uuid_is_idempotent(): void
     {
         $user = User::factory()->create();

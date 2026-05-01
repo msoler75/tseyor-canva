@@ -577,16 +577,18 @@ const logLinkedTextStyles = () => {
             :style="wrapperStyle"
         >
         <!-- Nueva estrategia: dos capas -->
-         <div class="fixed right-2 top-8">
-            <span>editorTopOffset: {{ props.editorTopOffset }}</span>
-            <span>editorTextOffset: {{ props.editorTextOffset }}</span>
+         <teleport to="body">
+         <div class="fixed left-2 top-12">
+            <div>editorTopOffset: {{ props.editorTopOffset }}</div>
+            <div>overflowHtml:<div style="background: gray" v-html="props.overflowHtml"/></div>
          </div>
+         </teleport>
         <!-- Capa inferior: texto completo (sin límite inferior), opacidad 50% -->
         <div
             v-if="props.isLinkedText && props.showOverflow && props.fullTextHtml"
             class="linked-text-base-layer"
             :style="linkedTextBaseLayerStyle"
-            v-html="props.overflowHtml"
+            v-html="props.fullTextHtml"
         ></div>
 
         <!-- Capa superior: texto visible (recortado) -->
