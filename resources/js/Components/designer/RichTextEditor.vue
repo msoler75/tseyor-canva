@@ -90,6 +90,7 @@ const props = defineProps({
     showOverflow: { type: Boolean, default: false },
     linkedTextActive: { type: Boolean, default: false },
     editorTopOffset: { type: Number, default: 0 },
+    editorTextOffset: { type: Number, default: 0 },
 });
 const emit = defineEmits(['update:text', 'update:paragraphStyles', 'update:html', 'selectionChange', 'blur']);
 
@@ -163,11 +164,38 @@ const wrapperStyle = computed(() => {
     return style;
 });
 
+const linkedTextEditorOffset = computed(() => (
+    props.isLinkedText && props.editable
+        ? Math.max(0, Number(props.editorTopOffset || 0))
+        : 0
+));
+
+const linkedTextEditorContentStyle = computed(() => ({
+    '--linked-text-editor-offset': `${linkedTextEditorOffset.value}px`,
+}));
+
+const linkedTextBaseLayerStyle = computed(() => ({
+    ...props.editorStyle,
+    ...(props.isLinkedText && props.showOverflow && props.editorTopOffset > 0
+        ? { transform: `translate3d(0, -${Math.max(0, Number(props.editorTopOffset || 0))}px, 0)` }
+        : {}),
+}));
+
+const linkedTextEditorInnerStyle = computed(() => ({
+    ...props.editorStyle,
+    transform: linkedTextEditorOffset.value > 0
+        ? `translate3d(0, -${linkedTextEditorOffset.value}px, 0)`
+        : undefined,
+}));
+
 const syncEditorViewportOffset = async () => {
     if (!props.isLinkedText || !props.editable) return;
     await nextTick();
     if (!editorViewportRef.value) return;
-    editorViewportRef.value.scrollTop = Math.max(0, props.editorTopOffset || 0);
+    // Keep scroll at zero; the visible slice is aligned by translating the full
+    // editor content. This keeps pointer/caret coordinates tied to the same DOM
+    // that the user sees and avoids the browser resetting scrollTop on mount.
+    editorViewportRef.value.scrollTop = 0;
 };
 
 const editor = useEditor({
@@ -319,9 +347,32 @@ const focusAtEnd = () => {
     editor.value.commands.focus('end');
 };
 
-const focusAtPosition = (pos) => {
+const docPositionFromTextOffset = (textOffset = 0) => {
+    if (!editor?.value) return 1;
+    const target = Math.max(0, Number(textOffset || 0));
+    let consumed = 0;
+    let result = null;
+
+    editor.value.state.doc.descendants((node, pos) => {
+        if (result !== null) return false;
+        if (!node.isText) return true;
+
+        const length = node.text?.length ?? 0;
+        if (consumed + length >= target) {
+            result = pos + Math.max(0, target - consumed);
+            return false;
+        }
+
+        consumed += length;
+        return true;
+    });
+
+    return Math.min(Math.max(result ?? editor.value.state.doc.content.size, 1), editor.value.state.doc.content.size);
+};
+
+const focusAtPosition = (pos = props.editorTextOffset) => {
     if (!editor?.value) return;
-    editor.value.commands.focus('end');
+    editor.value.commands.focus(docPositionFromTextOffset(pos));
 };
 
 const getPlainText = () => {
@@ -529,7 +580,7 @@ const logLinkedTextStyles = () => {
         <div
             v-if="props.isLinkedText && props.showOverflow && props.fullTextHtml"
             class="linked-text-base-layer"
-            :style="props.editorStyle"
+            :style="linkedTextBaseLayerStyle"
             v-html="props.fullTextHtml"
         ></div>
 
@@ -546,10 +597,12 @@ const logLinkedTextStyles = () => {
             ref="editorViewportRef"
             class="linked-text-editor-viewport"
         >
-            <EditorContent
-                :editor="editor"
-                :style="props.editorStyle"
-            />
+            <div class="linked-text-editor-content" :style="linkedTextEditorContentStyle">
+                <EditorContent
+                    :editor="editor"
+                    :style="linkedTextEditorInnerStyle"
+                />
+            </div>
         </div>
         <EditorContent
             v-else
@@ -668,10 +721,23 @@ const logLinkedTextStyles = () => {
     overflow: hidden !important;
 }
 .linked-text-editor-viewport {
+    width: 100%;
     height: 100%;
     overflow: hidden;
     position: relative;
     z-index: 20;
+    box-sizing: border-box;
+}
+.linked-text-editor-content {
+    width: 100%;
+    min-height: 100%;
+    transform-origin: left top;
+    box-sizing: border-box;
+}
+.linked-text-editor-viewport .ProseMirror {
+    width: 100%;
+    min-height: 100%;
+    box-sizing: border-box;
 }
 .linked-text-overflow {
     position: absolute;

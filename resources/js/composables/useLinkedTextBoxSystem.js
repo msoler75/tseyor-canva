@@ -92,7 +92,7 @@ export function createLinkedTextBoxSystem() {
       if (!fullHtml || fullHtml.trim() === '') {
         // Texto vacío: todas las cajas vacías
         chainLayouts.forEach(layout => {
-          system.fragments[layout.id] = { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, fitsInBox: true };
+          system.fragments[layout.id] = { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
         });
         return;
       }
@@ -149,12 +149,12 @@ export function createLinkedTextBoxSystem() {
          measureDiv = document.createElement("div")
          measureDiv.id = 'measure';
          measureDiv.style.position = 'fixed';
-         measureDiv.style.left = '200px';
-         measureDiv.style.top = '200px';
-         measureDiv.style.zIndex = '999999';
-         measureDiv.style.visibility = 'visible';
-         measureDiv.style.background = 'orange';
-         measureDiv.style.minHeight = '100px';
+         measureDiv.style.left = '-10000px';
+         measureDiv.style.top = '0';
+         measureDiv.style.zIndex = '-1';
+         measureDiv.style.visibility = 'hidden';
+         measureDiv.style.background = 'transparent';
+         measureDiv.style.minHeight = '0';
          measureDiv.style.padding = '0'; // SIN PADDING (para no alterar ancho)
          document.body.appendChild(measureDiv);
       }
@@ -185,7 +185,7 @@ export function createLinkedTextBoxSystem() {
           overflow-wrap: break-word !important;
           box-sizing: border-box !important;
           border: 0 !important;
-          background: gray !important;
+          background: transparent !important;
           margin: 0 !important;
           padding: 0 !important;
         `;
@@ -302,6 +302,79 @@ export function createLinkedTextBoxSystem() {
          }).join('');
        };
 
+
+       const buildHtmlWithMarkerAtUnitIndex = (markerUnitIndex) => {
+         // Marker invisible placed inside the *full* HTML at the exact unit where
+         // the target box starts. Measuring its top against the full document top
+         // gives the real pixel distance to shift the complete TipTap editor.
+         const markerHtml = '<span data-linked-text-flow-marker="true" style="display:inline-block;width:0;height:1em;line-height:1;vertical-align:top;overflow:hidden"></span>';
+         const htmlParts = [];
+         let globalUnitIndex = 0;
+         let markerPlaced = false;
+
+         for (let idx = 0; idx < paragraphs.length; idx++) {
+           const para = paragraphs[idx];
+           const tag = para.tag || 'p';
+           const style = para.style || '';
+           const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
+           const units = allUnits.filter((unit) => unit.paragraphIndex === idx);
+           let contents = '';
+
+           if (!units.length) {
+             if (!markerPlaced && markerUnitIndex <= globalUnitIndex) {
+               contents += markerHtml;
+               markerPlaced = true;
+             }
+             contents += '<br>';
+           } else {
+             for (const unit of units) {
+               if (!markerPlaced && markerUnitIndex === globalUnitIndex) {
+                 contents += markerHtml;
+                 markerPlaced = true;
+               }
+               if (unit.type === 'word') {
+                 contents += escapeHtml(unit.word);
+               }
+               globalUnitIndex++;
+             }
+           }
+
+           if (!markerPlaced && markerUnitIndex === globalUnitIndex) {
+             contents += markerHtml;
+             markerPlaced = true;
+           }
+
+           htmlParts.push(`<${tag}${styleAttr}>${contents || '<br>'}</${tag}>`);
+         }
+
+         if (!markerPlaced) {
+           htmlParts.push(`<p>${markerHtml}</p>`);
+         }
+
+         return htmlParts.join('');
+       };
+
+       const measureEditorTopOffset = (measureNode, splitUnitIndex, fallbackHtml) => {
+         if (!measureNode || splitUnitIndex <= 0) return 0;
+
+         // Fallback/base: rendered height of the exact prefix that belongs before
+         // this box. This is already a real DOM pixel measurement, not a line count.
+         measureNode.innerHTML = fallbackHtml;
+         const prefixHeight = measureNode.offsetHeight || 0;
+
+         // More exact marker pass: measure the top of the start marker inside the
+         // full document. Some inline marker edge cases can report the previous
+         // line, so keep the larger real measurement.
+         measureNode.innerHTML = buildHtmlWithMarkerAtUnitIndex(splitUnitIndex);
+         const marker = measureNode.querySelector('[data-linked-text-flow-marker="true"]');
+         if (marker) {
+           const markerTop = marker.getBoundingClientRect().top - measureNode.getBoundingClientRect().top;
+           return Math.max(0, Math.round(Math.max(prefixHeight, markerTop) * 100) / 100);
+         }
+
+         return Math.max(0, Math.round(prefixHeight * 100) / 100);
+       };
+
        // Procesar cada caja en la cadena secuencialmente
       let unitIdx = 0; // indice de la proxima unidad a colocar
       chainLayouts.forEach((layout, boxIndex) => {
@@ -312,6 +385,7 @@ export function createLinkedTextBoxSystem() {
             overflowHtml: '',
             fullTextHtml: '', // No hay texto de entrada
             editorTopOffset: 0,
+            editorTextOffset: 0,
             fitsInBox: true
           };
           return;
@@ -329,14 +403,18 @@ export function createLinkedTextBoxSystem() {
             overflowHtml: buildHtmlFromUnitSlice(allUnits.slice(unitIdx)),
             fullTextHtml: buildHtmlFromUnitSlice(inputSlice),
             editorTopOffset: 0,
+            editorTextOffset: 0,
             fitsInBox: false
           };
           return;
         }
 
-        const prefixHtml = buildHtmlFromUnitSlice(allUnits.slice(0, unitIdx));
-        measureNode.innerHTML = prefixHtml;
-        const editorTopOffset = unitIdx > 0 ? measureNode.offsetHeight : 0;
+        const prefixUnits = allUnits.slice(0, unitIdx);
+        const prefixHtml = buildHtmlFromUnitSlice(prefixUnits);
+        const editorTopOffset = measureEditorTopOffset(measureNode, unitIdx, prefixHtml);
+        const editorTextOffset = prefixUnits
+          .filter((unit) => unit.type === 'word')
+          .reduce((total, unit) => total + String(unit.word ?? '').length, 0);
 
         // La altura máxima es la altura de la caja
         const maxHeight = (layout.h || 50);
@@ -372,7 +450,7 @@ export function createLinkedTextBoxSystem() {
         const isLastInChain = !layout.linkedTextNext; // true si NO tiene enlace siguiente (es la última)
         const overflowHtml = isLastInChain ? buildHtmlFromUnitSlice(overflowSlice) : ''; // Solo la última caja puede tener overflow
         
-        const fullTextHtml = buildHtmlFromUnitSlice(inputSlice); // Texto completo de entrada (para capa inferior)
+        const fullTextHtml = buildHtmlFromUnitSlice(allUnits); // Documento completo de toda la secuencia (para capa inferior)
         // fitsInBox: true solo si es la última caja Y no hay más palabras después
         const fitsInBox = isLastInChain && (unitIdx + fitUnits) >= totalUnits;
 
@@ -382,6 +460,7 @@ export function createLinkedTextBoxSystem() {
           overflowHtml: overflowHtml,
           fullTextHtml: fullTextHtml, // Nuevo: texto completo para capa inferior (sin límite de altura)
           editorTopOffset,
+          editorTextOffset,
           fitsInBox: fitsInBox
         };
 
@@ -509,8 +588,8 @@ export function createLinkedTextBoxSystem() {
     */
    function getFragmentForBox(groupId, boxId) {
      const system = systemsMap.get(groupId);
-     if (!system) return { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, fitsInBox: true };
-     return system.fragments[boxId] || { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, fitsInBox: true };
+     if (!system) return { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
+     return system.fragments[boxId] || { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
    }
 
   /**

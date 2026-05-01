@@ -376,6 +376,7 @@ const isLinkedTextChainActive = (boxId) => {
                 :overflow-html="item.type === 'linkedText' ? (item.linkedTextOverflowHtml ?? '') : ''"
                 :full-text-html="item.type === 'linkedText' ? (item.linkedTextFullTextHtml ?? '') : ''"
                 :editor-top-offset="item.type === 'linkedText' ? (item.linkedTextEditorTopOffset ?? 0) : 0"
+                :editor-text-offset="item.type === 'linkedText' ? (item.linkedTextEditorTextOffset ?? 0) : 0"
                 :show-overflow="item.type === 'linkedText' && isLinkedTextChainActive(item.id)"
                 @update:text="emit('richEditorTextUpdate', { id: item.id, value: $event })"
                 @update:paragraph-styles="emit('richEditorStylesUpdate', { id: item.id, value: $event })"
@@ -391,7 +392,7 @@ const isLinkedTextChainActive = (boxId) => {
                 @click.stop="editingElementId === item.id ? null : emit('elementClick', { event: $event, id: item.id })"
               />
               <button
-                v-if="item.type === 'linkedText'"
+                v-if="item.type === 'linkedText' && isElementSelected(item.id) && editingElementId !== item.id"
                 type="button"
                 class="linked-text-link-btn absolute -bottom-4 right-1 z-20 flex h-6 w-6 cursor-grab items-center justify-center rounded-full bg-primary/80 text-white shadow-md transition hover:bg-primary active:cursor-grabbing"
                 title="Arrastra para conectar con otro texto enlazado"

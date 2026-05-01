@@ -1098,7 +1098,7 @@ const recalculateLinkedTextAllocations = (headId) => {
 
   const getLinkedTextBoxText = (boxId) => {
     const layout = state.elementLayout[boxId];
-    if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, fitsInBox: true };
+    if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
 
     const groupId = layout.linkedTextGroupId;
     const headId = getLinkedTextChainHead(boxId);
@@ -1113,6 +1113,7 @@ const recalculateLinkedTextAllocations = (headId) => {
     const chain = getLinkedTextChain(headId);
     const isLastInChain = chain.length > 0 && chain[chain.length - 1].id === boxId;
 
+    const hasFragment = Boolean(system.fragments && Object.prototype.hasOwnProperty.call(system.fragments, boxId));
     const fragment = linkedTextBoxSystem.getFragmentForBox(groupId, boxId);
 
     // Log del fragmento obtenido
@@ -1123,7 +1124,7 @@ const recalculateLinkedTextAllocations = (headId) => {
         groupId,
         headId,
         isLastInChain,
-        hasFragment: !!fragment.html,
+        hasFragment,
         fragmentHtmlLength: fragment.html?.length || 0,
         fragmentHtmlPreview: fragment.html?.substring(0, 100),
         overflowHtmlLength: fragment.overflowHtml?.length || 0,
@@ -1133,7 +1134,7 @@ const recalculateLinkedTextAllocations = (headId) => {
     );
 
     // Si todavía no hay fragmento, usar el texto del elemento head directamente
-    if (!fragment.html) {
+    if (!hasFragment) {
       const headElement = state.customElements[headId];
       const rawText = headElement?.text || '';
       return {
@@ -1142,6 +1143,7 @@ const recalculateLinkedTextAllocations = (headId) => {
         overflowHtml: '',
         fullTextHtml: rawText ? `<p>${rawText}</p>` : '',
         editorTopOffset: 0,
+        editorTextOffset: 0,
         fitsInBox: true,
         isLastInChain
       };
@@ -1150,12 +1152,18 @@ const recalculateLinkedTextAllocations = (headId) => {
     // Solo mostrar overflow en la última caja de la cadena
     const overflowHtml = isLastInChain ? (fragment.overflowHtml || '') : '';
 
+    const chainIndex = chain.findIndex((item) => item.id === boxId);
+    const fallbackEditorTopOffset = chainIndex > 0
+      ? chain.slice(0, chainIndex).reduce((total, item) => total + Number(item.layout?.h || 0), 0)
+      : 0;
+
     return {
       text: fragment.html ? fragment.html.replace(/<[^>]*>/g, '') : '',
       displayHtml: fragment.html || '',
       overflowHtml,
       fullTextHtml: fragment.fullTextHtml || '', // Nuevo: texto completo para capa inferior
-      editorTopOffset: fragment.editorTopOffset || 0,
+      editorTopOffset: fragment.editorTopOffset || fallbackEditorTopOffset || 0,
+      editorTextOffset: fragment.editorTextOffset || 0,
       fitsInBox: fragment.fitsInBox ?? true,
       isLastInChain
     };
@@ -1207,6 +1215,7 @@ const editorElements = computed(() => {
       linkedTextOverflowHtml: element.type === 'linkedText' ? (linkedTextBoxData?.overflowHtml ?? '') : '',
       linkedTextFullTextHtml: element.type === 'linkedText' ? (linkedTextBoxData?.fullTextHtml ?? '') : '',
       linkedTextEditorTopOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTopOffset ?? 0) : 0,
+      linkedTextEditorTextOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTextOffset ?? 0) : 0,
       src: element.type === 'image' ? element.src : null,
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
     };
@@ -2248,6 +2257,17 @@ const handleLinkedTextLinkEnd = ({ event, targetId }) => {
         const oldNextLayout = state.elementLayout[oldNextId];
         if (oldNextLayout) {
           oldNextLayout.linkedTextPrev = null;
+        }
+      }
+
+      // Si el target ya tenia un anterior, romper ese enlace para que cada
+      // caja tenga una unica entrada visual y logica. Ej.: C3 -> C2 elimina C1 -> C2.
+      const oldPrevId = targetLayout.linkedTextPrev;
+      if (oldPrevId && oldPrevId !== linkedTextLink.sourceId) {
+        const oldPrevLayout = state.elementLayout[oldPrevId];
+        if (oldPrevLayout?.linkedTextNext === targetId) {
+          oldPrevLayout.linkedTextNext = null;
+          recalculateLinkedTextAllocations(getLinkedTextChainHead(oldPrevId));
         }
       }
 
@@ -4176,6 +4196,11 @@ const beginTextEdit = async (id, focusToEnd = false) => {
     await nextTick();
     if (focusToEnd) {
       richEditorRefs.value[id]?.focusAtEnd?.();
+      return;
+    }
+    if (state.customElements?.[id]?.type === 'linkedText') {
+      const linkedTextBoxData = getLinkedTextBoxText(id);
+      richEditorRefs.value[id]?.focusAtPosition?.(linkedTextBoxData.editorTextOffset ?? 0);
       return;
     }
     richEditorRefs.value[id]?.$el?.querySelector('[contenteditable]')?.focus();
