@@ -531,3 +531,42 @@ Para medir el `editorTopOffset` con precisión, se inserta un `<span>` invisible
 ### Sistema singleton
 
 `useLinkedTextBoxSystem` es un singleton (módulo ES con variable `let singleton = null`). Todas las cajas comparten el mismo mapa de sistemas (`systemsMap`), permitiendo que cualquier componente acceda a los fragmentos de cualquier grupo.
+
+---
+
+## 9. Robustez del Sistema de Enlaces
+
+### Eliminación de un elemento de la cadena
+
+Cuando se elimina un elemento `linkedText` que pertenece a una cadena, el sistema repara automáticamente los enlaces mediante `removeLinkedTextFromChain(id)`:
+
+1. Si el elemento tiene `linkedTextPrev`, su `linkedTextNext` se reasigna al `linkedTextNext` del elemento eliminado
+2. Si el elemento tiene `linkedTextNext`, su `linkedTextPrev` se reasigna al `linkedTextPrev` del elemento eliminado
+3. Si el elemento era el **head** (sin `prev`) y tiene `next`, el `next` hereda el `html`/`text` del head y se recalcula la cadena desde él
+4. Si el elemento no era head, se recalcula desde el head de la cadena
+
+Los fragmentos del sistema (`linkedTextBoxSystem.fragments[id]`) se limpian.
+
+### Rotura de enlace (arrastrar flecha al vacío)
+
+El usuario puede romper un enlace arrastrando la flecha de enlace y soltándola en un punto vacío (fuera de cualquier caja). `handleLinkedTextLinkBreak`:
+
+1. Obtiene el `tailHtml` del fragmento de la caja siguiente (el texto desde su posición hasta el final)
+2. Limpia `source.linkedTextNext` y `next.linkedTextPrev`
+3. Asigna un nuevo `linkedTextGroupId` a toda la subcadena que empieza en `nextId` (cada subcadena es independiente)
+4. Asigna el `tailHtml` como `html` del nuevo head (la caja siguiente)
+5. Recalcula ambas cadenas por separado
+
+### Clonación de elementos linkedText
+
+- **Clon individual** (`cloneSelectedElement`): El clon se inserta justo después del elemento origen en la cadena. Si el origen tenía un `next`, el clon se interpone entre ambos.
+- **Clon múltiple** (`cloneElementsByIds`): Cada clon linkedText se crea como elemento independiente (nuevo `linkedTextGroupId`, sin enlaces). El texto/html se copia del original.
+
+### Re-enlazado
+
+Al arrastrar la flecha desde una caja A a otra caja B:
+- Se rompe el enlace previo de A si existía (su antiguo `next` pierde su `prev`)
+- Se rompe el enlace previo de B si existía (garantiza entrada única por caja)
+- Se unifica el `linkedTextGroupId` de toda la cadena resultante
+- Se actualizan los `linkedTextChainIndex`
+- Se recalcula la distribución del texto

@@ -329,8 +329,7 @@ const isLinkedTextChainActive = (boxId) => {
           data-editor-element="true"
           :data-editor-id="item.id"
           class="group absolute p-0 text-left"
-          :style="elementBoxStyle(item.id)"
-          :class="isElementSelected(item.id)
+          :class="[(isElementSelected(item.id)
             ? (editingElementId === item.id
                 ? 'ring-2 ring-cyan-300/70 bg-white/10 editor-editing-pulse'
                 : (drag.active && drag.elementId === item.id
@@ -340,7 +339,9 @@ const isLinkedTextChainActive = (boxId) => {
                 ? (item.fieldKey === props.hoveredFieldKey ? 'z-[70] ring-2 ring-accent/50 bg-accent/10' : 'z-50 ring-2 ring-accent/50 bg-accent/10')
                 : (linkedTextLink?.active && linkedTextLink.hoverTargetId === item.id
                     ? 'z-40 ring-2 ring-emerald-400/70 bg-emerald-400/15'
-                    : 'z-10'))"
+                    : 'z-10'))),
+            item.type === 'linkedText' && !item.text && editingElementId !== item.id ? 'linked-text-empty-box' : '']"
+            :style="[elementBoxStyle(item.id), item.type === 'linkedText' && !item.text && editingElementId !== item.id ? { outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: '-1px' } : {}]"
           @click="emit('elementClick', { event: $event, id: item.id })"
           @pointerdown="emit('elementPointerDown', { event: $event, id: item.id })"
           @mouseenter="item.fieldKey && emit('fieldHover', item.fieldKey)"

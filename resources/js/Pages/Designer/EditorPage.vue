@@ -2344,7 +2344,46 @@ const handleLinkedTextLinkEnd = ({ event, targetId }) => {
   linkedTextLink.active = false;
   linkedTextLink.sourceId = null;
   linkedTextLink.hoverTargetId = null;
-  event.target.releasePointerCapture(event.pointerId);
+};
+
+const handleLinkedTextLinkBreak = (event) => {
+  const sourceId = linkedTextLink.sourceId;
+  if (!sourceId) return;
+  const sourceLayout = state.elementLayout[sourceId];
+  if (!sourceLayout?.linkedTextNext) return;
+
+  const nextId = sourceLayout.linkedTextNext;
+  const nextLayout = state.elementLayout[nextId];
+  if (!nextLayout) return;
+
+  const groupId = sourceLayout.linkedTextGroupId;
+  const fragment = linkedTextBoxSystem.getFragmentForBox(groupId, nextId);
+  const nextHtml = fragment.tailHtml || fragment.html || '';
+
+  sourceLayout.linkedTextNext = null;
+  nextLayout.linkedTextPrev = null;
+
+  const newGroupId = `linked-group-${Date.now()}`;
+  let currentWalkId = nextId;
+  const visited = new Set();
+  while (currentWalkId && !visited.has(currentWalkId)) {
+    visited.add(currentWalkId);
+    const walkLayout = state.elementLayout[currentWalkId];
+    if (!walkLayout) break;
+    walkLayout.linkedTextGroupId = newGroupId;
+    currentWalkId = walkLayout.linkedTextNext;
+  }
+
+  const nextElement = state.customElements[nextId];
+  if (nextElement?.type === 'linkedText') {
+    nextElement.html = nextHtml;
+    nextElement.text = nextHtml.replace(/<[^>]*>/g, '');
+  }
+
+  recalculateLinkedTextAllocations(sourceId);
+  recalculateLinkedTextAllocations(nextId);
+
+  frontendLog.info('linkBreak', `Enlace roto entre ${sourceId} y ${nextId}`);
 };
 
 const redistributeLinkedText = (startId) => {
@@ -3666,6 +3705,42 @@ const updateElementMeasurement = (id, node) => {
     }
   };
 
+const removeLinkedTextFromChain = (id) => {
+    const layout = state.elementLayout[id];
+    if (!layout || state.customElements?.[id]?.type !== 'linkedText') return;
+
+    const prevId = layout.linkedTextPrev;
+    const nextId = layout.linkedTextNext;
+
+    if (prevId && state.elementLayout[prevId]) {
+      state.elementLayout[prevId].linkedTextNext = nextId;
+    }
+    if (nextId && state.elementLayout[nextId]) {
+      state.elementLayout[nextId].linkedTextPrev = prevId;
+    }
+
+    const headElement = state.customElements?.[id];
+    if (!prevId && nextId) {
+      const nextElement = state.customElements?.[nextId];
+      if (headElement?.type === 'linkedText' && nextElement?.type === 'linkedText') {
+        nextElement.html = headElement.html || headElement.text || '';
+        nextElement.text = headElement.text || '';
+        recalculateLinkedTextAllocations(nextId);
+      }
+    } else if (prevId) {
+      const headId = getLinkedTextChainHead(prevId);
+      recalculateLinkedTextAllocations(headId);
+    }
+
+    const groupId = layout.linkedTextGroupId;
+    if (groupId) {
+      const system = linkedTextBoxSystem.getOrCreateSystem(groupId);
+      if (system?.fragments?.[id]) {
+        delete system.fragments[id];
+      }
+    }
+  };
+
   const deleteSelectedElement = () => {
     const id = state.selectedElementId;
     if (!id) return;
@@ -3677,6 +3752,8 @@ const updateElementMeasurement = (id, node) => {
     if (editingElementId.value === id) {
       commitTextEdit();
     }
+
+    removeLinkedTextFromChain(id);
 
     clearContentForRemovedTextElement(id);
 
@@ -3743,6 +3820,19 @@ const cloneElementsByIds = (ids) => {
           type: 'shape',
           label: `${sourceElement.label} copia`,
           shapeKind: sourceElement.shapeKind,
+        };
+      } else if (sourceElement.type === 'linkedText') {
+        const cloneGroupId = `linked-group-${Date.now()}`;
+        cloneLayout.linkedTextGroupId = cloneGroupId;
+        cloneLayout.linkedTextNext = null;
+        cloneLayout.linkedTextPrev = null;
+        cloneLayout.linkedTextChainIndex = 0;
+        state.customElements[cloneId] = {
+          id: cloneId,
+          type: 'linkedText',
+          label: `${sourceElement.label} copia`,
+          text: sourceElement.text ?? '',
+          html: sourceElement.html ?? '',
         };
       } else {
         return;
@@ -3917,6 +4007,7 @@ const cloneElementsByIds = (ids) => {
       if (editingElementId.value === id) {
         commitTextEdit();
       }
+      removeLinkedTextFromChain(id);
       clearContentForRemovedTextElement(id);
       if (state.customElements?.[id]) {
         delete state.customElements[id];
@@ -4224,11 +4315,13 @@ const handleDocumentPointerEnd = async (event) => {
     const targetId = linkedTextLink.hoverTargetId;
     if (targetId && targetId !== linkedTextLink.sourceId) {
       handleLinkedTextLinkEnd({ event, targetId });
-    } else {
-      linkedTextLink.active = false;
-      linkedTextLink.sourceId = null;
-      linkedTextLink.hoverTargetId = null;
+    } else if (!targetId) {
+      handleLinkedTextLinkBreak(event);
     }
+    linkedTextLink.active = false;
+    linkedTextLink.sourceId = null;
+    linkedTextLink.hoverTargetId = null;
+    event.target?.releasePointerCapture?.(event.pointerId);
   }
 
   const draggedIds = drag.active && drag.mode === 'multi'
