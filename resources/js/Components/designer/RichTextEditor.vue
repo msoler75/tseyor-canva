@@ -94,6 +94,7 @@ const props = defineProps({
 });
 const emit = defineEmits(['update:text', 'update:paragraphStyles', 'update:html', 'selectionChange', 'blur']);
 
+
 const buildDoc = (text, styles) => {
     const lines = String(text ?? '').replace(/\r\n/g, '\n').split('\n');
     return {
@@ -161,6 +162,8 @@ const wrapperStyle = computed(() => {
         style.overflow = props.editable ? 'hidden' : (props.linkedTextActive ? 'visible' : 'hidden');
     }
 
+    style.transform = props.editable?`translateY(-${props.editorTopOffset}px)`:''
+
     return style;
 });
 
@@ -176,9 +179,7 @@ const linkedTextEditorContentStyle = computed(() => ({
 
 const linkedTextBaseLayerStyle = computed(() => ({
     ...props.editorStyle,
-    ...(props.isLinkedText && props.showOverflow && props.editorTopOffset > 0
-        ? { transform: `translate3d(0, -${Math.max(0, Number(props.editorTopOffset || 0))}px, 0)` }
-        : {}),
+    ...{transform: props.editable?`translateY(${props.editorTopOffset}px)`:''}
 }));
 
 const linkedTextEditorInnerStyle = computed(() => ({
@@ -576,12 +577,16 @@ const logLinkedTextStyles = () => {
             :style="wrapperStyle"
         >
         <!-- Nueva estrategia: dos capas -->
+         <div class="fixed right-2 top-8">
+            <span>editorTopOffset: {{ props.editorTopOffset }}</span>
+            <span>editorTextOffset: {{ props.editorTextOffset }}</span>
+         </div>
         <!-- Capa inferior: texto completo (sin límite inferior), opacidad 50% -->
         <div
             v-if="props.isLinkedText && props.showOverflow && props.fullTextHtml"
             class="linked-text-base-layer"
             :style="linkedTextBaseLayerStyle"
-            v-html="props.fullTextHtml"
+            v-html="props.overflowHtml"
         ></div>
 
         <!-- Capa superior: texto visible (recortado) -->
@@ -685,7 +690,7 @@ const logLinkedTextStyles = () => {
     pointer-events: auto;
     z-index: 5;
     color: gray !important;
-    opacity: 0.25 !important;
+    opacity: 0.45 !important;
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: break-word;

@@ -149,9 +149,9 @@ export function createLinkedTextBoxSystem() {
          measureDiv = document.createElement("div")
          measureDiv.id = 'measure';
          measureDiv.style.position = 'fixed';
-         measureDiv.style.left = '-10000px';
-         measureDiv.style.top = '0';
-         measureDiv.style.zIndex = '-1';
+         measureDiv.style.left = '-2000px';
+         measureDiv.style.top = '200px';
+         measureDiv.style.zIndex = '999';
          measureDiv.style.visibility = 'hidden';
          measureDiv.style.background = 'transparent';
          measureDiv.style.minHeight = '0';
@@ -442,14 +442,14 @@ export function createLinkedTextBoxSystem() {
         const fitUnits = bestFit;
         const visibleSlice = allUnits.slice(unitIdx, unitIdx + fitUnits);
         const overflowSlice = allUnits.slice(unitIdx + fitUnits); // resto para siguientes cajas
-        
+
         const visibleHtml = buildHtmlFromUnitSlice(visibleSlice);
-        
+
         // REGLA: Si la caja tiene enlace siguiente, NUNCA tiene overflowHtml
         // (el texto que no cabe pasa a la siguiente caja, no es "overflow" de esta)
         const isLastInChain = !layout.linkedTextNext; // true si NO tiene enlace siguiente (es la última)
         const overflowHtml = isLastInChain ? buildHtmlFromUnitSlice(overflowSlice) : ''; // Solo la última caja puede tener overflow
-        
+
         const fullTextHtml = buildHtmlFromUnitSlice(allUnits); // Documento completo de toda la secuencia (para capa inferior)
         // fitsInBox: true solo si es la última caja Y no hay más palabras después
         const fitsInBox = isLastInChain && (unitIdx + fitUnits) >= totalUnits;
