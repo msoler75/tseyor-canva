@@ -243,7 +243,7 @@ const editor = useEditor({
         StyledTextMark,
     ],
     editable: props.editable && !props.displayMode,
-    content: props.fullTextHtml || buildDoc(props.text, props.paragraphStyles),
+    content: (props.isLinkedText && props.tailHtml ? props.tailHtml : props.fullTextHtml) || buildDoc(props.text, props.paragraphStyles),
     editorProps: {
         attributes: {
             class: props.editorClass,
@@ -474,7 +474,7 @@ const syncEditorContentFromProps = ({ force = false } = {}) => {
     if (!editor?.value || (!force && props.displayMode)) return;
     if (!force && props.editable) return;
 
-    const nextContent = props.fullTextHtml || buildDoc(props.text, props.paragraphStyles);
+    const nextContent = (props.isLinkedText && props.tailHtml ? props.tailHtml : props.fullTextHtml) || buildDoc(props.text, props.paragraphStyles);
     const currentText = editor.value.getText() || '';
     const currentHtml = editor.value.getHTML() || '';
     const nextText = typeof nextContent === 'string'
@@ -545,12 +545,19 @@ watch(() => props.fullTextHtml, (html) => {
     // The parent re-emits the same linked fullTextHtml after redistribution;
     // calling setContent here replaces the document and moves selection to end.
     if (suppressWatch || !html || !editor?.value || props.displayMode || props.editable) return;
+    if (props.isLinkedText && props.tailHtml) return;
+    syncEditorContentFromProps();
+});
+
+watch(() => props.tailHtml, (html) => {
+    if (suppressWatch || !html || !editor?.value || props.displayMode || props.editable) return;
+    if (!props.isLinkedText) return;
     syncEditorContentFromProps();
 });
 
 watch(() => [props.text, props.paragraphStyles], ([newText, newStyles]) => {
     if (suppressWatch || !editor?.value || props.displayMode || props.editable) return;
-    if (props.fullTextHtml) return;
+    if (props.fullTextHtml || (props.isLinkedText && props.tailHtml)) return;
     const current = extractFromDoc(editor.value.state.doc);
     const textChanged = current.text !== newText;
     const stylesChanged = JSON.stringify(current.styles) !== JSON.stringify(newStyles ?? []);

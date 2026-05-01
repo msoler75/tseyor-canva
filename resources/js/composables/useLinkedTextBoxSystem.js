@@ -92,7 +92,7 @@ export function createLinkedTextBoxSystem() {
       if (!fullHtml || fullHtml.trim() === '') {
         // Texto vacío: todas las cajas vacías
         chainLayouts.forEach(layout => {
-          system.fragments[layout.id] = { html: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
+          system.fragments[layout.id] = { html: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', prefixHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
         });
         return;
       }
@@ -513,6 +513,7 @@ export function createLinkedTextBoxSystem() {
             overflowHtml: '',
             fullTextHtml: '',
             tailHtml: '',
+            prefixHtml: '',
             editorTopOffset: 0,
             editorTextOffset: 0,
             fitsInBox: true
@@ -532,6 +533,7 @@ export function createLinkedTextBoxSystem() {
             overflowHtml: buildHtmlFromUnitSlice(allUnits.slice(unitIdx), layout),
             fullTextHtml: '',
             tailHtml: buildHtmlFromUnitSlice(inputSlice, layout),
+            prefixHtml: buildHtmlFromUnitSlice(allUnits.slice(0, unitIdx), layout),
             editorTopOffset: 0,
             editorTextOffset: 0,
             fitsInBox: false
@@ -591,6 +593,7 @@ export function createLinkedTextBoxSystem() {
           overflowHtml: overflowHtml,
           fullTextHtml: fullTextHtml, // Texto completo para capa inferior (sin límite de altura)
           tailHtml: tailHtml,         // Texto desde el inicio de esta caja hasta el final del documento
+          prefixHtml: prefixHtml,     // Texto desde el inicio del documento hasta antes de esta caja
           editorTopOffset,
           editorTextOffset,
           fitsInBox: fitsInBox
@@ -720,8 +723,8 @@ export function createLinkedTextBoxSystem() {
     */
    function getFragmentForBox(groupId, boxId) {
      const system = systemsMap.get(groupId);
-      if (!system) return { html: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
-      return system.fragments[boxId] || { html: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
+      if (!system) return { html: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', prefixHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
+      return system.fragments[boxId] || { html: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', prefixHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
    }
 
   /**

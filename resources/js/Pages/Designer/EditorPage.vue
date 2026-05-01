@@ -1108,7 +1108,7 @@ const recalculateLinkedTextAllocations = (headId) => {
 
   const getLinkedTextBoxText = (boxId) => {
     const layout = state.elementLayout[boxId];
-    if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
+    if (!layout?.linkedTextGroupId) return { text: '', displayHtml: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', prefixHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
 
     const groupId = layout.linkedTextGroupId;
     const headId = getLinkedTextChainHead(boxId);
@@ -1153,6 +1153,7 @@ const recalculateLinkedTextAllocations = (headId) => {
         overflowHtml: '',
         fullTextHtml: rawText ? `<p>${rawText}</p>` : '',
         tailHtml: rawText ? `<p>${rawText}</p>` : '',
+        prefixHtml: '',
         editorTopOffset: 0,
         editorTextOffset: 0,
         fitsInBox: true,
@@ -1174,6 +1175,7 @@ const recalculateLinkedTextAllocations = (headId) => {
       overflowHtml,
       fullTextHtml: fragment.fullTextHtml || '',
       tailHtml: fragment.tailHtml || '',
+      prefixHtml: fragment.prefixHtml || '',
       editorTopOffset: fragment.editorTopOffset || fallbackEditorTopOffset || 0,
       editorTextOffset: fragment.editorTextOffset || 0,
       fitsInBox: fragment.fitsInBox ?? true,
@@ -1227,7 +1229,7 @@ const editorElements = computed(() => {
       linkedTextOverflowHtml: element.type === 'linkedText' ? (linkedTextBoxData?.overflowHtml ?? '') : '',
       linkedTextFullTextHtml: element.type === 'linkedText' ? (linkedTextBoxData?.fullTextHtml ?? '') : '',
       linkedTextTailHtml: element.type === 'linkedText' ? (linkedTextBoxData?.tailHtml ?? '') : '',
-      linkedTextInitialHtml: element.type === 'linkedText' && isBeingEdited ? (linkedTextBoxData?.fullTextHtml ?? '') : '',
+      linkedTextInitialHtml: element.type === 'linkedText' && isBeingEdited ? (linkedTextBoxData?.tailHtml ?? '') : '',
       linkedTextEditorTopOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTopOffset ?? 0) : 0,
       linkedTextEditorTextOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTextOffset ?? 0) : 0,
       src: element.type === 'image' ? element.src : null,
@@ -2388,7 +2390,10 @@ const onLinkedTextUpdate = (id, value) => {
   const headId = getLinkedTextChainHead(id);
   const headElement = state.customElements?.[headId];
   if (headElement?.type === 'linkedText') {
-    headElement.text = value;
+    const fragment = linkedTextBoxSystem.getFragmentForBox(layout.linkedTextGroupId, id);
+    const prefixHtml = fragment?.prefixHtml || '';
+    const prefixText = prefixHtml ? (() => { const div = document.createElement('div'); div.innerHTML = prefixHtml; return div.textContent || ''; })() : '';
+    headElement.text = prefixText + value;
   } else {
     element.text = value;
   }
@@ -2408,7 +2413,8 @@ const onRichEditorHtmlUpdate = (id, html) => {
   const headId = getLinkedTextChainHead(id);
   const headElement = state.customElements?.[headId];
   if (headElement?.type === 'linkedText') {
-    headElement.html = html;
+    const fragment = linkedTextBoxSystem.getFragmentForBox(layout.linkedTextGroupId, id);
+    headElement.html = (fragment.prefixHtml || '') + html;
   } else {
     element.html = html;
   }
@@ -4261,8 +4267,7 @@ const beginTextEdit = async (id, focusToEnd = false) => {
       return;
     }
     if (state.customElements?.[id]?.type === 'linkedText') {
-      const linkedTextBoxData = getLinkedTextBoxText(id);
-      richEditorRefs.value[id]?.focusAtPosition?.(linkedTextBoxData.editorTextOffset ?? 0);
+      richEditorRefs.value[id]?.focusAtPosition?.(0);
       return;
     }
     richEditorRefs.value[id]?.$el?.querySelector('[contenteditable]')?.focus();
