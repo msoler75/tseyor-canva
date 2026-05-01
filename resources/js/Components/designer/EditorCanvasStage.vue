@@ -342,7 +342,6 @@ const isLinkedTextChainActive = (boxId) => {
                     ? 'z-40 ring-2 ring-emerald-400/70 bg-emerald-400/15'
                     : 'z-10'))"
           @click="emit('elementClick', { event: $event, id: item.id })"
-          @dblclick="emit('beginTextEdit', item.id)"
           @pointerdown="emit('elementPointerDown', { event: $event, id: item.id })"
           @mouseenter="item.fieldKey && emit('fieldHover', item.fieldKey)"
           @mouseleave="item.fieldKey && emit('fieldHover', null)"
@@ -390,7 +389,6 @@ const isLinkedTextChainActive = (boxId) => {
                 @keydown.meta.enter.stop="emit('commitTextEdit')"
                 @pointerdown.stop="editingElementId === item.id ? null : emit('elementPointerDown', { event: $event, id: item.id })"
                 @mousedown.stop
-                @dblclick.stop="emit('beginTextEdit', item.id)"
                 @click.stop="editingElementId === item.id ? null : emit('elementClick', { event: $event, id: item.id })"
               />
               <button

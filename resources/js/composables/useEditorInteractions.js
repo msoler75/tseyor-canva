@@ -60,6 +60,7 @@ export const useEditorInteractions = ({
     activeSelectionIds,
   });
   let longPressTimer = null;
+  let elementClickWasPreselected = false;
 
   const clearLongPress = () => {
     if (longPressTimer) {
@@ -71,8 +72,16 @@ export const useEditorInteractions = ({
 
   const handleElementClick = (event, id) => {
     if (Date.now() < suppressElementClickUntil.value) {
+      elementClickWasPreselected = false;
       return;
     }
+
+    if (elementClickWasPreselected && isTextElement(id) && !editingElementId.value) {
+      elementClickWasPreselected = false;
+      beginTextEdit(id, false, event);
+      return;
+    }
+    elementClickWasPreselected = false;
 
     if (event?.shiftKey) return;
 
@@ -189,6 +198,8 @@ export const useEditorInteractions = ({
   const handleElementPointerDown = (event, id) => {
     if (event.button !== undefined && event.button !== 0) return;
     if (editingElementId.value === id) return;
+
+    elementClickWasPreselected = (state.selectedElementId === id) && isTextElement(id) && !editingElementId.value;
 
     const groupId = getGroupIdForElement(id);
     if (groupId) {

@@ -4237,7 +4237,50 @@ const handleDocumentPointerEnd = async (event) => {
   }
 };
 
-const beginTextEdit = async (id, focusToEnd = false) => {
+const replayClickOnEditor = (id, originalEvent) => {
+  if (!originalEvent) return;
+  const el = richEditorRefs.value[id]?.$el;
+  frontendLog.debug('replayClick', `[${id}] replayClick called: hasEl=${!!el}, clientX=${originalEvent.clientX}, clientY=${originalEvent.clientY}`, {
+    hasRef: !!richEditorRefs.value[id],
+    hasSetCursor: typeof richEditorRefs.value[id]?.setCursorAtCoords === 'function',
+    editingElementId: editingElementId.value,
+    elTagName: el?.tagName,
+  });
+
+  if (!el) {
+    frontendLog.debug('replayClick', `[${id}] No $el found`);
+    return;
+  }
+
+  const coords = { left: originalEvent.clientX, top: originalEvent.clientY };
+
+  const trySetCursor = () => {
+    const editorRef = richEditorRefs.value[id];
+    const elNow = editorRef?.$el;
+    if (!elNow) {
+      frontendLog.debug('replayClick', `[${id}] retry: $el still null`);
+      return false;
+    }
+    const pm = elNow.querySelector('.ProseMirror');
+    if (!pm) {
+      frontendLog.debug('replayClick', `[${id}] retry: .ProseMirror still null`);
+      return false;
+    }
+    const pmRect = pm.getBoundingClientRect();
+    const hasMethod = typeof editorRef?.setCursorAtCoords === 'function';
+    frontendLog.debug('replayClick', `[${id}] retry: hasMethod=${hasMethod}, pmRect=${JSON.stringify({x:pmRect.x,y:pmRect.y,w:pmRect.width,h:pmRect.height})}, coords=(${coords.left},${coords.top})`);
+    if (!hasMethod) return false;
+
+    editorRef.setCursorAtCoords(coords.left, coords.top);
+    return true;
+  };
+
+  if (!trySetCursor()) {
+    setTimeout(() => trySetCursor(), 300);
+  }
+};
+
+const beginTextEdit = async (id, focusToEnd = false, clickEvent = null) => {
   if (!isTextElement(id)) return;
   const groupId = getGroupIdForElement(id);
   if (groupId) {
@@ -4267,10 +4310,18 @@ const beginTextEdit = async (id, focusToEnd = false) => {
       return;
     }
     if (state.customElements?.[id]?.type === 'linkedText') {
-      richEditorRefs.value[id]?.focusAtPosition?.(0);
+      if (clickEvent) {
+        replayClickOnEditor(id, clickEvent);
+      } else {
+        richEditorRefs.value[id]?.focusAtPosition?.(0);
+      }
       return;
     }
-    richEditorRefs.value[id]?.$el?.querySelector('[contenteditable]')?.focus();
+    if (clickEvent) {
+      replayClickOnEditor(id, clickEvent);
+    } else {
+      richEditorRefs.value[id]?.$el?.querySelector('[contenteditable]')?.focus();
+    }
 };
 
 const commitTextEdit = () => {

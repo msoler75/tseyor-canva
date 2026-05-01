@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Node, Mark } from '@tiptap/core';
+import { TextSelection } from '@tiptap/pm/state';
 import { useFrontendLog } from '../../composables/useFrontendLog';
 
 const frontendLog = useFrontendLog();
@@ -507,7 +508,27 @@ defineExpose({
     applyMarkStyle,
     removeMarkStyle,
     toggleMarkStyle,
-    setContentDirect
+    setContentDirect,
+    setCursorAtCoords(clientX, clientY) {
+        if (!editor?.value) {
+            frontendLog.debug('setCursorAtCoords', 'editor not ready');
+            return;
+        }
+        const view = editor.value.view;
+        const dom = view.dom;
+        const domRect = dom.getBoundingClientRect();
+        frontendLog.debug('setCursorAtCoords', `coords=(${clientX},${clientY}) domRect=${JSON.stringify({x:domRect.x,y:domRect.y,w:domRect.width,h:domRect.height})}`);
+        const posResult = view.posAtCoords({ left: clientX, top: clientY });
+        frontendLog.debug('setCursorAtCoords', `posAtCoords result: ${JSON.stringify(posResult)}`);
+        if (!posResult) return;
+        view.focus();
+        requestAnimationFrame(() => {
+            const $pos = view.state.doc.resolve(posResult.pos);
+            const tr = view.state.tr.setSelection(TextSelection.near($pos));
+            view.dispatch(tr);
+            frontendLog.debug('setCursorAtCoords', `cursor set at pos ${posResult.pos}, selection=${JSON.stringify({from: view.state.selection.from, to: view.state.selection.to})}`);
+        });
+    },
 });
 
 watch(() => props.editable, (val, oldVal) => {
