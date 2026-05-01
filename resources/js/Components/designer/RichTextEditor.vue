@@ -203,13 +203,14 @@ const wrapperStyle = computed(() => {
 });
 
 const linkedTextEditorOffset = computed(() => (
+    0 *
     props.isLinkedText && props.editable
         ? Math.max(0, Number(props.editorTopOffset || 0))
         : 0
 ));
 
 const linkedTextEditorContentStyle = computed(() => ({
-    '--linked-text-editor-offset': `${linkedTextEditorOffset.value}px`,
+    '--linked-text-editor-offset': `${0*linkedTextEditorOffset.value}px`,
 }));
 
 const linkedTextBaseLayerStyle = computed(() => ({
@@ -219,9 +220,9 @@ const linkedTextBaseLayerStyle = computed(() => ({
 
 const linkedTextEditorInnerStyle = computed(() => ({
     ...props.editorStyle,
-    transform: linkedTextEditorOffset.value > 0
+    /*transform: linkedTextEditorOffset.value > 0
         ? `translate3d(0, -${linkedTextEditorOffset.value}px, 0)`
-        : undefined,
+        : undefined,*/
 }));
 
 const syncEditorViewportOffset = async () => {
