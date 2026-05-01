@@ -149,15 +149,113 @@ export function createLinkedTextBoxSystem() {
          measureDiv = document.createElement("div")
          measureDiv.id = 'measure';
          measureDiv.style.position = 'fixed';
-         measureDiv.style.left = '-2000px';
+         measureDiv.style.left = '200px';
          measureDiv.style.top = '200px';
          measureDiv.style.zIndex = '999';
-         measureDiv.style.visibility = 'hidden';
-         measureDiv.style.background = 'transparent';
+         // measureDiv.style.visibility = 'hidden';
+         measureDiv.style.background = 'red';
          measureDiv.style.minHeight = '0';
          measureDiv.style.padding = '0'; // SIN PADDING (para no alterar ancho)
          document.body.appendChild(measureDiv);
       }
+
+      const cssEscape = (value) => {
+        if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+          return CSS.escape(String(value));
+        }
+
+        return String(value).replace(/["\\]/g, '\\$&');
+      };
+
+      const findRenderedEditorElement = (id) => {
+        if (!id || typeof document === 'undefined') return null;
+
+        return document.querySelector(`[data-editor-id="${cssEscape(id)}"]`)
+          ?? document.getElementById(id)
+          ?? null;
+      };
+
+      const findRenderedTextNode = (element) => {
+        if (!element) return null;
+
+        return element.querySelector('.linked-text-display')
+          ?? element.querySelector('.linked-text-editor-viewport .ProseMirror')
+          ?? element.querySelector('.ProseMirror')
+          ?? element;
+      };
+
+      const copyComputedTextStyles = (source, target) => {
+        if (!source || !target || typeof window === 'undefined') return;
+
+        const computed = window.getComputedStyle(source);
+        [
+          'font',
+          'font-family',
+          'font-size',
+          'font-style',
+          'font-variant',
+          'font-weight',
+          'font-stretch',
+          'line-height',
+          'letter-spacing',
+          'text-align',
+          'text-transform',
+          'text-indent',
+          'text-rendering',
+          'text-shadow',
+          'text-decoration',
+          'text-decoration-line',
+          'text-decoration-style',
+          'text-decoration-color',
+          'text-underline-offset',
+          'white-space',
+          'word-break',
+          'overflow-wrap',
+          'tab-size',
+          'color',
+          '-webkit-text-stroke',
+          '-webkit-text-stroke-width',
+          '-webkit-text-stroke-color',
+          '-webkit-text-fill-color',
+          'paint-order',
+        ].forEach((property) => {
+          const value = computed.getPropertyValue(property);
+          if (value) {
+            target.style.setProperty(property, value, 'important');
+          }
+        });
+      };
+
+      const styleObjectToCss = (style = {}) => {
+        const declarations = [];
+        const push = (property, value, transform = (v) => v) => {
+          if (value === undefined || value === null || value === '') return;
+          declarations.push(`${property}: ${transform(value)}`);
+        };
+
+        push('font-size', style.fontSize, (value) => `${value}px`);
+        push('color', style.color);
+        push('font-family', style.fontFamily);
+        push('font-weight', style.fontWeight, (value) => value === 'bold' ? '700' : (value === 'regular' ? '400' : value));
+        if (style.italic) declarations.push('font-style: italic');
+        if (style.underline) declarations.push('text-decoration: underline');
+        if (style.uppercase) declarations.push('text-transform: uppercase');
+        push('text-align', style.textAlign);
+        push('letter-spacing', style.letterSpacing, (value) => `${value}px`);
+        push('line-height', style.lineHeight);
+
+        return declarations.join('; ');
+      };
+
+      const mergeCssText = (...parts) => parts
+        .map((part) => String(part ?? '').trim().replace(/;+$/g, ''))
+        .filter(Boolean)
+        .join('; ');
+
+      const paragraphCssForIndex = (paragraph, index, layout) => mergeCssText(
+        paragraph?.style ?? '',
+        styleObjectToCss(layout?.paragraphStyles?.[index] ?? {}),
+      );
 
       // Función para configurar el div de medición DINÁMICO
       const setupMeasureDiv = (layout) => {
@@ -166,9 +264,14 @@ export function createLinkedTextBoxSystem() {
         // Limpiar measureDiv
         measureDiv.innerHTML = '';
 
+        const renderedElement = findRenderedEditorElement(layout.id);
+        const renderedTextNode = findRenderedTextNode(renderedElement);
+
         // Hacer el measureDiv contenedor visible y sin padding
         measureDiv.style.padding = '0';
         measureDiv.style.border = '0px';
+        measureDiv.style.margin = '0';
+        measureDiv.style.boxSizing = 'border-box';
 
         // Crear div interno para medición
         const innerDiv = document.createElement('div');
@@ -190,26 +293,51 @@ export function createLinkedTextBoxSystem() {
           padding: 0 !important;
         `;
 
-        // ANCHO DINÁMICO: intentar usar el ancho del elemento real
+        // ANCHO DIN?MICO: medir con el mismo viewport textual que el render real.
         let width = layout.w || 300;
-        const realElement = document.getElementById(layout.id);
-        if (realElement) {
-          const computedStyle = window.getComputedStyle(realElement);
-          const computedWidth = computedStyle.width;
-          if (computedWidth && computedWidth !== 'auto') {
-            width = parseInt(computedWidth);
+        if (renderedTextNode) {
+          const textRect = renderedTextNode.getBoundingClientRect();
+          if (textRect.width > 0) {
+            width = textRect.width;
+          } else {
+            const computedStyle = window.getComputedStyle(renderedTextNode);
+            const computedWidth = computedStyle.width;
+            if (computedWidth && computedWidth !== 'auto') {
+              width = parseFloat(computedWidth);
+            }
+          }
+        } else if (renderedElement) {
+          const elementRect = renderedElement.getBoundingClientRect();
+          if (elementRect.width > 0) {
+            width = elementRect.width;
+          } else {
+            const computedStyle = window.getComputedStyle(renderedElement);
+            const computedWidth = computedStyle.width;
+            if (computedWidth && computedWidth !== 'auto') {
+              width = parseFloat(computedWidth);
+            }
           }
         }
         innerDiv.style.width = `${width}px`;
 
-        // Copiar estilos de fuente desde el layout
+        // Copiar estilos computados reales antes que los fallbacks.
+        // El punto de split solo es fiable si #measure envuelve y pinta igual
+        // que .linked-text-display/.ProseMirror en la caja correspondiente.
+        copyComputedTextStyles(renderedTextNode, innerDiv);
+
+        // Copiar estilos de fuente desde el layout como fallback si a?n no hay DOM real.
         if (layout.fontSize) innerDiv.style.fontSize = `${layout.fontSize}px`;
         if (layout.fontFamily) innerDiv.style.fontFamily = layout.fontFamily;
         if (layout.lineHeight) innerDiv.style.lineHeight = String(layout.lineHeight);
         if (layout.letterSpacing !== undefined) innerDiv.style.letterSpacing = `${layout.letterSpacing}px`;
         if (layout.fontWeight) innerDiv.style.fontWeight = layout.fontWeight;
         if (layout.fontStyle) innerDiv.style.fontStyle = layout.fontStyle;
+        if (layout.italic) innerDiv.style.fontStyle = 'italic';
         if (layout.color) innerDiv.style.color = layout.color;
+        if (containerStyle.fontSize) innerDiv.style.fontSize = `${containerStyle.fontSize}px`;
+        if (containerStyle.fontFamily) innerDiv.style.fontFamily = containerStyle.fontFamily;
+        if (containerStyle.lineHeight) innerDiv.style.lineHeight = String(containerStyle.lineHeight);
+        if (containerStyle.letterSpacing !== undefined) innerDiv.style.letterSpacing = `${containerStyle.letterSpacing}px`;
 
         // Copiar clases CSS (para heredar estilos como .linked-text-display)
         innerDiv.className = 'linked-text-display';
@@ -236,7 +364,7 @@ export function createLinkedTextBoxSystem() {
         * @param {Array} unitSlice Array de objetos {type, word, paragraphIndex, paragraph}
         * @returns {string} HTML con parrafos adecuados
         */
-       const buildHtmlFromUnitSlice = (unitSlice) => {
+       const buildHtmlFromUnitSlice = (unitSlice, layout = null) => {
          if (!unitSlice || unitSlice.length === 0) return '';
 
          const paraIndices = new Set();
@@ -256,7 +384,7 @@ export function createLinkedTextBoxSystem() {
            for (let idx = minParaIdx; idx <= maxParaIdx; idx++) {
              const para = paragraphs[idx];
              const tag = para.tag || 'p';
-             const style = para.style || '';
+             const style = paragraphCssForIndex(para, idx, layout);
              const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
 
              const units = [];
@@ -294,7 +422,7 @@ export function createLinkedTextBoxSystem() {
          return grouped.map(group => {
            const para = group.paragraph;
            const tag = para.tag || 'p';
-           const style = para.style || '';
+           const style = paragraphCssForIndex(para, group.paragraphIndex, layout);
            const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
            const text = group.words.map((word) => escapeHtml(word)).join('');
            const contents = text || '<br>';
@@ -303,7 +431,7 @@ export function createLinkedTextBoxSystem() {
        };
 
 
-       const buildHtmlWithMarkerAtUnitIndex = (markerUnitIndex) => {
+       const buildHtmlWithMarkerAtUnitIndex = (markerUnitIndex, layout = null) => {
          // Marker invisible placed inside the *full* HTML at the exact unit where
          // the target box starts. Measuring its top against the full document top
          // gives the real pixel distance to shift the complete TipTap editor.
@@ -315,7 +443,7 @@ export function createLinkedTextBoxSystem() {
          for (let idx = 0; idx < paragraphs.length; idx++) {
            const para = paragraphs[idx];
            const tag = para.tag || 'p';
-           const style = para.style || '';
+           const style = paragraphCssForIndex(para, idx, layout);
            const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
            const units = allUnits.filter((unit) => unit.paragraphIndex === idx);
            let contents = '';
@@ -354,7 +482,7 @@ export function createLinkedTextBoxSystem() {
          return htmlParts.join('');
        };
 
-       const measureEditorTopOffset = (measureNode, splitUnitIndex, fallbackHtml) => {
+       const measureEditorTopOffset = (measureNode, splitUnitIndex, fallbackHtml, layout = null) => {
          if (!measureNode || splitUnitIndex <= 0) return 0;
 
          // Fallback/base: rendered height of the exact prefix that belongs before
@@ -365,7 +493,7 @@ export function createLinkedTextBoxSystem() {
          // More exact marker pass: measure the top of the start marker inside the
          // full document. Some inline marker edge cases can report the previous
          // line, so keep the larger real measurement.
-         measureNode.innerHTML = buildHtmlWithMarkerAtUnitIndex(splitUnitIndex);
+         measureNode.innerHTML = buildHtmlWithMarkerAtUnitIndex(splitUnitIndex, layout);
          const marker = measureNode.querySelector('[data-linked-text-flow-marker="true"]');
          if (marker) {
            const markerTop = marker.getBoundingClientRect().top - measureNode.getBoundingClientRect().top;
@@ -401,9 +529,9 @@ export function createLinkedTextBoxSystem() {
           // Si no hay nodo, no podemos medir
           system.fragments[layout.id] = {
             html: '',
-            overflowHtml: buildHtmlFromUnitSlice(allUnits.slice(unitIdx)),
+            overflowHtml: buildHtmlFromUnitSlice(allUnits.slice(unitIdx), layout),
             fullTextHtml: '',
-            tailHtml: buildHtmlFromUnitSlice(inputSlice),
+            tailHtml: buildHtmlFromUnitSlice(inputSlice, layout),
             editorTopOffset: 0,
             editorTextOffset: 0,
             fitsInBox: false
@@ -412,8 +540,8 @@ export function createLinkedTextBoxSystem() {
         }
 
         const prefixUnits = allUnits.slice(0, unitIdx);
-        const prefixHtml = buildHtmlFromUnitSlice(prefixUnits);
-        const editorTopOffset = measureEditorTopOffset(measureNode, unitIdx, prefixHtml);
+        const prefixHtml = buildHtmlFromUnitSlice(prefixUnits, layout);
+        const editorTopOffset = measureEditorTopOffset(measureNode, unitIdx, prefixHtml, layout);
         const editorTextOffset = prefixUnits
           .filter((unit) => unit.type === 'word')
           .reduce((total, unit) => total + String(unit.word ?? '').length, 0);
@@ -427,7 +555,7 @@ export function createLinkedTextBoxSystem() {
         while (left <= right) {
           const mid = Math.floor((left + right) / 2);
           const testSlice = allUnits.slice(unitIdx, unitIdx + mid);
-          const html = buildHtmlFromUnitSlice(testSlice);
+          const html = buildHtmlFromUnitSlice(testSlice, layout);
           measureNode.innerHTML = html;  // Usar el NODO retornado por setupMeasureDiv
           const height = measureNode.offsetHeight;
 
@@ -445,15 +573,15 @@ export function createLinkedTextBoxSystem() {
         const visibleSlice = allUnits.slice(unitIdx, unitIdx + fitUnits);
         const overflowSlice = allUnits.slice(unitIdx + fitUnits); // resto para siguientes cajas
 
-        const visibleHtml = buildHtmlFromUnitSlice(visibleSlice);
+        const visibleHtml = buildHtmlFromUnitSlice(visibleSlice, layout);
 
         // REGLA: Si la caja tiene enlace siguiente, NUNCA tiene overflowHtml
         // (el texto que no cabe pasa a la siguiente caja, no es "overflow" de esta)
         const isLastInChain = !layout.linkedTextNext; // true si NO tiene enlace siguiente (es la última)
-        const overflowHtml = isLastInChain ? buildHtmlFromUnitSlice(overflowSlice) : ''; // Solo la última caja puede tener overflow
+        const overflowHtml = isLastInChain ? buildHtmlFromUnitSlice(overflowSlice, layout) : ''; // Solo la última caja puede tener overflow
 
-        const fullTextHtml = buildHtmlFromUnitSlice(allUnits); // Documento completo de toda la secuencia (para capa inferior)
-        const tailHtml = buildHtmlFromUnitSlice(inputSlice); // Texto desde esta caja hasta el final (inputSlice = allUnits.slice(unitIdx))
+        const fullTextHtml = buildHtmlFromUnitSlice(allUnits, layout); // Documento completo de toda la secuencia (para capa inferior)
+        const tailHtml = buildHtmlFromUnitSlice(inputSlice, layout); // Texto desde esta caja hasta el final (inputSlice = allUnits.slice(unitIdx))
         // fitsInBox: true solo si es la última caja Y no hay más palabras después
         const fitsInBox = isLastInChain && (unitIdx + fitUnits) >= totalUnits;
 

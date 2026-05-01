@@ -43,7 +43,7 @@ const attrsToStyle = (attrs) => {
     if (attrs.fontSize    != null) parts.push(`font-size:${attrs.fontSize}px`);
     if (attrs.color       != null) parts.push(`color:${attrs.color}`);
     if (attrs.fontFamily  != null) parts.push(`font-family:${attrs.fontFamily}`);
-    if (attrs.fontWeight  != null) parts.push(`font-weight:${attrs.fontWeight === 'bold' ? 700 : 500}`);
+    if (attrs.fontWeight  != null) parts.push(`font-weight:${attrs.fontWeight === 'bold' ? 700 : attrs.fontWeight === 'regular' ? 400 : attrs.fontWeight}`);
     if (attrs.italic)              parts.push('font-style:italic');
     if (attrs.underline)           parts.push('text-decoration:underline');
     if (attrs.uppercase)           parts.push('text-transform:uppercase');
@@ -67,7 +67,43 @@ const StyledParagraph = Node.create({
     },
     addAttributes() {
         return Object.fromEntries(
-            STYLE_ATTRS.map((key) => [key, { default: null, parseHTML: () => null, renderHTML: () => ({}) }])
+            STYLE_ATTRS.map((key) => [key, {
+                default: null,
+                parseHTML: (element) => {
+                    const style = element.style;
+                    switch (key) {
+                        case 'fontSize': {
+                            const value = parseFloat(style.fontSize);
+                            return Number.isFinite(value) ? value : null;
+                        }
+                        case 'color':
+                            return style.color || null;
+                        case 'fontFamily':
+                            return style.fontFamily || null;
+                        case 'fontWeight':
+                            return style.fontWeight === '700' ? 'bold' : style.fontWeight === '400' ? 'regular' : (style.fontWeight || null);
+                        case 'italic':
+                            return style.fontStyle === 'italic' || null;
+                        case 'underline':
+                            return style.textDecorationLine.includes('underline') || null;
+                        case 'uppercase':
+                            return style.textTransform === 'uppercase' || null;
+                        case 'textAlign':
+                            return style.textAlign || null;
+                        case 'letterSpacing': {
+                            const value = parseFloat(style.letterSpacing);
+                            return Number.isFinite(value) ? value : null;
+                        }
+                        case 'lineHeight': {
+                            const value = parseFloat(style.lineHeight);
+                            return Number.isFinite(value) ? value : null;
+                        }
+                        default:
+                            return null;
+                    }
+                },
+                renderHTML: () => ({}),
+            }])
         );
     },
 });
@@ -84,7 +120,6 @@ const props = defineProps({
     boxDimensions: { type: Object, default: null },
     editable: { type: Boolean, default: false },
     displayMode: { type: Boolean, default: false },
-    initialHtml: { type: String, default: '' },
     displayHtml: { type: String, default: '' },
     overflowHtml: { type: String, default: '' },
     fullTextHtml: { type: String, default: '' },
@@ -164,8 +199,6 @@ const wrapperStyle = computed(() => {
         style.overflow = props.editable ? 'hidden' : (props.linkedTextActive ? 'visible' : 'hidden');
     }
 
-    style.transform = props.editable?`translateY(-${props.editorTopOffset}px)`:''
-
     return style;
 });
 
@@ -181,7 +214,7 @@ const linkedTextEditorContentStyle = computed(() => ({
 
 const linkedTextBaseLayerStyle = computed(() => ({
     ...props.editorStyle,
-    ...{transform: props.editable?`translateY(${props.editorTopOffset}px)`:''}
+    // ...{transform: props.editable?`translateY(${props.editorTopOffset}px)`:''}
 }));
 
 const linkedTextEditorInnerStyle = computed(() => ({
@@ -209,7 +242,7 @@ const editor = useEditor({
         StyledTextMark,
     ],
     editable: props.editable && !props.displayMode,
-    content: props.initialHtml || buildDoc(props.text, props.paragraphStyles),
+    content: props.fullTextHtml || buildDoc(props.text, props.paragraphStyles),
     editorProps: {
         attributes: {
             class: props.editorClass,
@@ -470,19 +503,23 @@ watch(() => props.displayMode, (val) => {
     }
 });
 
-watch(() => props.initialHtml, (html) => {
-    if (html && editor?.value && !props.displayMode) {
+watch(() => props.fullTextHtml, (html) => {
+    if (!html || !editor?.value || props.displayMode) return;
+    const currentText = editor.value.getText() || '';
+    const currentHtml = editor.value.getHTML() || '';
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    const newText = tempDiv.textContent || '';
+    if (currentText !== newText || currentHtml !== html) {
         suppressWatch = true;
         editor.value.commands.setContent(html, false);
-        nextTick(() => {
-            suppressWatch = false;
-        });
+        suppressWatch = false;
     }
 });
 
 watch(() => [props.text, props.paragraphStyles], ([newText, newStyles]) => {
     if (suppressWatch || !editor?.value || props.displayMode) return;
-    if (props.initialHtml) return;
+    if (props.fullTextHtml) return;
     const current = extractFromDoc(editor.value.state.doc);
     const textChanged = current.text !== newText;
     const stylesChanged = JSON.stringify(current.styles) !== JSON.stringify(newStyles ?? []);
@@ -590,12 +627,6 @@ const logLinkedTextStyles = () => {
             :style="wrapperStyle"
         >
         <!-- Nueva estrategia: dos capas -->
-         <teleport to="body">
-         <div class="fixed left-2 top-12">
-            <div>editorTopOffset: {{ props.editorTopOffset }}</div>
-            <div>overflowHtml:<div style="background: gray" v-html="props.overflowHtml"/></div>
-         </div>
-         </teleport>
         <!-- Capa inferior: texto completo (sin límite inferior), opacidad 50% -->
         <div
             v-if="props.displayMode && props.isLinkedText && props.showOverflow && props.tailHtml"

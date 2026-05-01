@@ -1050,16 +1050,24 @@ const recalculateLinkedTextAllocations = (headId) => {
 
   const chainLayouts = chain.map((item) => {
     const l = state.elementLayout[item.id] || {};
+    const styleSourceLayout = state.elementLayout[getLinkedTextStyleSourceId(item.id)] || l;
     return {
       id: item.id,
       w: l.w || 300,
       h: l.h || 120,
-      fontSize: l.fontSize || 18,
-      fontFamily: l.fontFamily || 'Poppins, sans-serif',
-      fontWeight: l.fontWeight || 'regular',
-      italic: l.italic || false,
-      letterSpacing: l.letterSpacing || 0,
-      lineHeight: l.lineHeight || 1.4,
+      fontSize: styleSourceLayout.fontSize || l.fontSize || 18,
+      fontFamily: styleSourceLayout.fontFamily || l.fontFamily || 'Poppins, sans-serif',
+      fontWeight: styleSourceLayout.fontWeight || l.fontWeight || 'regular',
+      italic: styleSourceLayout.italic ?? l.italic ?? false,
+      underline: styleSourceLayout.underline ?? l.underline ?? false,
+      uppercase: styleSourceLayout.uppercase ?? l.uppercase ?? false,
+      textAlign: styleSourceLayout.textAlign || l.textAlign || 'left',
+      color: styleSourceLayout.color || l.color || '#ffffff',
+      letterSpacing: styleSourceLayout.letterSpacing ?? l.letterSpacing ?? 0,
+      lineHeight: styleSourceLayout.lineHeight || l.lineHeight || 1.4,
+      paragraphStyles: Array.isArray(styleSourceLayout.paragraphStyles)
+        ? styleSourceLayout.paragraphStyles.map((style) => ({ ...style }))
+        : [],
       linkedTextNext: l.linkedTextNext || null,
     };
   });
@@ -1073,8 +1081,8 @@ const recalculateLinkedTextAllocations = (headId) => {
   };
 
   // Log antes de redistribuir
-  frontendLog.info('redistribution', 
-    `Redistribuyendo texto enlazado para grupo ${groupId}`, 
+  frontendLog.info('redistribution',
+    `Redistribuyendo texto enlazado para grupo ${groupId}`,
     {
       headId,
       groupId,
@@ -1119,8 +1127,8 @@ const recalculateLinkedTextAllocations = (headId) => {
     const fragment = linkedTextBoxSystem.getFragmentForBox(groupId, boxId);
 
     // Log del fragmento obtenido
-    frontendLog.debug('getFragment', 
-      `Obteniendo fragmento para caja ${boxId}`, 
+    frontendLog.debug('getFragment',
+      `Obteniendo fragmento para caja ${boxId}`,
       {
         boxId,
         groupId,
@@ -1186,7 +1194,7 @@ const editorElements = computed(() => {
     const linkedTextBoxData = element.type === 'linkedText' ? getLinkedTextBoxText(id) : null;
     const linkedTextStyleSourceId = element.type === 'linkedText' ? getLinkedTextStyleSourceId(id) : id;
     const linkedTextStyleSourceLayout = state.elementLayout[linkedTextStyleSourceId] ?? null;
-    
+
     // Regla 3: Si está en edición, el texto debe ser el COMPLETO (del head), no el fragmento
     let elementText;
     if (element.type === 'text') {
@@ -1204,7 +1212,7 @@ const editorElements = computed(() => {
     } else {
       elementText = '';
     }
-    
+
     return {
       id,
       type: element.type,
@@ -1612,13 +1620,42 @@ const getParagraphStyleForElement = (id, index = 0, text = null) => {
 const applyParagraphStyleField = (field, value) => {
     if (!selectedElement.value || !state.selectedElementId) return;
 
-    const editorRef = richEditorRefs.value[state.selectedElementId];
-    if (!editorRef) return;
+    const styleSourceId = getLinkedTextStyleSourceId(state.selectedElementId);
+    const layout = state.elementLayout[styleSourceId];
+    if (!layout) return;
 
-    if (editingElementId.value === state.selectedElementId) {
-        editorRef.applyStyle(field, value);
+    const sourceText = getElementText(styleSourceId);
+    const styles = ensureParagraphStyles(layout, sourceText);
+    const applyToStyle = (style) => {
+      style[field] = value;
+    };
+
+    if (editingElementId.value === state.selectedElementId && paragraphSelection.active) {
+      const start = clamp(Math.min(paragraphSelection.start, paragraphSelection.end), 0, Math.max(0, styles.length - 1));
+      const end = clamp(Math.max(paragraphSelection.start, paragraphSelection.end), 0, Math.max(0, styles.length - 1));
+      for (let index = start; index <= end; index++) {
+        applyToStyle(styles[index]);
+      }
+    } else if (editingElementId.value === state.selectedElementId) {
+      applyToStyle(styles[clamp(selectedParagraphIndex.value, 0, Math.max(0, styles.length - 1))]);
     } else {
+      styles.forEach(applyToStyle);
+    }
+
+    if (field === 'fontSize' || field === 'fontFamily' || field === 'fontWeight' || field === 'italic' || field === 'letterSpacing' || field === 'lineHeight' || field === 'color') {
+      layout[field] = value;
+    }
+
+    const editorRef = richEditorRefs.value[state.selectedElementId];
+
+    if (editorRef && editingElementId.value === state.selectedElementId) {
+        editorRef.applyStyle(field, value);
+    } else if (editorRef) {
         editorRef.applyStyleAll(field, value);
+    }
+
+    if (state.customElements?.[styleSourceId]?.type === 'linkedText') {
+      recalculateLinkedTextAllocations(getLinkedTextChainHead(styleSourceId));
     }
 };
 const selectedTextStyle = computed(() => {
@@ -4416,7 +4453,22 @@ watch(
     const linkedLayouts = {};
     Object.entries(state.elementLayout).forEach(([key, layout]) => {
       if (layout.linkedTextGroupId) {
-        linkedLayouts[key] = { w: layout.w, h: layout.h, groupId: layout.linkedTextGroupId };
+        linkedLayouts[key] = {
+          w: layout.w,
+          h: layout.h,
+          groupId: layout.linkedTextGroupId,
+          fontSize: layout.fontSize,
+          fontFamily: layout.fontFamily,
+          fontWeight: layout.fontWeight,
+          italic: layout.italic,
+          underline: layout.underline,
+          uppercase: layout.uppercase,
+          textAlign: layout.textAlign,
+          color: layout.color,
+          letterSpacing: layout.letterSpacing,
+          lineHeight: layout.lineHeight,
+          paragraphStyles: layout.paragraphStyles,
+        };
       }
     });
     return JSON.stringify(linkedLayouts);
