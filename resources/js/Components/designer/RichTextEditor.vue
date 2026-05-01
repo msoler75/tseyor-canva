@@ -87,6 +87,7 @@ const props = defineProps({
     displayHtml: { type: String, default: '' },
     overflowHtml: { type: String, default: '' },
     fullTextHtml: { type: String, default: '' },
+    tailHtml: { type: String, default: '' },
     showOverflow: { type: Boolean, default: false },
     linkedTextActive: { type: Boolean, default: false },
     editorTopOffset: { type: Number, default: 0 },

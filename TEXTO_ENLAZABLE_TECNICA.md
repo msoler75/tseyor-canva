@@ -77,7 +77,32 @@ const overflowHtml = isLastInChain ? buildHtmlFromUnitSlice(overflowSlice) : '';
 
 **Cálculo:** `buildHtmlFromUnitSlice(allUnits)` — incluye TODAS las unidades, sin límite de altura.
 
-**Uso:** Concebido originalmente para la capa base (como "ghost" del texto completo). Actualmente el template usa `overflowHtml` en la capa base (no `fullTextHtml`), pero la propiedad se mantiene disponible para futuros usos.
+**Uso:** Referencia del texto completo. Puede usarse para la capa base o para depuración.
+
+---
+
+### `tailHtml`
+
+**Definición:** El HTML del texto que va **desde el inicio del fragmento de esta caja hasta el final** del documento completo. A diferencia de `fullTextHtml` (que incluye TODO desde el principio), `tailHtml` solo contiene el texto desde donde empieza esta caja hacia adelante.
+
+**Cálculo:** `buildHtmlFromUnitSlice(inputSlice)` donde `inputSlice = allUnits.slice(unitIdx, totalUnits)` — es el slice de unidades desde la posición actual de `unitIdx` hasta el final.
+
+**Ejemplo concreto (3 cajas):**
+```
+Texto completo: "AAAA BBBB CCCC DDDD EEEE FFFF"
+                 └── CAJA 1 ──┘└── CAJA 2 ──┘└─ CAJA 3 ─┘
+
+CAJA 1: fullTextHtml = "AAAA BBBB CCCC DDDD EEEE FFFF"  (TODO)
+         tailHtml     = "AAAA BBBB CCCC DDDD EEEE FFFF"  (desde caja 1 = TODO)
+
+CAJA 2: fullTextHtml = "AAAA BBBB CCCC DDDD EEEE FFFF"  (TODO)
+         tailHtml     = "CCCC DDDD EEEE FFFF"            (desde caja 2)
+
+CAJA 3: fullTextHtml = "AAAA BBBB CCCC DDDD EEEE FFFF"  (TODO)
+         tailHtml     = "EEEE FFFF"                      (desde caja 3)
+```
+
+**Uso:** Permite saber desde cualquier caja cuál es el texto restante hacia adelante, sin incluir el texto de cajas anteriores. Útil para renderizados parciales o para cálculos que necesiten el "resto del documento" desde un punto concreto.
 
 ---
 
@@ -173,6 +198,7 @@ const fitsInBox = isLastInChain && (unitIdx + fitUnits) >= totalUnits;
 | `displayHtml` | `String` | `''` | HTML del fragmento que cabe en la caja (equivale a la propiedad `html` del fragmento) |
 | `overflowHtml` | `String` | `''` | HTML del texto que desborda la cadena (solo en la última caja). Renderizado en la capa base |
 | `fullTextHtml` | `String` | `''` | HTML completo del texto fuente (idéntico para todas las cajas de una cadena) |
+| `tailHtml` | `String` | `''` | HTML desde el inicio de esta caja hasta el final del documento (no incluye texto de cajas anteriores) |
 | `showOverflow` | `Boolean` | `false` | Si se debe mostrar el texto overflow (cadena activa/seleccionada) |
 | `linkedTextActive` | `Boolean` | `false` | Si algún elemento de la cadena está seleccionado/activo/edición |
 | `editorTopOffset` | `Number` | `0` | Desplazamiento vertical en px para alinear el editor TipTap con el fragmento de esta caja |

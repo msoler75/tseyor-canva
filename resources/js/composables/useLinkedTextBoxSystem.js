@@ -92,7 +92,7 @@ export function createLinkedTextBoxSystem() {
       if (!fullHtml || fullHtml.trim() === '') {
         // Texto vacío: todas las cajas vacías
         chainLayouts.forEach(layout => {
-          system.fragments[layout.id] = { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
+          system.fragments[layout.id] = { html: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
         });
         return;
       }
@@ -383,7 +383,8 @@ export function createLinkedTextBoxSystem() {
           system.fragments[layout.id] = {
             html: '',
             overflowHtml: '',
-            fullTextHtml: '', // No hay texto de entrada
+            fullTextHtml: '',
+            tailHtml: '',
             editorTopOffset: 0,
             editorTextOffset: 0,
             fitsInBox: true
@@ -401,7 +402,8 @@ export function createLinkedTextBoxSystem() {
           system.fragments[layout.id] = {
             html: '',
             overflowHtml: buildHtmlFromUnitSlice(allUnits.slice(unitIdx)),
-            fullTextHtml: buildHtmlFromUnitSlice(inputSlice),
+            fullTextHtml: '',
+            tailHtml: buildHtmlFromUnitSlice(inputSlice),
             editorTopOffset: 0,
             editorTextOffset: 0,
             fitsInBox: false
@@ -451,6 +453,7 @@ export function createLinkedTextBoxSystem() {
         const overflowHtml = isLastInChain ? buildHtmlFromUnitSlice(overflowSlice) : ''; // Solo la última caja puede tener overflow
 
         const fullTextHtml = buildHtmlFromUnitSlice(allUnits); // Documento completo de toda la secuencia (para capa inferior)
+        const tailHtml = buildHtmlFromUnitSlice(inputSlice); // Texto desde esta caja hasta el final (inputSlice = allUnits.slice(unitIdx))
         // fitsInBox: true solo si es la última caja Y no hay más palabras después
         const fitsInBox = isLastInChain && (unitIdx + fitUnits) >= totalUnits;
 
@@ -458,7 +461,8 @@ export function createLinkedTextBoxSystem() {
         system.fragments[layout.id] = {
           html: visibleHtml,
           overflowHtml: overflowHtml,
-          fullTextHtml: fullTextHtml, // Nuevo: texto completo para capa inferior (sin límite de altura)
+          fullTextHtml: fullTextHtml, // Texto completo para capa inferior (sin límite de altura)
+          tailHtml: tailHtml,         // Texto desde el inicio de esta caja hasta el final del documento
           editorTopOffset,
           editorTextOffset,
           fitsInBox: fitsInBox
@@ -588,8 +592,8 @@ export function createLinkedTextBoxSystem() {
     */
    function getFragmentForBox(groupId, boxId) {
      const system = systemsMap.get(groupId);
-     if (!system) return { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
-     return system.fragments[boxId] || { html: '', overflowHtml: '', fullTextHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
+      if (!system) return { html: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
+      return system.fragments[boxId] || { html: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
    }
 
   /**
