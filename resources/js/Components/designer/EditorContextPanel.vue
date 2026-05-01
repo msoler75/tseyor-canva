@@ -52,6 +52,7 @@ const props = defineProps({
   normalizePickerColor: Function,
   imageInputRefSetter: Function,
   addTextElement: Function,
+  addLinkedTextElement: Function,
   triggerImagePicker: Function,
   onImagePicked: Function,
   addImageFromUrl: Function,
@@ -114,6 +115,7 @@ const {
   normalizePickerColor,
   imageInputRefSetter,
   addTextElement,
+  addLinkedTextElement,
   triggerImagePicker,
   onImagePicked,
   addImageFromUrl,
@@ -286,8 +288,18 @@ const endPanelCloseDrag = () => {
                       class="block text-base-content"
                     >{{ preset.label }}</span>
                   </button>
+                  <button
+                    type="button"
+                    class="w-full rounded-xl border border-base-300/70 bg-base-100/70 px-4 py-3 text-left transition hover:border-primary/50 hover:bg-primary/10"
+                    @click="addLinkedTextElement"
+                  >
+                    <span class="block text-base-content">
+                      <Icon icon="ph:link-bold" class="inline-block mr-2" />
+                      Texto Enlazado
+                    </span>
+                  </button>
                 </div>
-
+                
                 <!-- Opciones de imagen (inline) -->
                 <div v-if="imagePanelOpen" class="card border border-base-300 bg-base-100/80">
                   <div class="card-body p-4">

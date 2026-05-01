@@ -20,12 +20,12 @@ defineProps({
   },
 });
 
-const emit = defineEmits(['openTextPanel', 'openImagePanel', 'openShapePanel', 'selectBackgroundPanel', 'addLinkedText']);
+const emit = defineEmits(['openTextPanel', 'openImagePanel', 'openShapePanel', 'selectBackgroundPanel']);
 </script>
 
 <template>
   <div class="flex items-center gap-2 overflow-x-auto border-t border-base-300 bg-base-100/95 p-2 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] md:flex-col md:overflow-visible md:border-r md:border-t-0 md:p-3 md:shadow-none xl:border-b-0">
-<button
+    <button
       type="button"
       class="flex h-16 min-w-20 flex-col items-center justify-center gap-1 rounded-2xl border transition md:h-14 md:w-14 md:min-w-0"
       :class="textPanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
@@ -34,18 +34,6 @@ const emit = defineEmits(['openTextPanel', 'openImagePanel', 'openShapePanel', '
     >
       <span class="text-2xl font-bold leading-none">T</span>
       <span class="text-[9px] font-medium">Texto</span>
-    </button>
-
-    <button
-      type="button"
-      class="flex h-16 min-w-20 flex-col items-center justify-center gap-1 rounded-2xl border border-base-300 bg-base-100/80 transition hover:border-primary/50 hover:bg-primary/10 md:h-14 md:w-14 md:min-w-0"
-      title="Agregar Texto Enlazado"
-      @click="emit('addLinkedText')"
-    >
-      <span class="text-2xl font-bold leading-none relative">
-        T<span class="absolute -right-1 -bottom-1 text-[10px] text-primary">⤷</span>
-      </span>
-      <span class="text-[9px] font-medium">Enlazado</span>
     </button>
 
     <button

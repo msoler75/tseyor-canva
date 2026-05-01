@@ -5188,6 +5188,7 @@ watch(
             :normalize-picker-color="normalizePickerColor"
             :image-input-ref-setter="setImageInputRef"
             :add-text-element="addTextElement"
+            :add-linked-text-element="addLinkedTextElement"
             :trigger-image-picker="triggerImagePicker"
             :on-image-picked="onImagePicked"
             :add-image-from-url="addImageFromUrl"
