@@ -504,7 +504,10 @@ watch(() => props.displayMode, (val) => {
 });
 
 watch(() => props.fullTextHtml, (html) => {
-    if (!html || !editor?.value || props.displayMode) return;
+    // While the user is typing, TipTap must remain the source of truth.
+    // The parent re-emits the same linked fullTextHtml after redistribution;
+    // calling setContent here replaces the document and moves selection to end.
+    if (suppressWatch || !html || !editor?.value || props.displayMode || props.editable) return;
     const currentText = editor.value.getText() || '';
     const currentHtml = editor.value.getHTML() || '';
     const tempDiv = document.createElement('div');
@@ -518,7 +521,7 @@ watch(() => props.fullTextHtml, (html) => {
 });
 
 watch(() => [props.text, props.paragraphStyles], ([newText, newStyles]) => {
-    if (suppressWatch || !editor?.value || props.displayMode) return;
+    if (suppressWatch || !editor?.value || props.displayMode || props.editable) return;
     if (props.fullTextHtml) return;
     const current = extractFromDoc(editor.value.state.doc);
     const textChanged = current.text !== newText;
