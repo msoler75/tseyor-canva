@@ -3590,6 +3590,10 @@ const updateElementMeasurement = (id, node) => {
     if (!sourceLayout || !sourceElement) return;
 
     const cloneId = createElementId(sourceElement.type || 'element');
+    const oldNextId = sourceElement.type === 'linkedText' ? (sourceLayout.linkedTextNext ?? null) : null;
+    const linkedTextGroupId = sourceElement.type === 'linkedText'
+      ? (sourceLayout.linkedTextGroupId || `linked-group-${Date.now()}`)
+      : null;
     const cloneLayout = {
       ...sourceLayout,
       x: (sourceLayout.x ?? 0) + 18,
@@ -3602,7 +3606,26 @@ const updateElementMeasurement = (id, node) => {
 
     placeInsideCanvas(cloneLayout);
 
-    if (sourceElement.type === 'text') {
+    if (sourceElement.type === 'linkedText') {
+      sourceLayout.linkedTextGroupId = linkedTextGroupId;
+      sourceLayout.linkedTextNext = cloneId;
+
+      cloneLayout.linkedTextGroupId = linkedTextGroupId;
+      cloneLayout.linkedTextPrev = sourceId;
+      cloneLayout.linkedTextNext = oldNextId;
+
+      if (oldNextId && state.elementLayout?.[oldNextId]) {
+        state.elementLayout[oldNextId].linkedTextPrev = cloneId;
+        state.elementLayout[oldNextId].linkedTextGroupId = linkedTextGroupId;
+      }
+
+      state.customElements[cloneId] = {
+        id: cloneId,
+        type: 'linkedText',
+        label: `${sourceElement.label} continuación`,
+        text: '',
+      };
+    } else if (sourceElement.type === 'text') {
       state.customElements[cloneId] = {
         type: 'text',
         label: `${sourceElement.label} copia`,
@@ -3631,6 +3654,16 @@ const updateElementMeasurement = (id, node) => {
 
     state.elementLayout[cloneId] = cloneLayout;
     state.selectedElementId = cloneId;
+
+    if (sourceElement.type === 'linkedText') {
+      const headId = getLinkedTextChainHead(sourceId);
+      const chain = getLinkedTextChain(headId);
+      chain.forEach((item, index) => {
+        item.layout.linkedTextChainIndex = index;
+        item.layout.linkedTextGroupId = linkedTextGroupId;
+      });
+      recalculateLinkedTextAllocations(headId);
+    }
   };
 
   const deleteSelectedElement = () => {
