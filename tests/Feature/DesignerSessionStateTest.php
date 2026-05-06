@@ -394,7 +394,7 @@ class DesignerSessionStateTest extends TestCase
                 'subtitle' => 'Subtitulo',
                 'date' => '25 abril',
                 'location' => 'Plaza Mayor',
-                'teacher' => 'MarÃ­a López',
+                'teacher' => 'María López',
                 'price' => 'Gratis',
                 'contact' => 'Info',
                 'extra' => 'Extra',

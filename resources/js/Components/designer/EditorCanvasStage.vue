@@ -107,9 +107,15 @@ const rotatePoint = (x, y, cx, cy, angleDeg) => {
   };
 };
 
+const sourceOnThisPage = computed(() => {
+  if (!props.linkedTextLink?.active || !props.linkedTextLink.sourceId) return false;
+  return !!props.state?.elementLayout?.[props.linkedTextLink.sourceId];
+});
+
 const getLinkSourcePosition = computed(() => {
   if (!props.linkedTextLink?.active || !props.linkedTextLink.sourceId) return null;
-  const layout = layoutFor(props.linkedTextLink.sourceId);
+  if (!sourceOnThisPage.value) return null;
+  const layout = props.state?.elementLayout?.[props.linkedTextLink.sourceId];
   if (!layout) return null;
   // Botón en bottom-1 right-1 (24x24px). Tailwind bottom-1 = 4px, right-1 = 4px
   // Centro del botón: (x + w - 4px - 12px, y + h - 4px - 12px)
@@ -136,9 +142,22 @@ const getLinkTargetPosition = computed(() => {
   }
   const targetLayout = layoutFor(targetId);
   if (!targetLayout) return null;
+
+  // Calcular offset entre páginas para el Y cuando target está en otra página
+  const allPages = props.state?.pages ?? [];
+  const sourcePageId = props.activePageId;
+  const sourceIndex = allPages.findIndex(p => p.id === sourcePageId);
+  let targetIndex = allPages.findIndex(p => !!p.elementLayout?.[targetId] || !!p.customElements?.[targetId]);
+  if (targetIndex < 0) targetIndex = sourceIndex; // mismo página o fallback
+  const pageHeight = parseFloat(props.canvasElementStyle?.height) || 0;
+  const pageGap = 64;
+  const yOffset = (targetIndex >= 0 && sourceIndex >= 0)
+    ? (targetIndex - sourceIndex) * (pageHeight + pageGap)
+    : 0;
+
   // Esquina superior izquierda (sin rotación)
   const x = targetLayout.x ?? 0;
-  const y = targetLayout.y ?? 0;
+  const y = (targetLayout.y ?? 0) + yOffset;
   // Aplicar rotación alrededor del centro de la caja destino
   const cx = x + (targetLayout.w ?? 300) / 2;
   const cy = y + (targetLayout.h ?? 120) / 2;
@@ -504,7 +523,7 @@ const isLinkedTextChainActive = (boxId) => {
         </div>
 
         <svg
-          v-if="linkedTextLink?.active && linkedTextLink.sourceId"
+          v-if="sourceOnThisPage && linkedTextLink?.active && linkedTextLink.sourceId"
           class="pointer-events-none absolute inset-0 z-50 overflow-visible"
           style="width: 100%; height: 100%;"
         >

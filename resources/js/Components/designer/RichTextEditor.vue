@@ -763,12 +763,16 @@ const logLinkedTextStyles = () => {
     -webkit-text-stroke: inherit;
     position: relative;
     z-index: 20;
+    caret-color: #ff8c00;
 }
 .ProseMirror p {
     margin: 0;
     padding: 0;
     text-shadow: inherit;
     -webkit-text-stroke: inherit;
+}
+.ProseMirror-gapcursor:after {
+    border-top-color: #ff8c00 !important;
 }
 .linked-text-display {
     outline: none;

@@ -778,7 +778,7 @@ const fontOptions = (page.props.fontFamilies ?? []).map(f => ({
   family: f,
 }));
 const textPropertyTabs = [
-    { id: 'typography', label: 'TipografÃ­a' , class: 'order-first text-xl border-1 border-gray-500'},
+    { id: 'typography', label: 'Tipografía' , class: 'order-first text-xl border-1 border-gray-500'},
     // { id: 'color', label: 'A', labelClass:'text-shadow-xs text-xl border-b-3',class: '' },
     { id: 'fontSize', icon: 'radix-icons:font-size', label: 'Tamaño', title: 'Tamaño', class: 'order-first md:hidden' },
     { id: 'format', icon: 'mdi:format-text', label: 'Formato', title: 'Formato', class: 'order-last md:hidden' },
@@ -813,7 +813,7 @@ const baseTextElementIds = new Set(['title', 'subtitle', 'meta', 'contact', 'ext
 const textPresets = [
   {
     id: 'heading',
-    label: 'TÃ­tulo',
+    label: 'Título',
     preview: 'Agrega un titulo',
     fontSize: 52,
     fontWeight: 'bold',
@@ -822,7 +822,7 @@ const textPresets = [
   },
   {
     id: 'medium',
-    label: 'SubtÃ­tulo',
+    label: 'Subtítulo',
     preview: 'Agrega un subtitulo',
     fontSize: 28,
     fontWeight: 'bold',
@@ -846,7 +846,7 @@ const shapeCategories = [
     shapes: [
       { id: 'rectangle', label: 'Rectángulo' },
       { id: 'rectangle-outline', label: 'Rectángulo recto' },
-      { id: 'circle', label: 'CÃ­rculo' },
+      { id: 'circle', label: 'Círculo' },
       { id: 'triangle-up', label: 'Triángulo' },
       { id: 'triangle-right-angle', label: 'Triángulo rectángulo' },
       { id: 'parallelogram', label: 'Paralelogramo' },
@@ -855,7 +855,7 @@ const shapeCategories = [
   },
   {
     id: 'poligonos',
-    label: 'PolÃ­gonos',
+    label: 'Polígonos',
     shapes: [
       { id: 'pentagon', label: 'Pentágono' },
       { id: 'hexagon', label: 'Hexágono' },
@@ -981,8 +981,8 @@ const isTemplateBaseEditor = computed(() => Boolean(
   || currentDesignTemplate.value?.base_design_uuid === currentDesignUuid.value
 ));
 const templateFieldLabels = {
-  title: 'TÃ­tulo',
-  subtitle: 'SubtÃ­tulo',
+  title: 'Título',
+  subtitle: 'Subtítulo',
   meta: 'Fecha / hora',
   date: 'Fecha',
   time: 'Hora',
@@ -994,8 +994,8 @@ const templateFieldLabels = {
   extra: 'Texto adicional',
 };
 const coreTemplateFieldDefinitions = [
-  { id: 'title', key: 'title', label: 'TÃ­tulo', type: 'text', description: 'Campo principal del diseño.' },
-  { id: 'subtitle', key: 'subtitle', label: 'SubtÃ­tulo', type: 'text', description: 'Texto secundario o claim.' },
+  { id: 'title', key: 'title', label: 'Título', type: 'text', description: 'Campo principal del diseño.' },
+  { id: 'subtitle', key: 'subtitle', label: 'Subtítulo', type: 'text', description: 'Texto secundario o claim.' },
   { id: 'meta', key: 'meta', label: 'Fecha / hora', type: 'text', description: 'Campo combinado de fecha y hora del diseño.' },
   { id: 'contact', key: 'contact', label: 'Contacto', type: 'text', description: 'Información de contacto o inscripción.' },
   { id: 'extra', key: 'extra', label: 'Texto adicional', type: 'textarea', description: 'Notas, requisitos o información complementaria.' },
@@ -1031,8 +1031,8 @@ const templateFieldDefinitions = computed(() => {
   return Array.from(merged.values());
 });
 const templateFieldDefaultTexts = {
-  title: 'TÃ­tulo de prueba',
-  subtitle: 'SubtÃ­tulo de prueba',
+  title: 'Título de prueba',
+  subtitle: 'Subtítulo de prueba',
   date: 'Fecha de prueba',
   time: 'Hora de prueba',
   location: 'Lugar de prueba',
@@ -1301,7 +1301,7 @@ const recalculateLinkedTextAllocations = (headId) => {
     const hasFragment = Boolean(system.fragments && Object.prototype.hasOwnProperty.call(system.fragments, boxId));
     const fragment = linkedTextBoxSystem.getFragmentForBox(groupId, boxId);
 
-    // Si todavÃ­a no hay fragmento, usar el texto del elemento head directamente
+    // Si todavía no hay fragmento, usar el texto del elemento head directamente
     if (!hasFragment) {
       const headElement = linkedTextElementFromAnyPage(headId);
       const rawText = headElement?.text || '';
@@ -1408,7 +1408,7 @@ const hasMultiplePages = computed(() => documentPages.value.length > 1);
 const canDeleteDocumentPage = computed(() => documentPages.value.length > minimumDocumentPageCount());
 const physicalPageLabel = (pageIndex) => (
   isBrochureDocument()
-    ? `Página fÃ­sica ${pageIndex + 1} Â· folleto ${brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length).join('-')}`
+    ? `Página física ${pageIndex + 1} Â· folleto ${brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length).join('-')}`
     : `Página ${pageIndex + 1}`
 );
 const brochurePanelLabels = (pageIndex) => brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length)
@@ -2570,7 +2570,7 @@ const addLinkedTextElement = () => {
       id,
       type: 'linkedText',
       label: 'Texto enlazado',
-      text: 'Escribe tu texto aquÃ­...',
+      text: 'Escribe tu texto aquí...',
     },
   };
   state.elementLayout = {
@@ -2996,7 +2996,7 @@ const syncUploadedAssetsLibrary = async () => {
       });
     });
   } catch (error) {
-    console.error('No se pudo cargar la librerÃ­a de imágenes del usuario', error);
+    console.error('No se pudo cargar la librería de imágenes del usuario', error);
   }
 };
 
@@ -3452,7 +3452,7 @@ const onImagePicked = async (event) => {
 
   imagePanelTab.value = 'uploads';
   for (const file of files) {
-    // Desde el picker actÃºa como subida a la galerÃ­a del usuario; la inserción en el diseño queda a elección posterior.
+    // Desde el picker actÃºa como subida a la galería del usuario; la inserción en el diseño queda a elección posterior.
     // eslint-disable-next-line no-await-in-loop
     await createPendingUploadedImageFromFile(file, { openUploadsPanel: true });
   }
@@ -5111,7 +5111,7 @@ const handleDuplicateDesign = async () => {
     }
   }
 
-  const currentTitle = (state.designTitle || 'Diseño sin tÃ­tulo').trim();
+  const currentTitle = (state.designTitle || 'Diseño sin título').trim();
   state.designTitle = currentTitle.toLowerCase().startsWith('copia de ')
     ? currentTitle
     : `Copia de ${currentTitle}`;
@@ -5125,10 +5125,10 @@ const handleDuplicateDesign = async () => {
 };
 
 const handleRenameDesign = async () => {
-  const nextTitle = window.prompt('Nuevo tÃ­tulo del diseño', state.designTitle || 'Diseño sin tÃ­tulo');
+  const nextTitle = window.prompt('Nuevo título del diseño', state.designTitle || 'Diseño sin título');
   if (nextTitle === null) return;
 
-  state.designTitle = nextTitle.trim() || 'Diseño sin tÃ­tulo';
+  state.designTitle = nextTitle.trim() || 'Diseño sin título';
   state.designTitleManual = true;
 
   try {
@@ -5161,7 +5161,7 @@ const ensurePersistedDesign = async () => {
 
   const response = await axios.post(designsStoreEndpoint.value, {
     state: JSON.parse(JSON.stringify(state)),
-    name: state.designTitle || 'Diseño sin tÃ­tulo',
+    name: state.designTitle || 'Diseño sin título',
   });
   const uuid = response.data?.design?.uuid;
   if (!uuid) {
@@ -5339,7 +5339,7 @@ const saveTemplateForm = async () => {
   const categories = templateForm.categoryIds.map((item) => String(item).trim()).filter(Boolean);
   const objectives = templateForm.objectiveIds.map((item) => String(item).trim()).filter(Boolean);
   if (!templateForm.title.trim() || !categories.length || !objectives.length) {
-    window.alert('La plantilla necesita tÃ­tulo, al menos una categorÃ­a y al menos un objetivo.');
+    window.alert('La plantilla necesita título, al menos una categoría y al menos un objetivo.');
     return;
   }
 
@@ -5404,7 +5404,7 @@ const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) =
     try {
       commitTextEdit();
     } catch (_) {
-      // no-op: si el editor rico todavÃ­a no está listo, continuamos igualmente
+      // no-op: si el editor rico todavía no está listo, continuamos igualmente
     }
     const targetSurface = canvasDimensionsForDesignerState(assistantState);
     assistantState.stateRevision = bumpRevision(state.stateRevision);
@@ -5499,11 +5499,11 @@ const isPlaceholderDesignTitle = (value) => {
   const normalized = normalizeDesignTitleCandidate(value);
   return !normalized || [
     'titulo',
-    'tÃ­tulo',
+    'título',
     'agrega un titulo',
-    'agrega un tÃ­tulo',
+    'agrega un título',
     'diseno sin titulo',
-    'diseño sin tÃ­tulo',
+    'diseño sin título',
   ].includes(normalized);
 };
 
@@ -6065,7 +6065,7 @@ watch(
                         @reset-rotation="resetRotation"
                         @start-resize="startResize($event.event, $event.id, $event.handle)"
                       />
-                      <!-- GuÃ­as de alineación -->
+                      <!-- Guías de alineación -->
                       <div v-if="documentPage.id === workingDocumentPageId && guides.length" class="pointer-events-none absolute inset-0 z-[5000]">
                         <div
                           v-for="(guide, index) in guides"
