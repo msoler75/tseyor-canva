@@ -678,28 +678,29 @@ export function createLinkedTextBoxSystem() {
     }
 
    /**
-    * Tokenizar texto preservando signos y espacios como tokens independientes
-    * Ejemplo: "Hola, mundo!" => ["Hola", ",", " ", "mundo", "!"]
+    * Tokenizar texto preservando espacios como tokens independientes.
+    * Signos de puntuacion y guion se adhieren al token de texto adyacente
+    * para que no queden colgando al final de la linea separados de su palabra.
+    * Ejemplo: "Hola, mundo!" => ["Hola,", " ", "mundo!"]
     */
     function tokenizeText(text) {
-       // Patrón: separa manteniendo signos de puntuación y espacios
-       // \s+ : espacios (se mantienen como tokens)
-       // [.,;:!?()\[\]{}"'`´…]+ : signos de puntuación (se mantienen como tokens)
-       // [\w\p{L}]+ : palabras alfanuméricas + letras acentuadas (ñ, é, ç, etc.)
-       // [^\s\w\p{L}.,;:!?()\[\]{}"'`´…]+ : otros caracteres (emojis, etc.)
-       const regex = /(\s+)|([.,;:!?()[\]{}"'`´…]+)|([\w\p{L}]+)|([^\s\w\p{L}.,;:!?()[\]{}"'`´…]+)/gu;
+       // Patron: \s+ separado; palabra+signos unido en un solo token
+       // [\w\p{L}.,;:!?()\[\]{}"'`´…-]+ : palabra completa con signos pegados
+       // [^\s\w\p{L}.,;:!?()\[\]{}"'`´…-]+ : otros (emojis, etc.)
+       const regex = /(\s+)|([\w\p{L}.,;:!?()[\]{}"'`´…-]+)|([^\s\w\p{L}.,;:!?()[\]{}"'`´…-]+)/gu;
        const tokens = [];
        let match;
-       while ((match = regex.exec(text)) !== null) {
-         if (match[1]) {
-           // Espacios: preservar el texto original (puede ser espacios, tabs, newlines)
-           tokens.push(match[1]);
-         } else if (match[2] || match[3] || match[4]) {
-           tokens.push(match[0]);
-         }
-       }
-       return tokens.filter(t => t !== '');
-     }
+        while ((match = regex.exec(text)) !== null) {
+          if (match[1]) {
+            // Espacios: preservar el texto original (puede ser espacios, tabs, newlines)
+            tokens.push(match[1]);
+          } else {
+            // Palabras con signos pegados, u otros (emojis, etc.)
+            tokens.push(match[0]);
+          }
+        }
+        return tokens.filter(t => t !== '');
+      }
 
 
 
