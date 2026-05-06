@@ -6023,6 +6023,7 @@ watch(
                     :canvas-ref-setter="documentPage.id === activePageId ? setCanvasRef : null"
                     :rich-editor-ref-setter="documentPage.id === workingDocumentPageId ? setRichEditorRef : null"
                     :linked-text-link="linkedTextLink"
+                    :chain-active-element-id="editingElementId || state.selectedElementId"
                     :active-linked-text-box="activeLinkedTextBox"
                     :hovered-field-key="hoveredFieldKey"
                     @canvas-pointer-down="handlePageCanvasPointerDownWithPinch(documentPage.id, $event)"

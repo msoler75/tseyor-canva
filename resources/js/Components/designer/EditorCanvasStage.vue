@@ -45,8 +45,9 @@ const props = defineProps({
   showPermanentLinkLines: Boolean,
   canvasRefSetter: Function,
   richEditorRefSetter: Function,
-  linkedTextLink: Object,
-  activeLinkedTextBox: String,
+   linkedTextLink: Object,
+   activeLinkedTextBox: String,
+   chainActiveElementId: String,
 });
 
 const emit = defineEmits([
@@ -308,19 +309,10 @@ const isLinkedTextChainActive = (boxId) => {
   const boxLayout = layoutFor(boxId);
   if (!boxLayout?.linkedTextGroupId) return false;
 
-  // Si hay edición activa en cualquier caja de la cadena
-  if (props.editingElementId) {
-    const editingLayout = layoutFor(props.editingElementId);
-    if (editingLayout?.linkedTextGroupId === boxLayout.linkedTextGroupId) {
-      return true;
-    }
-  }
-
-  // Si hay selección activa en cualquier caja de la cadena
-  const selectedId = props.state?.selectedElementId;
-  if (selectedId) {
-    const selectedLayout = layoutFor(selectedId);
-    if (selectedLayout?.linkedTextGroupId === boxLayout.linkedTextGroupId) {
+  const activeId = props.chainActiveElementId;
+  if (activeId) {
+    const activeLayout = layoutFor(activeId);
+    if (activeLayout?.linkedTextGroupId === boxLayout.linkedTextGroupId) {
       return true;
     }
   }
