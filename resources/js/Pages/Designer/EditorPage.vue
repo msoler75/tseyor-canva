@@ -66,7 +66,7 @@ const syncEditorViewport = () => {
     : false;
 };
 
-// Estado para mostrar el modal de exportaciÃ³n
+// Estado para mostrar el modal de exportación
 const exportDialogOpen = ref(false);
 const templateFormOpen = ref(false);
 const templateFormSaving = ref(false);
@@ -84,7 +84,7 @@ const templateForm = reactive({
   sortOrder: 0,
 });
 
-// Estado y lÃ³gica del asistente modal.
+// Estado y lógica del asistente modal.
 const assistantOpen = ref(false);
 const assistantStep = ref('objective');
 const openAssistant = (step = 'objective', resetCurrentDesign = true) => {
@@ -126,6 +126,7 @@ const linkedTextOverlayRevision = ref(0);
 const copiedElements = ref([]);
 const legacyPersistedActivePageId = Reflect.get(state, 'activePageId');
 const activePageId = ref(String(legacyPersistedActivePageId ?? state.pages?.[0]?.id ?? 'page-1'));
+const workingDocumentPageId = ref(activePageId.value);
 const visuallyFocusedPageId = ref(null);
 let visiblePageFrame = null;
 let isSwitchingDocumentPage = false;
@@ -135,7 +136,7 @@ if (Object.prototype.hasOwnProperty.call(state, 'activePageId')) {
 const refreshDocumentPageList = () => {
   documentPageList.value = clonePlain(state.pages ?? []);
 };
-const clonePageFromState = (id = activePageId.value ?? createPageId()) => ({
+const clonePageFromState = (id = workingDocumentPageId.value ?? activePageId.value ?? createPageId()) => ({
   id,
   content: clonePlain(state.content ?? initialDesignerState.content),
   elementLayout: clonePlain(state.elementLayout ?? initialDesignerState.elementLayout),
@@ -196,6 +197,7 @@ const ensureDocumentPages = (hydrateActivePage = false) => {
   if (!Array.isArray(state.pages) || !state.pages.length) {
     const firstId = activePageId.value ?? createPageId();
     activePageId.value = firstId;
+    workingDocumentPageId.value = firstId;
     state.pages = [clonePageFromState(firstId), ...createBlankPages(minimumDocumentPageCount() - 1)];
     return;
   }
@@ -212,6 +214,7 @@ const ensureDocumentPages = (hydrateActivePage = false) => {
   if (!state.pages.length) {
     const firstId = createPageId();
     activePageId.value = firstId;
+    workingDocumentPageId.value = firstId;
     state.pages = [clonePageFromState(firstId), ...createBlankPages(minimumDocumentPageCount() - 1)];
   }
 
@@ -220,8 +223,11 @@ const ensureDocumentPages = (hydrateActivePage = false) => {
   if (!activePageId.value || !state.pages.some((page) => page.id === activePageId.value)) {
     activePageId.value = state.pages[0].id;
   }
+  if (!workingDocumentPageId.value || !state.pages.some((page) => page.id === workingDocumentPageId.value)) {
+    workingDocumentPageId.value = activePageId.value;
+  }
 
-  const activePage = state.pages.find((page) => page.id === activePageId.value);
+  const activePage = state.pages.find((page) => page.id === workingDocumentPageId.value);
   if (hydrateActivePage && activePage) {
     state.content = clonePlain(activePage.content);
     state.elementLayout = clonePlain(activePage.elementLayout);
@@ -230,13 +236,22 @@ const ensureDocumentPages = (hydrateActivePage = false) => {
 };
 const syncActivePageSnapshot = () => {
   ensureDocumentPages();
-  const activeIndex = state.pages.findIndex((page) => page.id === activePageId.value);
+  const activeIndex = state.pages.findIndex((page) => page.id === workingDocumentPageId.value);
   if (activeIndex === -1) return;
-  state.pages[activeIndex] = clonePageFromState(activePageId.value);
+  state.pages[activeIndex] = clonePageFromState(workingDocumentPageId.value);
   refreshDocumentPageList();
 };
+const setVisualActiveDocumentPage = (pageId) => {
+  if (!pageId) return;
+  activePageId.value = pageId;
+  visuallyFocusedPageId.value = pageId;
+  linkedTextOverlayRevision.value += 1;
+};
 const switchToPage = async (pageId, { resetSelection = false } = {}) => {
-  if (pageId === activePageId.value) return;
+  if (pageId === workingDocumentPageId.value) {
+    setVisualActiveDocumentPage(pageId);
+    return;
+  }
   try {
     commitTextEdit({ recalculateHeight: false, reason: 'switch-page' });
   } catch (_) {
@@ -247,6 +262,7 @@ const switchToPage = async (pageId, { resetSelection = false } = {}) => {
   if (!target) return;
   isSwitchingDocumentPage = true;
   activePageId.value = target.id;
+  workingDocumentPageId.value = target.id;
   visuallyFocusedPageId.value = target.id;
   try {
     state.content = clonePlain(target.content);
@@ -311,8 +327,15 @@ const updateVisuallyFocusedPage = () => {
   visuallyFocusedPageId.value = mostVisible?.id ?? activePageId.value;
   return mostVisible;
 };
-const activateVisibleDocumentPage = (mostVisible = resolveMostVisiblePageId()) => {
-  if (mostVisible?.id && mostVisible.id !== activePageId.value) {
+const activateVisibleDocumentPage = (mostVisible = resolveMostVisiblePageId(), { hydrate = true } = {}) => {
+  if (!mostVisible?.id) return;
+  if (!hydrate) {
+    if (mostVisible.id !== activePageId.value) {
+      setVisualActiveDocumentPage(mostVisible.id);
+    }
+    return;
+  }
+  if (mostVisible.id !== workingDocumentPageId.value || mostVisible.id !== activePageId.value) {
     switchToPage(mostVisible.id);
   }
 };
@@ -322,7 +345,7 @@ const handleDocumentPagesScroll = () => {
   visiblePageFrame = requestAnimationFrame(() => {
     visiblePageFrame = null;
     const mostVisible = updateVisuallyFocusedPage();
-    activateVisibleDocumentPage(mostVisible);
+    activateVisibleDocumentPage(mostVisible, { hydrate: false });
   });
 };
 const addDocumentPage = async ({ afterPageId = activePageId.value, duplicate = false } = {}) => {
@@ -383,7 +406,7 @@ const deleteDocumentPage = async (pageId) => {
     // no-op
   }
 
-  if (state.pages.some((page) => page.id === activePageId.value)) {
+  if (state.pages.some((page) => page.id === workingDocumentPageId.value)) {
     syncActivePageSnapshot();
   }
 
@@ -397,6 +420,10 @@ const deleteDocumentPage = async (pageId) => {
 
   if (deletedIds.includes(activePageId.value)) {
     activePageId.value = nextPage.id;
+  }
+
+  if (deletedIds.includes(workingDocumentPageId.value)) {
+    workingDocumentPageId.value = nextPage.id;
     state.content = clonePlain(nextPage.content);
     state.elementLayout = clonePlain(nextPage.elementLayout);
     state.customElements = clonePlain(nextPage.customElements);
@@ -450,7 +477,7 @@ const boundsFromLayoutSnapshots = (snapshots) => {
 };
 const transferElementsToPage = async (elementIds, targetPageId, event, pointerOffset = null, sourceSnapshotsOverride = null) => {
   const ids = [...new Set(elementIds)].filter((id) => id && state.elementLayout[id]);
-  if (!ids.length || !targetPageId || targetPageId === activePageId.value) return false;
+  if (!ids.length || !targetPageId || targetPageId === workingDocumentPageId.value) return false;
 
   const targetPage = state.pages.find((page) => page.id === targetPageId);
   if (!targetPage) return false;
@@ -758,7 +785,7 @@ const textPropertyTabs = [
     { id: 'spacing', icon: 'mdi:format-line-spacing', title: 'Interlineado y espaciado', class: 'order-last' },
     { id: 'opacity', icon: 'carbon:opacity', class: 'order-last', iconClass: 'text-3xl' },
     { id: 'effects', label: 'Efectos', class: 'order-last' },
-    { id: 'arrange', label: 'PosiciÃ³n' , class: 'order-last'},
+    { id: 'arrange', label: 'Posición' , class: 'order-last'},
 ];
 const imagePropertyTabs = [
   { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
@@ -768,7 +795,7 @@ const imagePropertyTabs = [
   { id: 'rotate', icon: '', label: 'Girar', class: 'order-last' },
   { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
   { id: 'effects', label: 'Efectos', class: 'order-last' },
-  { id: 'arrange', label: 'PosiciÃ³n', class: 'order-last' },
+  { id: 'arrange', label: 'Posición', class: 'order-last' },
   { id: 'set-as-background', icon: 'tabler:background', title: 'Fijar como fondo', class: 'order-last' },
 ];
 const shapePropertyTabs = [
@@ -776,7 +803,7 @@ const shapePropertyTabs = [
   { id: 'border', icon: 'radix-icons:border-width', title: 'Borde', class: 'order-first' },
   { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
   { id: 'effects', label: 'Efectos', class: 'order-last' },
-  { id: 'arrange', label: 'PosiciÃ³n', class: 'order-last' },
+  { id: 'arrange', label: 'Posición', class: 'order-last' },
 ];
 const backgroundPropertyTabs = [
   { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
@@ -815,13 +842,13 @@ const textPresets = [
 const shapeCategories = [
   {
     id: 'basicas',
-    label: 'BÃ¡sicas',
+    label: 'Básicas',
     shapes: [
-      { id: 'rectangle', label: 'RectÃ¡ngulo' },
-      { id: 'rectangle-outline', label: 'RectÃ¡ngulo recto' },
+      { id: 'rectangle', label: 'Rectángulo' },
+      { id: 'rectangle-outline', label: 'Rectángulo recto' },
       { id: 'circle', label: 'CÃ­rculo' },
-      { id: 'triangle-up', label: 'TriÃ¡ngulo' },
-      { id: 'triangle-right-angle', label: 'TriÃ¡ngulo rectÃ¡ngulo' },
+      { id: 'triangle-up', label: 'Triángulo' },
+      { id: 'triangle-right-angle', label: 'Triángulo rectángulo' },
       { id: 'parallelogram', label: 'Paralelogramo' },
       { id: 'trapezoid', label: 'Trapecio' },
     ],
@@ -830,9 +857,9 @@ const shapeCategories = [
     id: 'poligonos',
     label: 'PolÃ­gonos',
     shapes: [
-      { id: 'pentagon', label: 'PentÃ¡gono' },
-      { id: 'hexagon', label: 'HexÃ¡gono' },
-      { id: 'octagon', label: 'OctÃ¡gono' },
+      { id: 'pentagon', label: 'Pentágono' },
+      { id: 'hexagon', label: 'Hexágono' },
+      { id: 'octagon', label: 'Octágono' },
     ],
   },
   {
@@ -859,17 +886,17 @@ const shapeCategories = [
     id: 'bocadillos',
     label: 'Bocadillos',
     shapes: [
-      { id: 'callout', label: 'Bocadillo clÃ¡sico' },
+      { id: 'callout', label: 'Bocadillo clásico' },
       { id: 'callout-ellipse', label: 'Bocadillo elipse' },
       { id: 'callout-cloud', label: 'Bocadillo nube' },
-      { id: 'callout-burst', label: 'Bocadillo explosiÃ³n' },
+      { id: 'callout-burst', label: 'Bocadillo explosión' },
     ],
   },
   {
     id: 'marcos',
     label: 'Marcos',
     shapes: [
-      { id: 'frame', label: 'Marco clÃ¡sico' },
+      { id: 'frame', label: 'Marco clásico' },
       { id: 'frame-rounded', label: 'Marco redondeado' },
       { id: 'frame-thick', label: 'Marco grueso' },
       { id: 'frame-thin', label: 'Marco fino' },
@@ -881,7 +908,7 @@ const shapeCategories = [
     shapes: [
       { id: 'cross', label: 'Cruz' },
       { id: 'x-mark', label: 'Aspa' },
-      { id: 'heart', label: 'CorazÃ³n' },
+      { id: 'heart', label: 'Corazón' },
       { id: 'badge', label: 'Escudo' },
       { id: 'ribbon', label: 'Cinta' },
     ],
@@ -970,8 +997,8 @@ const coreTemplateFieldDefinitions = [
   { id: 'title', key: 'title', label: 'TÃ­tulo', type: 'text', description: 'Campo principal del diseÃ±o.' },
   { id: 'subtitle', key: 'subtitle', label: 'SubtÃ­tulo', type: 'text', description: 'Texto secundario o claim.' },
   { id: 'meta', key: 'meta', label: 'Fecha / hora', type: 'text', description: 'Campo combinado de fecha y hora del diseÃ±o.' },
-  { id: 'contact', key: 'contact', label: 'Contacto', type: 'text', description: 'InformaciÃ³n de contacto o inscripciÃ³n.' },
-  { id: 'extra', key: 'extra', label: 'Texto adicional', type: 'textarea', description: 'Notas, requisitos o informaciÃ³n complementaria.' },
+  { id: 'contact', key: 'contact', label: 'Contacto', type: 'text', description: 'Información de contacto o inscripción.' },
+  { id: 'extra', key: 'extra', label: 'Texto adicional', type: 'textarea', description: 'Notas, requisitos o información complementaria.' },
 ];
 const normalizeTemplateFieldDefinition = (field) => {
   const id = field?.id ?? field?.key;
@@ -1045,7 +1072,7 @@ const linkedTextElementFromAnyPage = (id) => {
 
 const elementPageIdFromAnyPage = (id) => {
   if (!id) return null;
-  if (state.elementLayout?.[id] || state.customElements?.[id]) return activePageId.value;
+  if (state.elementLayout?.[id] || state.customElements?.[id]) return workingDocumentPageId.value;
   for (const page of state.pages ?? []) {
     if (page.elementLayout?.[id] || page.customElements?.[id]) return page.id;
   }
@@ -1328,13 +1355,13 @@ const editorElements = computed(() => {
     const linkedTextStyleSourceId = element.type === 'linkedText' ? getLinkedTextStyleSourceId(id) : id;
     const linkedTextStyleSourceLayout = linkedTextLayoutFromAnyPage(linkedTextStyleSourceId) ?? null;
 
-    // Regla 3: Si estÃ¡ en ediciÃ³n, el texto debe ser el COMPLETO (del head), no el fragmento
+    // Regla 3: Si está en edición, el texto debe ser el COMPLETO (del head), no el fragmento
     let elementText;
     if (element.type === 'text') {
       elementText = linkedFieldText(element.fieldKey, element.text ?? '');
     } else if (element.type === 'linkedText') {
       if (isBeingEdited) {
-        // En ediciÃ³n: usar el texto completo del head
+        // En edición: usar el texto completo del head
         const headId = getLinkedTextChainHead(id);
         const headElement = state.customElements[headId];
         elementText = headElement?.text ?? '';
@@ -1381,20 +1408,20 @@ const hasMultiplePages = computed(() => documentPages.value.length > 1);
 const canDeleteDocumentPage = computed(() => documentPages.value.length > minimumDocumentPageCount());
 const physicalPageLabel = (pageIndex) => (
   isBrochureDocument()
-    ? `PÃ¡gina fÃ­sica ${pageIndex + 1} Â· folleto ${brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length).join('-')}`
-    : `PÃ¡gina ${pageIndex + 1}`
+    ? `Página fÃ­sica ${pageIndex + 1} Â· folleto ${brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length).join('-')}`
+    : `Página ${pageIndex + 1}`
 );
 const brochurePanelLabels = (pageIndex) => brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length)
-  .map((pageNumber) => `PÃ¡gina de folleto ${pageNumber}`);
+  .map((pageNumber) => `Página de folleto ${pageNumber}`);
 const addPageButtonLabel = computed(() => (
   isBrochureDocument()
-    ? '+ AÃ±adir 2 pÃ¡ginas fÃ­sicas (4 pÃ¡ginas de folleto)'
-    : '+ AÃ±adir una pÃ¡gina'
+    ? '+ AÃ±adir 2 páginas fÃ­sicas (4 páginas de folleto)'
+    : '+ AÃ±adir una página'
 ));
 const deletePageTip = computed(() => (
   isBrochureDocument()
-    ? 'Eliminar este pliego (2 pÃ¡ginas fÃ­sicas)'
-    : 'Eliminar pÃ¡gina'
+    ? 'Eliminar este pliego (2 páginas fÃ­sicas)'
+    : 'Eliminar página'
 ));
 const pageMetaLine = (content = {}) => [content.date, content.time].filter(Boolean).join(' Â· ');
 const linkedPageFieldText = (content = {}, fieldKey, fallback = '') => {
@@ -1403,7 +1430,7 @@ const linkedPageFieldText = (content = {}, fieldKey, fallback = '') => {
   return content?.[fieldKey] ?? fallback;
 };
 const renderPageState = (pageState) => (
-  pageState?.id === activePageId.value
+  pageState?.id === workingDocumentPageId.value
     ? {
         ...pageState,
         content: state.content,
@@ -1413,7 +1440,7 @@ const renderPageState = (pageState) => (
     : pageState
 );
 const stageStateForPage = (pageState) => {
-  if (pageState?.id === activePageId.value) return state;
+  if (pageState?.id === workingDocumentPageId.value) return state;
   const renderState = renderPageState(pageState);
   return {
     ...state,
@@ -1437,7 +1464,7 @@ const editorElementsForPage = (pageState) => {
   ];
 
   const customElements = Object.entries(custom).map(([id, element]) => {
-    const isBeingEdited = renderState?.id === activePageId.value && editingElementId.value === id;
+    const isBeingEdited = renderState?.id === workingDocumentPageId.value && editingElementId.value === id;
     const linkedTextBoxData = element.type === 'linkedText' ? getLinkedTextBoxText(id) : null;
     const linkedTextStyleSourceId = element.type === 'linkedText' ? getLinkedTextStyleSourceId(id) : id;
     const linkedTextStyleSourceLayout = linkedTextLayoutFromAnyPage(linkedTextStyleSourceId) ?? layout[linkedTextStyleSourceId] ?? null;
@@ -1988,10 +2015,10 @@ const paragraphCount = computed(() => {
         || getParagraphs(getElementText(state.selectedElementId)).length;
 });
 const activeParagraphLabel = computed(() => {
-    if (!paragraphCount.value) return 'PÃ¡rrafo 1 de 1';
+    if (!paragraphCount.value) return 'Párrafo 1 de 1';
 
     if (editingElementId.value !== state.selectedElementId) {
-        return paragraphCount.value === 1 ? 'Todo el texto (1 pÃ¡rrafo)' : `Todo el texto (${paragraphCount.value} pÃ¡rrafos)`;
+        return paragraphCount.value === 1 ? 'Todo el texto (1 párrafo)' : `Todo el texto (${paragraphCount.value} párrafos)`;
     }
 
     const n = paragraphCount.value;
@@ -1999,10 +2026,10 @@ const activeParagraphLabel = computed(() => {
     const last = paragraphSelection.end + 1;
 
     if (!paragraphSelection.active || first === last) {
-        return `PÃ¡rrafo ${selectedParagraphIndex.value + 1} de ${n}`;
+        return `Párrafo ${selectedParagraphIndex.value + 1} de ${n}`;
     }
 
-    return `PÃ¡rrafos ${Math.min(first, last)}-${Math.max(first, last)} de ${n}`;
+    return `Párrafos ${Math.min(first, last)}-${Math.max(first, last)} de ${n}`;
 });
 
 const getMaxZIndex = () => Object.values(state.elementLayout).reduce((max, layout) => Math.max(max, layout?.zIndex ?? 0), 0);
@@ -2969,14 +2996,14 @@ const syncUploadedAssetsLibrary = async () => {
       });
     });
   } catch (error) {
-    console.error('No se pudo cargar la librerÃ­a de imÃ¡genes del usuario', error);
+    console.error('No se pudo cargar la librerÃ­a de imágenes del usuario', error);
   }
 };
 
 const humanizeUploadError = (error) => {
   const status = error?.response?.status;
   if (status === 413 || status === 422) {
-    return 'La imagen es demasiado grande o no tiene un formato vÃ¡lido.';
+    return 'La imagen es demasiado grande o no tiene un formato válido.';
   }
 
   return 'No se pudo subir la imagen. Reintenta.';
@@ -3305,7 +3332,7 @@ const uploadImageAsset = async ({ assetId, file, label, dataUrl }) => {
     const canonicalAssetId = response.data?.assetId ?? null;
 
     if (!finalUrl) {
-      throw new Error('La respuesta del servidor no incluyÃ³ la URL de la imagen.');
+      throw new Error('La respuesta del servidor no incluyó la URL de la imagen.');
     }
 
     uploadProgressByAssetId[assetId] = 100;
@@ -3347,7 +3374,7 @@ const queueUploadForAsset = async (assetId, options = {}) => {
       dataUrl: pendingDataUrl,
     });
   } catch (error) {
-    console.error('No se pudo preparar la reanudaciÃ³n del upload de imagen', error);
+    console.error('No se pudo preparar la reanudación del upload de imagen', error);
     updateUploadedImage(assetId, {
       uploadStatus: 'error',
       needsUpload: true,
@@ -3425,7 +3452,7 @@ const onImagePicked = async (event) => {
 
   imagePanelTab.value = 'uploads';
   for (const file of files) {
-    // Desde el picker actÃºa como subida a la galerÃ­a del usuario; la inserciÃ³n en el diseÃ±o queda a elecciÃ³n posterior.
+    // Desde el picker actÃºa como subida a la galerÃ­a del usuario; la inserción en el diseÃ±o queda a elección posterior.
     // eslint-disable-next-line no-await-in-loop
     await createPendingUploadedImageFromFile(file, { openUploadsPanel: true });
   }
@@ -3601,7 +3628,7 @@ const promoteSelectedImageToBackground = async () => {
   }
 
   if (backgroundHasImage.value) {
-    const confirmed = window.confirm('Ya hay una imagen de fondo. Si continÃºas, serÃ¡ reemplazada por la imagen seleccionada.');
+    const confirmed = window.confirm('Ya hay una imagen de fondo. Si continÃºas, será reemplazada por la imagen seleccionada.');
     if (!confirmed) {
       return;
     }
@@ -3831,7 +3858,7 @@ const addShapeElement = (shapeKind) => {
 
   const isRectangle = shapeKind === 'rectangle' || shapeKind === 'rectangle-outline';
   const layout = buildDefaultLayout({
-    // El rectÃ¡ngulo base nace cuadrado; luego el usuario puede deformarlo libremente.
+    // El rectángulo base nace cuadrado; luego el usuario puede deformarlo libremente.
     w: isRectangle ? 140 : 140,
     h: isRectangle ? 140 : 140,
     x: getInsertX(140),
@@ -3919,7 +3946,7 @@ const updateElementMeasurement = (id, node) => {
       state.customElements[cloneId] = {
         id: cloneId,
         type: 'linkedText',
-        label: `${sourceElement.label} continuaciÃ³n`,
+        label: `${sourceElement.label} continuación`,
         text: '',
       };
     } else if (sourceElement.type === 'text') {
@@ -4620,7 +4647,7 @@ const handleDocumentPointerEnd = async (event) => {
         .filter(Boolean)
     : [];
   const sourceBounds = boundsFromLayoutSnapshots(sourceSnapshots);
-  const sourceSurfaceRect = wasMoveDrag ? pageSurfaceRect(activePageId.value) : null;
+  const sourceSurfaceRect = wasMoveDrag ? pageSurfaceRect(workingDocumentPageId.value) : null;
   const pointerOffset = sourceBounds && sourceSurfaceRect
     ? {
         x: ((drag.startClientX - sourceSurfaceRect.left) / zoomScale.value) - sourceBounds.x,
@@ -4631,7 +4658,7 @@ const handleDocumentPointerEnd = async (event) => {
 
   endDrag(event);
 
-  if (wasMoveDrag && targetPageId && targetPageId !== activePageId.value && sourceSnapshots.length) {
+  if (wasMoveDrag && targetPageId && targetPageId !== workingDocumentPageId.value && sourceSnapshots.length) {
     await transferElementsToPage(draggedIds, targetPageId, event, pointerOffset, sourceSnapshots);
   }
 };
@@ -4745,7 +4772,7 @@ const commitTextEdit = ({ recalculateHeight = true, reason = 'commit-text-edit' 
       });
     }
 
-    // Si es linkedText, detener ediciÃ³n en el sistema
+    // Si es linkedText, detener edición en el sistema
     if (state.customElements?.[id]?.type === 'linkedText') {
       const layout = state.elementLayout[id];
       if (layout?.linkedTextGroupId) {
@@ -4779,7 +4806,7 @@ const cancelTextEdit = () => {
 
 
 onMounted(() => {
-  // Ya se hizo resetDesignerState y rehidrataciÃ³n arriba
+  // Ya se hizo resetDesignerState y rehidratación arriba
   syncEditorViewport();
   editorViewportQuery = window.matchMedia('(max-width: 767px)');
   editorViewportQuery.addEventListener?.('change', syncEditorViewport);
@@ -4836,7 +4863,7 @@ const flushDesignerStateWithThumbnail = async () => {
       syncActivePageSnapshot();
       await flushDesignerStatePersistence();
     } catch (error) {
-      console.error('No se pudo guardar el estado del diseÃ±o automÃ¡ticamente', error);
+      console.error('No se pudo guardar el estado del diseÃ±o automáticamente', error);
     } finally {
       pendingStateFlush = false;
       if (stateFlushRequestedDuringPending) {
@@ -5010,12 +5037,12 @@ const setRichEditorRef = (id, element) => {
   delete richEditorRefs.value[id];
 };
 
-// Nuevo handler para abrir el modal de exportaciÃ³n
+// Nuevo handler para abrir el modal de exportación
 const handleExportNavigation = async (event) => {
   event?.preventDefault?.();
   // Si es invitado, mostrar alerta y no abrir el exportador
   if (!authUser.value) {
-    window.alert('Para descargar o exportar tu diseÃ±o debes iniciar sesiÃ³n. Puedes seguir editando como invitado.');
+    window.alert('Para descargar o exportar tu diseÃ±o debes iniciar sesión. Puedes seguir editando como invitado.');
     return;
   }
   exportDialogOpen.value = true;
@@ -5041,7 +5068,7 @@ const handleLogin = async () => {
 const handleCreateNewDesign = async () => {
   // Si es invitado y ya existe un diseÃ±o temporal, mostrar alerta y no crear otro
   if (!authUser.value && state.currentDesignUuid == null && window.sessionStorage.getItem('guestDesignCreated')) {
-    window.alert('Solo puedes tener un diseÃ±o temporal como invitado. Inicia sesiÃ³n para guardar y crear mÃ¡s diseÃ±os.');
+    window.alert('Solo puedes tener un diseÃ±o temporal como invitado. Inicia sesión para guardar y crear más diseÃ±os.');
     return;
   }
   try {
@@ -5051,7 +5078,7 @@ const handleCreateNewDesign = async () => {
   }
 
   resetDesignerState();
-  // Marcar que el invitado ya creÃ³ un diseÃ±o temporal
+  // Marcar que el invitado ya creó un diseÃ±o temporal
   if (!authUser.value) {
     window.sessionStorage.setItem('guestDesignCreated', '1');
   }
@@ -5110,7 +5137,7 @@ const handleRenameDesign = async () => {
 
 const ensurePersistedDesign = async () => {
   if (!authUser.value) {
-    throw new Error('Debes iniciar sesiÃ³n para guardar este diseÃ±o.');
+    throw new Error('Debes iniciar sesión para guardar este diseÃ±o.');
   }
 
   if (state.currentDesignUuid) {
@@ -5367,7 +5394,7 @@ const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) =
     try {
       commitTextEdit();
     } catch (_) {
-      // no-op: si el editor rico todavÃ­a no estÃ¡ listo, continuamos igualmente
+      // no-op: si el editor rico todavÃ­a no está listo, continuamos igualmente
     }
     const targetSurface = canvasDimensionsForDesignerState(assistantState);
     assistantState.stateRevision = bumpRevision(state.stateRevision);
@@ -5389,7 +5416,7 @@ const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) =
     const returnedState = response.data?.design?.state ?? null;
     if (returnedState) {
       normalizeBrochurePages(returnedState);
-      // Forzar rehidrataciÃ³n del estado del diseÃ±ador con el state devuelto por el backend
+      // Forzar rehidratación del estado del diseÃ±ador con el state devuelto por el backend
       useDesignerState({ forceRehydrate: true, overrideState: returnedState });
       ensureDocumentPages(true);
       refreshDocumentPageList();
@@ -5416,7 +5443,13 @@ const handleCanvasClick = (event) => {
 };
 
 const ensurePageInteractionContext = (pageId) => {
-  if (!pageId || pageId === activePageId.value) return;
+  if (!pageId) return;
+  if (pageId === workingDocumentPageId.value) {
+    if (pageId !== activePageId.value) {
+      setVisualActiveDocumentPage(pageId);
+    }
+    return;
+  }
   void switchToPage(pageId);
 };
 
@@ -5847,7 +5880,7 @@ watch(
           >
             <svg
               v-if="linkedTextGlobalLinkLines.length"
-              class="pointer-events-none absolute top-0 left-0 z-[80] overflow-visible text-emerald-400"
+              class="pointer-events-none absolute top-0 left-0 z-[300] overflow-visible text-emerald-400"
               :style="linkedTextOverlayStyle"
             >
               <line
@@ -5873,7 +5906,11 @@ watch(
                 <div
                   class="absolute top-0 left-1/2 origin-top rounded-[28px] transition-shadow"
                   :class="[
-                    drag.active && documentPage.id === activePageId ? 'z-[90]' : 'z-10',
+                    drag.active && documentPage.id === workingDocumentPageId
+                      ? 'z-[220]'
+                      : (documentPage.id === workingDocumentPageId && (activeSelectionIds.length || selectionMarquee.active || multiSelectionIds.length > 1)
+                          ? 'z-[180]'
+                          : 'z-10'),
                     'shadow',
                   ]"
                   :style="pageChromeStyle"
@@ -5881,37 +5918,37 @@ watch(
                 <div class="relative z-50 mb-3 flex w-full items-center justify-between text-sm font-semibold text-slate-500 dark:text-slate-300" @pointerdown.stop>
                   <span>{{ hasMultiplePages ? physicalPageLabel(pageIndex) : '' }}</span>
                   <div class="relative z-50 flex items-center gap-1">
-                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover pÃ¡gina hacia arriba">
+                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover página hacia arriba">
                       <button
                         type="button"
                         class="btn btn-ghost btn-xs"
                         :class="{ 'btn-disabled opacity-40': pageIndex === 0 }"
                         :disabled="pageIndex === 0"
-                        aria-label="Mover pÃ¡gina hacia arriba"
+                        aria-label="Mover página hacia arriba"
                         @click.stop.prevent="moveDocumentPage(documentPage.id, -1)"
                       >
                         <Icon icon="ph:arrow-up" class="h-4 w-4" />
                       </button>
                     </span>
-                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover pÃ¡gina hacia abajo">
+                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover página hacia abajo">
                       <button
                         type="button"
                         class="btn btn-ghost btn-xs"
                         :class="{ 'btn-disabled opacity-40': pageIndex === documentPages.length - 1 }"
                         :disabled="pageIndex === documentPages.length - 1"
-                        aria-label="Mover pÃ¡gina hacia abajo"
+                        aria-label="Mover página hacia abajo"
                         @click.stop.prevent="moveDocumentPage(documentPage.id, 1)"
                       >
                         <Icon icon="ph:arrow-down" class="h-4 w-4" />
                       </button>
                     </span>
-                    <span class="tooltip tooltip-bottom" data-tip="Duplicar pÃ¡gina">
-                      <button type="button" class="btn btn-ghost btn-xs" aria-label="Duplicar pÃ¡gina" @click.stop.prevent="duplicateDocumentPage(documentPage.id)">
+                    <span class="tooltip tooltip-bottom" data-tip="Duplicar página">
+                      <button type="button" class="btn btn-ghost btn-xs" aria-label="Duplicar página" @click.stop.prevent="duplicateDocumentPage(documentPage.id)">
                         <Icon icon="ph:copy-simple" class="h-4 w-4" />
                       </button>
                     </span>
-                    <span class="tooltip tooltip-bottom" data-tip="Nueva pÃ¡gina">
-                      <button type="button" class="btn btn-ghost btn-xs" aria-label="Nueva pÃ¡gina" @click.stop.prevent="addDocumentPage({ afterPageId: documentPage.id })">
+                    <span class="tooltip tooltip-bottom" data-tip="Nueva página">
+                      <button type="button" class="btn btn-ghost btn-xs" aria-label="Nueva página" @click.stop.prevent="addDocumentPage({ afterPageId: documentPage.id })">
                         <Icon icon="ph:file-plus" class="h-4 w-4" />
                       </button>
                     </span>
@@ -5923,7 +5960,7 @@ watch(
                       <button
                         type="button"
                         class="btn btn-ghost btn-xs text-error"
-                        aria-label="Eliminar pÃ¡gina"
+                        aria-label="Eliminar página"
                         @click.stop.prevent="deleteDocumentPage(documentPage.id)"
                       >
                         <Icon icon="ph:trash" class="h-4 w-4" />
@@ -5933,7 +5970,7 @@ watch(
                 </div>
 
                 <div
-                  class="relative mx-auto overflow-hidden"
+                  class="relative mx-auto overflow-visible"
                   :class="documentPage.id === activePageId ? 'outline outline-4 outline-primary/80 outline-offset-4 shadow-[0_0_0_8px_rgba(14,165,233,0.16)]' : ''"
                   :style="canvasFrameContainerStyle"
                 >
@@ -5942,7 +5979,7 @@ watch(
                     :canvas-grid-style="{ minHeight: 'auto', padding: 0, background: 'transparent', overflow: 'visible', height: 'auto' }"
                     :canvas-frame-style="canvasFrameStyle"
                     :canvas-zoom-style="{}"
-                    :is-background-selected="documentPage.id === activePageId && state.selectedElementId === 'background'"
+                    :is-background-selected="documentPage.id === workingDocumentPageId && state.selectedElementId === 'background'"
                     :canvas-background-style="pageCanvasBackgroundStyle(documentPage)"
                     :canvas-background-image-src="pageCanvasBackgroundImageSrc(documentPage)"
                     :canvas-background-image-style="pageCanvasBackgroundImageStyle(documentPage)"
@@ -5956,10 +5993,10 @@ watch(
                     :background-drop-preview="documentPage.id === activePageId && backgroundDropPreview"
                     :active-page="documentPage.id === activePageId"
                     :active-page-id="activePageId"
-                    :editing-element-id="documentPage.id === activePageId ? editingElementId : null"
+                    :editing-element-id="documentPage.id === workingDocumentPageId ? editingElementId : null"
                     :state="stageStateForPage(documentPage)"
                     :element-box-style="(id) => pageElementBoxStyle(documentPage, id)"
-                    :is-element-selected="(id) => documentPage.id === activePageId && isElementSelected(id)"
+                    :is-element-selected="(id) => documentPage.id === workingDocumentPageId && isElementSelected(id)"
                     :element-content-style="(id) => pageElementContentStyle(documentPage, id)"
                     :rich-editor-container-style="(id) => pageRichEditorContainerStyle(documentPage, id)"
                     :neon-color-override="(id) => pageNeonColorOverride(documentPage, id)"
@@ -5969,7 +6006,7 @@ watch(
                     :shape-style="(item) => pageShapeStyle(documentPage, item)"
                     :shape-render-model="(item) => pageShapeRenderModel(documentPage, item)"
                     :canvas-ref-setter="documentPage.id === activePageId ? setCanvasRef : null"
-                    :rich-editor-ref-setter="documentPage.id === activePageId ? setRichEditorRef : null"
+                    :rich-editor-ref-setter="documentPage.id === workingDocumentPageId ? setRichEditorRef : null"
                     :linked-text-link="linkedTextLink"
                     :active-linked-text-box="activeLinkedTextBox"
                     :hovered-field-key="hoveredFieldKey"
@@ -5994,7 +6031,7 @@ watch(
                   >
                     <template #overlay>
                       <SelectionOverlay
-                        v-if="documentPage.id === activePageId && (activeSelectionIds.length || selectionMarquee.active || multiSelectionIds.length > 1)"
+                        v-if="documentPage.id === workingDocumentPageId && (activeSelectionIds.length || selectionMarquee.active || multiSelectionIds.length > 1)"
                         :show-selection-controls="!!(activeSelectionIds.length && state.selectedElementId !== 'background')"
                         :show-marquee="selectionMarquee.active"
                         :show-group-button="multiSelectionIds.length > 1"
@@ -6018,8 +6055,8 @@ watch(
                         @reset-rotation="resetRotation"
                         @start-resize="startResize($event.event, $event.id, $event.handle)"
                       />
-                      <!-- GuÃ­as de alineaciÃ³n -->
-                      <div v-if="documentPage.id === activePageId && guides.length" class="pointer-events-none absolute inset-0 z-[5000]">
+                      <!-- GuÃ­as de alineación -->
+                      <div v-if="documentPage.id === workingDocumentPageId && guides.length" class="pointer-events-none absolute inset-0 z-[5000]">
                         <div
                           v-for="(guide, index) in guides"
                           :key="`guide-${index}`"
@@ -6058,7 +6095,7 @@ watch(
       </div>
     </div>
     </section>
-    <!-- DiÃ¡logo de asistente -->
+    <!-- Diálogo de asistente -->
     <dialog v-if="assistantOpen" class="modal modal-open backdrop-blur-sm" style="z-index:90;">
       <div class="modal-box w-full max-w-lg lg:max-w-5xl p-0 overflow-visible bg-base-100 rounded-[30px] shadow-2xl border border-base-300">
         <DesignerAssistant
