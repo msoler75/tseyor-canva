@@ -920,7 +920,7 @@ export function fitTextInBox(text, styles = [], maxWidth, maxHeight) {
           const rest = words.slice(wi + 1);
           if (rest.length) overflowParts.push(...rest);
         } else {
-          fittingLines.push(currentLine);
+          fittingLines.push(currentLine.replace(/ +$/, ''));
           currentHeight += lineHeightPx;
           overflowParts.push(word);
           const rest = words.slice(wi + 1);
@@ -940,14 +940,17 @@ export function fitTextInBox(text, styles = [], maxWidth, maxHeight) {
       break;
     }
     if (currentLine) {
-      fittingLines.push(currentLine);
+      fittingLines.push(currentLine.replace(/ +$/, ''));
       currentHeight += lineHeightPx;
     }
   }
 
+  const fitting = fittingLines.join('\n');
+  const overflow = overflowParts.join(' ');
+
   return {
-    fitting: fittingLines.join('\n'),
-    overflow: overflowParts.join(' '),
+    fitting: fitting.replace(/ +$/, ''),
+    overflow: overflow.replace(/^ +/, '').replace(/ +$/, ''),
     fittingHeight: currentHeight,
   };
 }

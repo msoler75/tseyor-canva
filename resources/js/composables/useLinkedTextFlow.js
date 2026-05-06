@@ -157,8 +157,8 @@ function breakSpanIntoLines(span, maxWidth) {
       if (currentLine) {
         lines.push({ text: currentLine, style: span.style, width: currentWidth });
       }
-      currentLine = char;
-      currentWidth = ctx.measureText(char).width + letterSpacing;
+      currentLine = char === ' ' ? '' : char;
+      currentWidth = char === ' ' ? 0 : ctx.measureText(char).width + letterSpacing;
     }
   }
 
@@ -188,7 +188,9 @@ function allocateSpansToBox(spans, boxWidth, boxHeight, boxStyle = {}) {
         if (li === 0) {
           overflowSpans = spans.slice(i);
         } else {
-          overflowSpans = [{ text: span.text.substring(spanLines.slice(0, li).map(l => l.text).join('').length), style: span.style }];
+          const prefix = spanLines.slice(0, li).map(l => l.text).join('');
+          const rest = span.text.substring(prefix.length).replace(/^ +/, '');
+          overflowSpans = rest ? [{ text: rest, style: span.style }] : [];
           for (let ri = i + 1; ri < spans.length; ri++) {
             overflowSpans.push(spans[ri]);
           }
@@ -198,7 +200,7 @@ function allocateSpansToBox(spans, boxWidth, boxHeight, boxStyle = {}) {
       }
 
       fittingLines.push(line);
-      fittingSpans.push({ text: line.text, style: line.style });
+      fittingSpans.push({ text: line.text.replace(/ +$/, ''), style: line.style });
       currentHeight += getSpanLineHeight({ style: line.style });
     }
   }

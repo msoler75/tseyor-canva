@@ -572,8 +572,20 @@ export function createLinkedTextBoxSystem() {
         }
 
         const fitUnits = bestFit;
-        const visibleSlice = allUnits.slice(unitIdx, unitIdx + fitUnits);
-        const overflowSlice = allUnits.slice(unitIdx + fitUnits); // resto para siguientes cajas
+        const rawVisibleSlice = allUnits.slice(unitIdx, unitIdx + fitUnits);
+        const rawOverflowSlice = allUnits.slice(unitIdx + fitUnits);
+
+        // Eliminar tokens de espacio al final de la porción visible y al inicio del overflow
+        const visibleSlice = [...rawVisibleSlice];
+        while (visibleSlice.length > 0 && /^\s+$/.test(visibleSlice[visibleSlice.length - 1]?.word || '')) {
+          visibleSlice.pop();
+        }
+        const overflowSlice = [...rawOverflowSlice];
+        let leadingSpaces = 0;
+        while (overflowSlice.length > 0 && /^\s+$/.test(overflowSlice[0]?.word || '')) {
+          overflowSlice.shift();
+          leadingSpaces++;
+        }
 
         const visibleHtml = buildHtmlFromUnitSlice(visibleSlice, layout);
 
@@ -599,8 +611,8 @@ export function createLinkedTextBoxSystem() {
           fitsInBox: fitsInBox
         };
 
-        // Actualizar índice para la siguiente caja
-        unitIdx += fitUnits;
+        // Actualizar índice para la siguiente caja, saltando espacios descartados en frontera
+        unitIdx += fitUnits + leadingSpaces;
 
         // Log para esta caja (opcional)
         frontendLog.info('boxFragment',
