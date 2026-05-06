@@ -34,7 +34,7 @@ const emit = defineEmits(['close', 'submit']);
 </script>
 
 <template>
-  <dialog v-if="open" class="modal modal-open backdrop-blur-sm" style="z-index:95;">
+  <dialog v-if="open" class="modal modal-open backdrop-blur-sm" style="z-index:10000;">
     <div class="modal-box flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[30px] border border-base-300 bg-base-100 p-0 shadow-2xl">
       <form class="flex min-h-0 flex-col" @submit.prevent="emit('submit')">
         <header class="shrink-0 border-b border-base-300 px-6 py-5">

@@ -877,7 +877,7 @@ watch(() => state.outputType, () => {
 </script>
 
 <template>
-  <dialog open class="modal modal-open backdrop-blur" @click="emit('close')">
+  <dialog open class="modal modal-open backdrop-blur" style="z-index:10000;" @click="emit('close')">
     <div class="modal-box max-w-4xl w-full relative" @click.stop>
       <!-- Botón de cierre -->
       <button @click="emit('close')" aria-label="Cerrar" class="absolute top-3 right-3 z-20 btn btn-sm btn-circle btn-ghost text-xl">

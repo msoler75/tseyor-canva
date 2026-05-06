@@ -5970,7 +5970,7 @@ watch(
                 </div>
 
                 <div
-                  class="relative mx-auto overflow-visible"
+                  class="relative z-[80] mx-auto overflow-visible"
                   :class="documentPage.id === activePageId ? 'outline outline-4 outline-primary/80 outline-offset-4 shadow-[0_0_0_8px_rgba(14,165,233,0.16)]' : ''"
                   :style="canvasFrameContainerStyle"
                 >
@@ -6096,7 +6096,7 @@ watch(
     </div>
     </section>
     <!-- Diálogo de asistente -->
-    <dialog v-if="assistantOpen" class="modal modal-open backdrop-blur-sm" style="z-index:90;">
+    <dialog v-if="assistantOpen" class="modal modal-open backdrop-blur-sm" style="z-index:10000;">
       <div class="modal-box w-full max-w-lg lg:max-w-5xl p-0 overflow-visible bg-base-100 rounded-[30px] shadow-2xl border border-base-300">
         <DesignerAssistant
           :step="assistantStep"
