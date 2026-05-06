@@ -869,6 +869,7 @@ const logLinkedTextStyles = () => {
     width: 100%;
     min-height: 100%;
     box-sizing: border-box;
+    white-space: pre-wrap;
 }
 .linked-text-overflow {
     position: absolute;
