@@ -62,7 +62,7 @@ const previewImageUrl = ref('');
 const documentPages = computed(() => (Array.isArray(state.pages) && state.pages.length
     ? state.pages
     : [{
-        id: state.activePageId ?? 'page-1',
+        id: 'page-1',
         content: state.content,
         elementLayout: state.elementLayout,
         customElements: state.customElements ?? {},
@@ -458,13 +458,11 @@ const downloadBlob = (blob, name) => {
 const withRenderedPage = async (page, callback) => {
     isRenderingPageSnapshot = true;
     const previous = {
-        activePageId: state.activePageId,
         content: clonePlain(state.content),
         elementLayout: clonePlain(state.elementLayout),
         customElements: clonePlain(state.customElements ?? {}),
     };
 
-    state.activePageId = page.id;
     state.content = clonePlain(page.content ?? {});
     state.elementLayout = clonePlain(page.elementLayout ?? {});
     state.customElements = clonePlain(page.customElements ?? {});
@@ -477,7 +475,6 @@ const withRenderedPage = async (page, callback) => {
     try {
         return await callback();
     } finally {
-        state.activePageId = previous.activePageId;
         state.content = previous.content;
         state.elementLayout = previous.elementLayout;
         state.customElements = previous.customElements;

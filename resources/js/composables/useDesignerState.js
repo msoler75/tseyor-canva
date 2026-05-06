@@ -184,14 +184,13 @@ function buildInitialState(sessionState) {
         elementLayout: result.elementLayout,
         customElements: result.customElements,
     }, result.format);
-    result.activePageId = String(sessionState.activePageId ?? result.pages[0]?.id ?? 'page-1');
 
-    const activePage = result.pages.find((page) => page.id === result.activePageId) ?? result.pages[0];
-    if (activePage) {
-        result.activePageId = activePage.id;
-        result.content = { ...activePage.content };
-        result.elementLayout = clonePersistedValue(activePage.elementLayout);
-        result.customElements = clonePersistedValue(activePage.customElements);
+    Reflect.deleteProperty(result, 'activePageId');
+    const firstPage = result.pages[0];
+    if (firstPage) {
+        result.content = { ...firstPage.content };
+        result.elementLayout = clonePersistedValue(firstPage.elementLayout);
+        result.customElements = clonePersistedValue(firstPage.customElements);
     }
 
     return result;

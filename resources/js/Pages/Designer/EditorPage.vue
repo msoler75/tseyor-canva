@@ -7,7 +7,7 @@ import EditorTopBar from '../../Components/designer/EditorTopBar.vue';
 import EditorInsertSidebar from '../../Components/designer/EditorInsertSidebar.vue';
 import EditorCanvasStage from '../../Components/designer/EditorCanvasStage.vue';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { brochurePagePairForPhysicalPage, filterLabels, foldGuidePositionsForFormat, initialDesignerState, isBrochureFormat, isHorizontalFormat, objectiveOptions, objectiveRecommendations, resolveObjectiveSizeOptions } from '../../data/designer';
+import { brochurePagePairForPhysicalPage, filterLabels, initialDesignerState, isBrochureFormat, isHorizontalFormat, objectiveOptions, objectiveRecommendations, resolveObjectiveSizeOptions } from '../../data/designer';
 import {
   flushDesignerStatePersistence,
   hydrateDesignerStateFromPage,
@@ -19,7 +19,21 @@ import { useEditorHistory } from '../../composables/useEditorHistory';
 import { useEditorStyles } from '../../composables/useEditorStyles';
 import { useEditorSelection } from '../../composables/useEditorSelection';
 import { useEditorInteractions } from '../../composables/useEditorInteractions';
-import { SHAPE_CLIP_PATHS, applyFormatToDimensions, buildCoverImageStyle, parseSizeDetail } from '../../utils/editorShared';
+import {
+  SHAPE_CLIP_PATHS,
+  applyFormatToDimensions,
+  buildCanvasBackgroundStyle,
+  buildCoverImageStyle,
+  buildElementBoxStyle as buildSharedElementBoxStyle,
+  buildElementContentStyle as buildSharedElementContentStyle,
+  buildImageFrameStyle,
+  buildImageTintOverlayStyle,
+  buildRichEditorContainerStyle as buildSharedRichEditorContainerStyle,
+  buildShapeRenderModel,
+  buildShapeStyle,
+  neonColorOverrideFromLayout,
+  parseSizeDetail,
+} from '../../utils/editorShared';
 import { useLinkedTextBoxSystem } from '../../composables/useLinkedTextBoxSystem';
 import { useFrontendLog } from '../../composables/useFrontendLog';
 import { dataUrlToFile, extractImageFilesFromDataTransfer, fileToDataUrl, hasFilesInTransfer, isDataImageUrl, isEditableTarget, optimizeImageFile } from '../../utils/imageUploads';
@@ -52,7 +66,7 @@ const syncEditorViewport = () => {
     : false;
 };
 
-// Estado para mostrar el modal de exportación
+// Estado para mostrar el modal de exportaciÃ³n
 const exportDialogOpen = ref(false);
 const templateFormOpen = ref(false);
 const templateFormSaving = ref(false);
@@ -70,7 +84,7 @@ const templateForm = reactive({
   sortOrder: 0,
 });
 
-// Estado y lógica del asistente modal.
+// Estado y lÃ³gica del asistente modal.
 const assistantOpen = ref(false);
 const assistantStep = ref('objective');
 const openAssistant = (step = 'objective', resetCurrentDesign = true) => {
@@ -107,13 +121,21 @@ const createPageId = () => `page-${Date.now()}-${Math.random().toString(36).slic
 const documentRevision = ref(0);
 const documentPageList = ref([]);
 const documentPageRefs = new Map();
+const canvasGridRef = ref(null);
+const linkedTextOverlayRevision = ref(0);
 const copiedElements = ref([]);
+const legacyPersistedActivePageId = Reflect.get(state, 'activePageId');
+const activePageId = ref(String(legacyPersistedActivePageId ?? state.pages?.[0]?.id ?? 'page-1'));
 const visuallyFocusedPageId = ref(null);
 let visiblePageFrame = null;
+let isSwitchingDocumentPage = false;
+if (Object.prototype.hasOwnProperty.call(state, 'activePageId')) {
+  Reflect.deleteProperty(state, 'activePageId');
+}
 const refreshDocumentPageList = () => {
   documentPageList.value = clonePlain(state.pages ?? []);
 };
-const clonePageFromState = (id = state.activePageId ?? createPageId()) => ({
+const clonePageFromState = (id = activePageId.value ?? createPageId()) => ({
   id,
   content: clonePlain(state.content ?? initialDesignerState.content),
   elementLayout: clonePlain(state.elementLayout ?? initialDesignerState.elementLayout),
@@ -146,7 +168,7 @@ const normalizeBrochurePages = (snapshot = state) => {
   const pages = Array.isArray(snapshot.pages) && snapshot.pages.length
     ? snapshot.pages
     : [{
-        id: snapshot.activePageId ?? createPageId(),
+        id: Reflect.get(snapshot, 'activePageId') ?? createPageId(),
         content: clonePlain(snapshot.content ?? initialDesignerState.content),
         elementLayout: clonePlain(snapshot.elementLayout ?? initialDesignerState.elementLayout),
         customElements: clonePlain(snapshot.customElements ?? {}),
@@ -166,16 +188,14 @@ const normalizeBrochurePages = (snapshot = state) => {
       stripAutoBaseFieldsFromEmptyBrochurePage(page);
     }
   });
-  snapshot.activePageId = snapshot.activePageId && pages.some((page) => page.id === snapshot.activePageId)
-    ? snapshot.activePageId
-    : pages[0].id;
+  Reflect.deleteProperty(snapshot, 'activePageId');
 
   return snapshot;
 };
 const ensureDocumentPages = (hydrateActivePage = false) => {
   if (!Array.isArray(state.pages) || !state.pages.length) {
-    const firstId = state.activePageId ?? createPageId();
-    state.activePageId = firstId;
+    const firstId = activePageId.value ?? createPageId();
+    activePageId.value = firstId;
     state.pages = [clonePageFromState(firstId), ...createBlankPages(minimumDocumentPageCount() - 1)];
     return;
   }
@@ -191,17 +211,17 @@ const ensureDocumentPages = (hydrateActivePage = false) => {
 
   if (!state.pages.length) {
     const firstId = createPageId();
-    state.activePageId = firstId;
+    activePageId.value = firstId;
     state.pages = [clonePageFromState(firstId), ...createBlankPages(minimumDocumentPageCount() - 1)];
   }
 
   normalizeBrochurePages(state);
 
-  if (!state.activePageId || !state.pages.some((page) => page.id === state.activePageId)) {
-    state.activePageId = state.pages[0].id;
+  if (!activePageId.value || !state.pages.some((page) => page.id === activePageId.value)) {
+    activePageId.value = state.pages[0].id;
   }
 
-  const activePage = state.pages.find((page) => page.id === state.activePageId);
+  const activePage = state.pages.find((page) => page.id === activePageId.value);
   if (hydrateActivePage && activePage) {
     state.content = clonePlain(activePage.content);
     state.elementLayout = clonePlain(activePage.elementLayout);
@@ -210,33 +230,49 @@ const ensureDocumentPages = (hydrateActivePage = false) => {
 };
 const syncActivePageSnapshot = () => {
   ensureDocumentPages();
-  const activeIndex = state.pages.findIndex((page) => page.id === state.activePageId);
+  const activeIndex = state.pages.findIndex((page) => page.id === activePageId.value);
   if (activeIndex === -1) return;
-  state.pages[activeIndex] = clonePageFromState(state.activePageId);
+  state.pages[activeIndex] = clonePageFromState(activePageId.value);
   refreshDocumentPageList();
 };
-const switchToPage = async (pageId, { isUserAction = true } = {}) => {
-  if (pageId === state.activePageId) return;
+const switchToPage = async (pageId, { resetSelection = false } = {}) => {
+  if (pageId === activePageId.value) return;
   try {
-    commitTextEdit();
+    commitTextEdit({ recalculateHeight: false, reason: 'switch-page' });
   } catch (_) {
     // no-op
   }
   syncActivePageSnapshot();
   const target = state.pages.find((page) => page.id === pageId);
   if (!target) return;
-  if (isUserAction) {
-    userSelectedPage = true;
+  isSwitchingDocumentPage = true;
+  activePageId.value = target.id;
+  visuallyFocusedPageId.value = target.id;
+  try {
+    state.content = clonePlain(target.content);
+    state.elementLayout = clonePlain(target.elementLayout);
+    state.customElements = clonePlain(target.customElements);
+    if (
+      state.selectedElementId
+      && state.selectedElementId !== 'background'
+      && !state.elementLayout?.[state.selectedElementId]
+    ) {
+      state.selectedElementId = null;
+      multiSelectionIds.value = [];
+      selectedGroupId.value = null;
+      editingElementId.value = null;
+    }
+    if (resetSelection) {
+      state.selectedElementId = 'background';
+      multiSelectionIds.value = [];
+      selectedGroupId.value = null;
+      editingElementId.value = null;
+    }
+    await nextTick();
+  } finally {
+    isSwitchingDocumentPage = false;
   }
-  state.activePageId = target.id;
-  state.content = clonePlain(target.content);
-  state.elementLayout = clonePlain(target.elementLayout);
-  state.customElements = clonePlain(target.customElements);
-  state.selectedElementId = 'background';
-  multiSelectionIds.value = [];
-  selectedGroupId.value = null;
-  editingElementId.value = null;
-  await nextTick();
+  linkedTextOverlayRevision.value += 1;
   refreshDocumentPageList();
 };
 const setDocumentPageRef = (pageId, element) => {
@@ -246,8 +282,6 @@ const setDocumentPageRef = (pageId, element) => {
     documentPageRefs.delete(pageId);
   }
 };
-let userSelectedPage = false;
-
 const resolveMostVisiblePageId = () => {
   const firstNode = documentPageRefs.values().next().value;
   const scrollContainer = firstNode?.closest?.('.canvas-grid') ?? null;
@@ -274,35 +308,24 @@ const resolveMostVisiblePageId = () => {
 };
 const updateVisuallyFocusedPage = () => {
   const mostVisible = resolveMostVisiblePageId();
-  visuallyFocusedPageId.value = mostVisible?.id ?? state.activePageId;
+  visuallyFocusedPageId.value = mostVisible?.id ?? activePageId.value;
+  return mostVisible;
 };
-const activateVisibleDocumentPage = () => {
-  if (userSelectedPage && state.activePageId) {
-    const node = documentPageRefs.get(state.activePageId);
-    const scrollContainer = node?.closest?.('.canvas-grid') ?? null;
-    const viewport = scrollContainer?.getBoundingClientRect?.();
-    if (viewport) {
-      const rect = node.getBoundingClientRect();
-      const visibleHeight = Math.max(0, Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top));
-      const visibleRatio = visibleHeight / rect.height;
-      if (visibleRatio >= 0.75) return;
-    }
-    userSelectedPage = false;
-  }
-  const mostVisible = resolveMostVisiblePageId();
-  if (mostVisible?.id && mostVisible.id !== state.activePageId) {
-    switchToPage(mostVisible.id, { isUserAction: false });
+const activateVisibleDocumentPage = (mostVisible = resolveMostVisiblePageId()) => {
+  if (mostVisible?.id && mostVisible.id !== activePageId.value) {
+    switchToPage(mostVisible.id);
   }
 };
 const handleDocumentPagesScroll = () => {
+  linkedTextOverlayRevision.value += 1;
   if (visiblePageFrame !== null) return;
   visiblePageFrame = requestAnimationFrame(() => {
     visiblePageFrame = null;
-    updateVisuallyFocusedPage();
-    activateVisibleDocumentPage();
+    const mostVisible = updateVisuallyFocusedPage();
+    activateVisibleDocumentPage(mostVisible);
   });
 };
-const addDocumentPage = async ({ afterPageId = state.activePageId, duplicate = false } = {}) => {
+const addDocumentPage = async ({ afterPageId = activePageId.value, duplicate = false } = {}) => {
   try {
     commitTextEdit();
   } catch (_) {
@@ -360,7 +383,7 @@ const deleteDocumentPage = async (pageId) => {
     // no-op
   }
 
-  if (state.pages.some((page) => page.id === state.activePageId)) {
+  if (state.pages.some((page) => page.id === activePageId.value)) {
     syncActivePageSnapshot();
   }
 
@@ -372,8 +395,8 @@ const deleteDocumentPage = async (pageId) => {
   const nextPage = state.pages[Math.min(deleteStart, state.pages.length - 1)] ?? state.pages[deleteStart - 1] ?? state.pages[0];
   if (!state.pages.length || !nextPage) return;
 
-  if (deletedIds.includes(state.activePageId)) {
-    state.activePageId = nextPage.id;
+  if (deletedIds.includes(activePageId.value)) {
+    activePageId.value = nextPage.id;
     state.content = clonePlain(nextPage.content);
     state.elementLayout = clonePlain(nextPage.elementLayout);
     state.customElements = clonePlain(nextPage.customElements);
@@ -427,7 +450,7 @@ const boundsFromLayoutSnapshots = (snapshots) => {
 };
 const transferElementsToPage = async (elementIds, targetPageId, event, pointerOffset = null, sourceSnapshotsOverride = null) => {
   const ids = [...new Set(elementIds)].filter((id) => id && state.elementLayout[id]);
-  if (!ids.length || !targetPageId || targetPageId === state.activePageId) return false;
+  if (!ids.length || !targetPageId || targetPageId === activePageId.value) return false;
 
   const targetPage = state.pages.find((page) => page.id === targetPageId);
   if (!targetPage) return false;
@@ -539,7 +562,7 @@ const templateCategoryOptions = computed(() => {
 });
 const templateObjectiveOptions = computed(() => {
   const seen = new Set(['generic']);
-  const options = [{ id: 'generic', title: 'Genérico', description: 'Compatible con cualquier objetivo' }];
+  const options = [{ id: 'generic', title: 'GenÃ©rico', description: 'Compatible con cualquier objetivo' }];
   objectiveOptions.forEach((objective) => {
     if (seen.has(objective.id)) return;
     seen.add(objective.id);
@@ -706,12 +729,12 @@ const shapeGradientOptions = [
   { id: 'g12', start: '#166534', end: '#86efac' },
 ];
 const shapeGradientDirections = [
-  { value: 0, label: 'Arriba → abajo', icon: 'ph:arrow-down' },
-  { value: 90, label: 'Izquierda → derecha', icon: 'ph:arrow-right' },
-  { value: 135, label: 'Diagonal ↘', icon: 'ph:arrow-down-right' },
-  { value: 45, label: 'Diagonal ↗', icon: 'ph:arrow-up-right' },
-  { value: 180, label: 'Abajo → arriba', icon: 'ph:arrow-up' },
-  { value: 270, label: 'Derecha → izquierda', icon: 'ph:arrow-left' },
+  { value: 0, label: 'Arriba â†’ abajo', icon: 'ph:arrow-down' },
+  { value: 90, label: 'Izquierda â†’ derecha', icon: 'ph:arrow-right' },
+  { value: 135, label: 'Diagonal â†˜', icon: 'ph:arrow-down-right' },
+  { value: 45, label: 'Diagonal â†—', icon: 'ph:arrow-up-right' },
+  { value: 180, label: 'Abajo â†’ arriba', icon: 'ph:arrow-up' },
+  { value: 270, label: 'Derecha â†’ izquierda', icon: 'ph:arrow-left' },
 ];
 const normalizeHexCandidate = (value) => {
   if (typeof value !== 'string') return null;
@@ -728,14 +751,14 @@ const fontOptions = (page.props.fontFamilies ?? []).map(f => ({
   family: f,
 }));
 const textPropertyTabs = [
-    { id: 'typography', label: 'Tipografía' , class: 'order-first text-xl border-1 border-gray-500'},
+    { id: 'typography', label: 'TipografÃ­a' , class: 'order-first text-xl border-1 border-gray-500'},
     // { id: 'color', label: 'A', labelClass:'text-shadow-xs text-xl border-b-3',class: '' },
-    { id: 'fontSize', icon: 'radix-icons:font-size', label: 'Tamaño', title: 'Tamaño', class: 'order-first md:hidden' },
+    { id: 'fontSize', icon: 'radix-icons:font-size', label: 'TamaÃ±o', title: 'TamaÃ±o', class: 'order-first md:hidden' },
     { id: 'format', icon: 'mdi:format-text', label: 'Formato', title: 'Formato', class: 'order-last md:hidden' },
     { id: 'spacing', icon: 'mdi:format-line-spacing', title: 'Interlineado y espaciado', class: 'order-last' },
     { id: 'opacity', icon: 'carbon:opacity', class: 'order-last', iconClass: 'text-3xl' },
     { id: 'effects', label: 'Efectos', class: 'order-last' },
-    { id: 'arrange', label: 'Posición' , class: 'order-last'},
+    { id: 'arrange', label: 'PosiciÃ³n' , class: 'order-last'},
 ];
 const imagePropertyTabs = [
   { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
@@ -745,7 +768,7 @@ const imagePropertyTabs = [
   { id: 'rotate', icon: '', label: 'Girar', class: 'order-last' },
   { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
   { id: 'effects', label: 'Efectos', class: 'order-last' },
-  { id: 'arrange', label: 'Posición', class: 'order-last' },
+  { id: 'arrange', label: 'PosiciÃ³n', class: 'order-last' },
   { id: 'set-as-background', icon: 'tabler:background', title: 'Fijar como fondo', class: 'order-last' },
 ];
 const shapePropertyTabs = [
@@ -753,7 +776,7 @@ const shapePropertyTabs = [
   { id: 'border', icon: 'radix-icons:border-width', title: 'Borde', class: 'order-first' },
   { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
   { id: 'effects', label: 'Efectos', class: 'order-last' },
-  { id: 'arrange', label: 'Posición', class: 'order-last' },
+  { id: 'arrange', label: 'PosiciÃ³n', class: 'order-last' },
 ];
 const backgroundPropertyTabs = [
   { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
@@ -763,7 +786,7 @@ const baseTextElementIds = new Set(['title', 'subtitle', 'meta', 'contact', 'ext
 const textPresets = [
   {
     id: 'heading',
-    label: 'Título',
+    label: 'TÃ­tulo',
     preview: 'Agrega un titulo',
     fontSize: 52,
     fontWeight: 'bold',
@@ -772,7 +795,7 @@ const textPresets = [
   },
   {
     id: 'medium',
-    label: 'Subtítulo',
+    label: 'SubtÃ­tulo',
     preview: 'Agrega un subtitulo',
     fontSize: 28,
     fontWeight: 'bold',
@@ -792,24 +815,24 @@ const textPresets = [
 const shapeCategories = [
   {
     id: 'basicas',
-    label: 'Básicas',
+    label: 'BÃ¡sicas',
     shapes: [
-      { id: 'rectangle', label: 'Rectángulo' },
-      { id: 'rectangle-outline', label: 'Rectángulo recto' },
-      { id: 'circle', label: 'Círculo' },
-      { id: 'triangle-up', label: 'Triángulo' },
-      { id: 'triangle-right-angle', label: 'Triángulo rectángulo' },
+      { id: 'rectangle', label: 'RectÃ¡ngulo' },
+      { id: 'rectangle-outline', label: 'RectÃ¡ngulo recto' },
+      { id: 'circle', label: 'CÃ­rculo' },
+      { id: 'triangle-up', label: 'TriÃ¡ngulo' },
+      { id: 'triangle-right-angle', label: 'TriÃ¡ngulo rectÃ¡ngulo' },
       { id: 'parallelogram', label: 'Paralelogramo' },
       { id: 'trapezoid', label: 'Trapecio' },
     ],
   },
   {
     id: 'poligonos',
-    label: 'Polígonos',
+    label: 'PolÃ­gonos',
     shapes: [
-      { id: 'pentagon', label: 'Pentágono' },
-      { id: 'hexagon', label: 'Hexágono' },
-      { id: 'octagon', label: 'Octágono' },
+      { id: 'pentagon', label: 'PentÃ¡gono' },
+      { id: 'hexagon', label: 'HexÃ¡gono' },
+      { id: 'octagon', label: 'OctÃ¡gono' },
     ],
   },
   {
@@ -826,27 +849,27 @@ const shapeCategories = [
     id: 'flechas',
     label: 'Flechas',
     shapes: [
-      { id: 'arrow-right', label: 'Flecha →' },
+      { id: 'arrow-right', label: 'Flecha â†’' },
       { id: 'arrow-curved', label: 'Flecha curva' },
       { id: 'arrow-double-h', label: 'Doble H' },
-      { id: 'chevron-right', label: 'Chevron →' },
+      { id: 'chevron-right', label: 'Chevron â†’' },
     ],
   },
   {
     id: 'bocadillos',
     label: 'Bocadillos',
     shapes: [
-      { id: 'callout', label: 'Bocadillo clásico' },
+      { id: 'callout', label: 'Bocadillo clÃ¡sico' },
       { id: 'callout-ellipse', label: 'Bocadillo elipse' },
       { id: 'callout-cloud', label: 'Bocadillo nube' },
-      { id: 'callout-burst', label: 'Bocadillo explosión' },
+      { id: 'callout-burst', label: 'Bocadillo explosiÃ³n' },
     ],
   },
   {
     id: 'marcos',
     label: 'Marcos',
     shapes: [
-      { id: 'frame', label: 'Marco clásico' },
+      { id: 'frame', label: 'Marco clÃ¡sico' },
       { id: 'frame-rounded', label: 'Marco redondeado' },
       { id: 'frame-thick', label: 'Marco grueso' },
       { id: 'frame-thin', label: 'Marco fino' },
@@ -858,7 +881,7 @@ const shapeCategories = [
     shapes: [
       { id: 'cross', label: 'Cruz' },
       { id: 'x-mark', label: 'Aspa' },
-      { id: 'heart', label: 'Corazón' },
+      { id: 'heart', label: 'CorazÃ³n' },
       { id: 'badge', label: 'Escudo' },
       { id: 'ribbon', label: 'Cinta' },
     ],
@@ -918,21 +941,21 @@ const {
 } = useEditorHistory({
   state,
   editingElementId,
-  commitTextEdit: () => commitTextEdit(),
+  commitTextEdit: (...args) => commitTextEdit(...args),
   clearSelection: () => clearSelection(),
   baseElementLabels,
   contentFieldLabels,
 });
 
-const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
+const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' Â· '));
 const isTemplateBaseEditor = computed(() => Boolean(
   backendTemplateBaseMode.value
   || currentDesignBaseTemplate.value?.base_design_uuid === currentDesignUuid.value
   || currentDesignTemplate.value?.base_design_uuid === currentDesignUuid.value
 ));
 const templateFieldLabels = {
-  title: 'Título',
-  subtitle: 'Subtítulo',
+  title: 'TÃ­tulo',
+  subtitle: 'SubtÃ­tulo',
   meta: 'Fecha / hora',
   date: 'Fecha',
   time: 'Hora',
@@ -944,11 +967,11 @@ const templateFieldLabels = {
   extra: 'Texto adicional',
 };
 const coreTemplateFieldDefinitions = [
-  { id: 'title', key: 'title', label: 'Título', type: 'text', description: 'Campo principal del diseño.' },
-  { id: 'subtitle', key: 'subtitle', label: 'Subtítulo', type: 'text', description: 'Texto secundario o claim.' },
-  { id: 'meta', key: 'meta', label: 'Fecha / hora', type: 'text', description: 'Campo combinado de fecha y hora del diseño.' },
-  { id: 'contact', key: 'contact', label: 'Contacto', type: 'text', description: 'Información de contacto o inscripción.' },
-  { id: 'extra', key: 'extra', label: 'Texto adicional', type: 'textarea', description: 'Notas, requisitos o información complementaria.' },
+  { id: 'title', key: 'title', label: 'TÃ­tulo', type: 'text', description: 'Campo principal del diseÃ±o.' },
+  { id: 'subtitle', key: 'subtitle', label: 'SubtÃ­tulo', type: 'text', description: 'Texto secundario o claim.' },
+  { id: 'meta', key: 'meta', label: 'Fecha / hora', type: 'text', description: 'Campo combinado de fecha y hora del diseÃ±o.' },
+  { id: 'contact', key: 'contact', label: 'Contacto', type: 'text', description: 'InformaciÃ³n de contacto o inscripciÃ³n.' },
+  { id: 'extra', key: 'extra', label: 'Texto adicional', type: 'textarea', description: 'Notas, requisitos o informaciÃ³n complementaria.' },
 ];
 const normalizeTemplateFieldDefinition = (field) => {
   const id = field?.id ?? field?.key;
@@ -981,8 +1004,8 @@ const templateFieldDefinitions = computed(() => {
   return Array.from(merged.values());
 });
 const templateFieldDefaultTexts = {
-  title: 'Título de prueba',
-  subtitle: 'Subtítulo de prueba',
+  title: 'TÃ­tulo de prueba',
+  subtitle: 'SubtÃ­tulo de prueba',
   date: 'Fecha de prueba',
   time: 'Hora de prueba',
   location: 'Lugar de prueba',
@@ -991,13 +1014,13 @@ const templateFieldDefaultTexts = {
   price: 'Precio de prueba',
   contact: 'Contacto de prueba',
   extra: 'Texto adicional de prueba',
-  meta: 'Fecha de prueba · Hora de prueba',
+  meta: 'Fecha de prueba Â· Hora de prueba',
 };
 const templateContentFieldIds = new Set(['title', 'subtitle', 'contact', 'extra']);
 const normalizePlainTextValue = (value) => String(value ?? '')
   .replace(/<[^>]*>/g, '')
   .replace(/&nbsp;/gi, ' ')
-  .replace(/ /g, ' ')
+  .replace(/Â /g, ' ')
   .trim();
 const hasMeaningfulText = (value) => normalizePlainTextValue(value).length > 0;
 
@@ -1018,6 +1041,27 @@ const linkedTextElementFromAnyPage = (id) => {
     if (page.customElements?.[id]) return page.customElements[id];
   }
   return null;
+};
+
+const elementPageIdFromAnyPage = (id) => {
+  if (!id) return null;
+  if (state.elementLayout?.[id] || state.customElements?.[id]) return activePageId.value;
+  for (const page of state.pages ?? []) {
+    if (page.elementLayout?.[id] || page.customElements?.[id]) return page.id;
+  }
+  return null;
+};
+const rotateCanvasPoint = (x, y, cx, cy, angleDeg = 0) => {
+  if (!angleDeg) return { x, y };
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const dx = x - cx;
+  const dy = y - cy;
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  return {
+    x: cx + dx * cos - dy * sin,
+    y: cy + dx * sin + dy * cos,
+  };
 };
 
 const linkedTextSetLayoutField = (id, field, value) => {
@@ -1075,6 +1119,66 @@ const getLinkedTextChainHead = (startId) => {
   }
   return startId;
 };
+
+const linkedTextOverlayPoint = (boxId, anchor = 'source') => {
+  linkedTextOverlayRevision.value;
+  const pageId = elementPageIdFromAnyPage(boxId);
+  const layout = linkedTextLayoutFromAnyPage(boxId);
+  const pageNode = pageId ? documentPageRefs.get(pageId) : null;
+  const surface = pageNode?.querySelector?.('[data-page-surface="true"], [data-editor-canvas="true"]') ?? null;
+  const scroll = canvasGridRef.value;
+  if (!layout || !surface || !scroll) return null;
+
+  const surfaceRect = surface.getBoundingClientRect();
+  const scrollRect = scroll.getBoundingClientRect();
+  const surfaceLeft = surfaceRect.left - scrollRect.left + scroll.scrollLeft;
+  const surfaceTop = surfaceRect.top - scrollRect.top + scroll.scrollTop;
+  const fin = (value, fallback) => Number.isFinite(value) ? value : fallback;
+  const bw = 24;
+  const bh = 24;
+  const offset = anchor === 'source' ? 4 : 0;
+  const localX = anchor === 'source'
+    ? fin(layout.x, 0) + fin(layout.w, 300) - offset - bw / 2
+    : fin(layout.x, 0);
+  const localY = anchor === 'source'
+    ? fin(layout.y, 0) + fin(layout.h, 120) - offset - bh / 2
+    : fin(layout.y, 0);
+  const cx = fin(layout.x, 0) + fin(layout.w, 300) / 2;
+  const cy = fin(layout.y, 0) + fin(layout.h, 120) / 2;
+  const rotated = rotateCanvasPoint(localX, localY, cx, cy, fin(layout.rotation, 0));
+  return {
+    x: surfaceLeft + rotated.x,
+    y: surfaceTop + rotated.y,
+  };
+};
+
+const linkedTextGlobalLinkLines = computed(() => {
+  linkedTextOverlayRevision.value;
+  const selectedId = state.selectedElementId;
+  const selectedElement = linkedTextElementFromAnyPage(selectedId);
+  if (!selectedId || selectedElement?.type !== 'linkedText') return [];
+
+  const headId = getLinkedTextChainHead(selectedId);
+  const chain = getLinkedTextChain(headId);
+  const lines = [];
+  for (let index = 0; index < chain.length - 1; index += 1) {
+    const source = linkedTextOverlayPoint(chain[index].id, 'source');
+    const target = linkedTextOverlayPoint(chain[index + 1].id, 'target');
+    if (source && target) {
+      lines.push({ x1: source.x, y1: source.y, x2: target.x, y2: target.y });
+    }
+  }
+  return lines;
+});
+
+const linkedTextOverlayStyle = computed(() => {
+  linkedTextOverlayRevision.value;
+  const grid = canvasGridRef.value;
+  return {
+    width: `${grid?.scrollWidth ?? 0}px`,
+    height: `${grid?.scrollHeight ?? 0}px`,
+  };
+});
 
 const getLinkedTextStyleSourceId = (id) => {
   if (linkedTextElementFromAnyPage(id)?.type !== 'linkedText') return id;
@@ -1141,7 +1245,7 @@ const recalculateLinkedTextAllocations = (headId) => {
 
   linkedTextBoxSystem.redistribute(groupId, fullHtml, chainLayouts, containerStyle);
 
-  // Log después de redistribuir - registrar fragmentos
+  // Log despuÃ©s de redistribuir - registrar fragmentos
   const system = linkedTextBoxSystem.getOrCreateSystem(groupId);
   if (system.fragments) {
     for (const [boxId, fragment] of Object.entries(system.fragments)) {
@@ -1163,14 +1267,14 @@ const recalculateLinkedTextAllocations = (headId) => {
       recalculateLinkedTextAllocations(headId);
     }
 
-    // Determinar si es la última caja de la cadena
+    // Determinar si es la Ãºltima caja de la cadena
     const chain = getLinkedTextChain(headId);
     const isLastInChain = chain.length > 0 && chain[chain.length - 1].id === boxId;
 
     const hasFragment = Boolean(system.fragments && Object.prototype.hasOwnProperty.call(system.fragments, boxId));
     const fragment = linkedTextBoxSystem.getFragmentForBox(groupId, boxId);
 
-    // Si todavía no hay fragmento, usar el texto del elemento head directamente
+    // Si todavÃ­a no hay fragmento, usar el texto del elemento head directamente
     if (!hasFragment) {
       const headElement = linkedTextElementFromAnyPage(headId);
       const rawText = headElement?.text || '';
@@ -1188,7 +1292,7 @@ const recalculateLinkedTextAllocations = (headId) => {
       };
     }
 
-    // Solo mostrar overflow en la última caja de la cadena
+    // Solo mostrar overflow en la Ãºltima caja de la cadena
     const overflowHtml = isLastInChain ? (fragment.overflowHtml || '') : '';
 
     const chainIndex = chain.findIndex((item) => item.id === boxId);
@@ -1222,15 +1326,15 @@ const editorElements = computed(() => {
     const isBeingEdited = editingElementId.value === id;
     const linkedTextBoxData = element.type === 'linkedText' ? getLinkedTextBoxText(id) : null;
     const linkedTextStyleSourceId = element.type === 'linkedText' ? getLinkedTextStyleSourceId(id) : id;
-    const linkedTextStyleSourceLayout = state.elementLayout[linkedTextStyleSourceId] ?? null;
+    const linkedTextStyleSourceLayout = linkedTextLayoutFromAnyPage(linkedTextStyleSourceId) ?? null;
 
-    // Regla 3: Si está en edición, el texto debe ser el COMPLETO (del head), no el fragmento
+    // Regla 3: Si estÃ¡ en ediciÃ³n, el texto debe ser el COMPLETO (del head), no el fragmento
     let elementText;
     if (element.type === 'text') {
       elementText = linkedFieldText(element.fieldKey, element.text ?? '');
     } else if (element.type === 'linkedText') {
       if (isBeingEdited) {
-        // En edición: usar el texto completo del head
+        // En ediciÃ³n: usar el texto completo del head
         const headId = getLinkedTextChainHead(id);
         const headElement = state.customElements[headId];
         elementText = headElement?.text ?? '';
@@ -1277,91 +1381,171 @@ const hasMultiplePages = computed(() => documentPages.value.length > 1);
 const canDeleteDocumentPage = computed(() => documentPages.value.length > minimumDocumentPageCount());
 const physicalPageLabel = (pageIndex) => (
   isBrochureDocument()
-    ? `Página física ${pageIndex + 1} · folleto ${brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length).join('-')}`
-    : `Página ${pageIndex + 1}`
+    ? `PÃ¡gina fÃ­sica ${pageIndex + 1} Â· folleto ${brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length).join('-')}`
+    : `PÃ¡gina ${pageIndex + 1}`
 );
 const brochurePanelLabels = (pageIndex) => brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length)
-  .map((pageNumber) => `Página de folleto ${pageNumber}`);
+  .map((pageNumber) => `PÃ¡gina de folleto ${pageNumber}`);
 const addPageButtonLabel = computed(() => (
   isBrochureDocument()
-    ? '+ Añadir 2 páginas físicas (4 páginas de folleto)'
-    : '+ Añadir una página'
+    ? '+ AÃ±adir 2 pÃ¡ginas fÃ­sicas (4 pÃ¡ginas de folleto)'
+    : '+ AÃ±adir una pÃ¡gina'
 ));
 const deletePageTip = computed(() => (
   isBrochureDocument()
-    ? 'Eliminar este pliego (2 páginas físicas)'
-    : 'Eliminar página'
+    ? 'Eliminar este pliego (2 pÃ¡ginas fÃ­sicas)'
+    : 'Eliminar pÃ¡gina'
 ));
-const pageMetaLine = (content = {}) => [content.date, content.time].filter(Boolean).join(' · ');
+const pageMetaLine = (content = {}) => [content.date, content.time].filter(Boolean).join(' Â· ');
 const linkedPageFieldText = (content = {}, fieldKey, fallback = '') => {
   if (!fieldKey) return fallback;
   if (fieldKey === 'meta') return pageMetaLine(content);
   return content?.[fieldKey] ?? fallback;
 };
-const readonlyPageElements = (pageState) => {
-  const content = pageState?.content ?? {};
-  const layout = pageState?.elementLayout ?? {};
-  const custom = pageState?.customElements ?? {};
-  const baseTextElements = [
-    { id: 'title', type: 'text', label: 'Titulo', text: content.title },
-    { id: 'subtitle', type: 'text', label: 'Subtitulo', text: content.subtitle },
-    { id: 'meta', type: 'text', label: 'Fecha / hora', text: pageMetaLine(content) },
-    { id: 'contact', type: 'text', label: 'Contacto', text: content.contact },
-    { id: 'extra', type: 'text', label: 'Texto adicional', text: content.extra },
-  ];
-  const customElements = Object.entries(custom).map(([id, element]) => {
-    let textValue = element.type === 'text' ? linkedPageFieldText(content, element.fieldKey, element.text ?? '') : '';
-    if (element.type === 'linkedText') {
-      const ltLayout = pageState?.elementLayout?.[id] || layout[id];
-      if (ltLayout?.linkedTextGroupId) {
-        const fragment = linkedTextBoxSystem.getFragmentForBox(ltLayout.linkedTextGroupId, id);
-        textValue = fragment.html ? fragment.html.replace(/<[^>]*>/g, '') : (element.text ?? '');
-      } else {
-        textValue = element.text ?? '';
+const renderPageState = (pageState) => (
+  pageState?.id === activePageId.value
+    ? {
+        ...pageState,
+        content: state.content,
+        elementLayout: state.elementLayout,
+        customElements: state.customElements,
       }
+    : pageState
+);
+const stageStateForPage = (pageState) => {
+  if (pageState?.id === activePageId.value) return state;
+  const renderState = renderPageState(pageState);
+  return {
+    ...state,
+    content: renderState?.content ?? {},
+    elementLayout: renderState?.elementLayout ?? {},
+    customElements: renderState?.customElements ?? {},
+    selectedElementId: null,
+  };
+};
+const editorElementsForPage = (pageState) => {
+  const renderState = renderPageState(pageState);
+  const content = renderState?.content ?? {};
+  const layout = renderState?.elementLayout ?? {};
+  const custom = renderState?.customElements ?? {};
+  const baseTextElements = [
+    { id: 'title', type: 'text', label: 'Titulo', fieldKey: 'title', text: content.title },
+    { id: 'subtitle', type: 'text', label: 'Subtitulo', fieldKey: 'subtitle', text: content.subtitle },
+    { id: 'meta', type: 'text', label: 'Fecha / hora', fieldKey: 'meta', text: pageMetaLine(content) },
+    { id: 'contact', type: 'text', label: 'Contacto', fieldKey: 'contact', text: content.contact },
+    { id: 'extra', type: 'text', label: 'Texto adicional', fieldKey: 'extra', text: content.extra },
+  ];
+
+  const customElements = Object.entries(custom).map(([id, element]) => {
+    const isBeingEdited = renderState?.id === activePageId.value && editingElementId.value === id;
+    const linkedTextBoxData = element.type === 'linkedText' ? getLinkedTextBoxText(id) : null;
+    const linkedTextStyleSourceId = element.type === 'linkedText' ? getLinkedTextStyleSourceId(id) : id;
+    const linkedTextStyleSourceLayout = linkedTextLayoutFromAnyPage(linkedTextStyleSourceId) ?? layout[linkedTextStyleSourceId] ?? null;
+
+    let elementText;
+    if (element.type === 'text') {
+      elementText = linkedPageFieldText(content, element.fieldKey, element.text ?? '');
+    } else if (element.type === 'linkedText') {
+      if (isBeingEdited) {
+        const headId = getLinkedTextChainHead(id);
+        const headElement = linkedTextElementFromAnyPage(headId);
+        elementText = headElement?.text ?? '';
+      } else {
+        elementText = linkedTextBoxData?.text ?? '';
+      }
+    } else {
+      elementText = '';
     }
+
     return {
       id,
       type: element.type,
       label: element.label ?? 'Elemento',
       fieldKey: element.fieldKey ?? null,
-      text: textValue,
+      text: elementText,
+      linkedTextStyleSourceId,
+      linkedTextParagraphStyles: element.type === 'linkedText'
+        ? (linkedTextStyleSourceLayout?.paragraphStyles ?? [])
+        : null,
+      linkedTextDisplayHtml: element.type === 'linkedText' ? (linkedTextBoxData?.displayHtml ?? '') : '',
+      linkedTextOverflowHtml: element.type === 'linkedText' ? (linkedTextBoxData?.overflowHtml ?? '') : '',
+      linkedTextFullTextHtml: element.type === 'linkedText' ? (linkedTextBoxData?.fullTextHtml ?? '') : '',
+      linkedTextTailHtml: element.type === 'linkedText' ? (linkedTextBoxData?.tailHtml ?? '') : '',
+      linkedTextInitialHtml: element.type === 'linkedText' && isBeingEdited ? (linkedTextBoxData?.tailHtml ?? '') : '',
+      linkedTextEditorTopOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTopOffset ?? 0) : 0,
+      linkedTextEditorTextOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTextOffset ?? 0) : 0,
+      linkedTextIsLastInChain: element.type === 'linkedText' ? (linkedTextBoxData?.isLastInChain ?? false) : false,
       src: element.type === 'image' ? element.src : null,
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
     };
   });
 
   return [...baseTextElements, ...customElements]
-    .sort((a, b) => ((layout[a.id] ?? {}).zIndex ?? 0) - ((layout[b.id] ?? {}).zIndex ?? 0));
+    .filter((item) => layout[item.id])
+    .sort((a, b) => (layout[a.id]?.zIndex ?? 0) - (layout[b.id]?.zIndex ?? 0));
 };
-const readonlyPageSurfaceStyle = (pageState) => ({
-  ...canvasElementStyle.value,
-  background: pageState?.elementLayout?.background?.backgroundColor ?? '#4338ca',
-});
-const readonlyPageElementStyle = (pageState, id) => {
-  const layout = pageState?.elementLayout?.[id] ?? {};
-  return {
-    position: 'absolute',
-    left: `${layout.x ?? 0}px`,
-    top: `${layout.y ?? 0}px`,
-    width: layout.w ? `${layout.w}px` : 'auto',
-    height: layout.h ? `${layout.h}px` : 'auto',
-    zIndex: layout.zIndex ?? 1,
-    transform: `rotate(${layout.rotation ?? 0}deg)`,
-    opacity: `${Number(layout.opacity ?? 100) / 100}`,
-    color: layout.color ?? '#ffffff',
-    fontSize: `${layout.fontSize ?? 16}px`,
-    fontFamily: layout.fontFamily ?? 'inherit',
-    fontWeight: layout.fontWeight === 'regular' ? 400 : (layout.fontWeight ?? 400),
-    fontStyle: layout.italic ? 'italic' : 'normal',
-    textTransform: layout.uppercase ? 'uppercase' : 'none',
-    textAlign: layout.textAlign ?? 'left',
-    letterSpacing: `${layout.letterSpacing ?? 0}px`,
-    lineHeight: layout.lineHeight ?? 1.2,
-    textShadow: layout.shadow ? '0 2px 8px rgba(15,23,42,.45)' : 'none',
-    overflow: 'hidden',
-    whiteSpace: 'pre-wrap',
-  };
+const isPageTextElement = (pageState, id) => {
+  const renderState = renderPageState(pageState);
+  if (baseTextElementIds.has(id)) return true;
+  const type = renderState?.customElements?.[id]?.type;
+  return type === 'text' || type === 'linkedText';
+};
+const isPageLinkedTextElement = (pageState, id) => renderPageState(pageState)?.customElements?.[id]?.type === 'linkedText';
+const pageElementBoxStyle = (pageState, id) => buildSharedElementBoxStyle(
+  renderPageState(pageState)?.elementLayout?.[id],
+  {
+    isText: isPageTextElement(pageState, id),
+    isLinkedText: isPageLinkedTextElement(pageState, id),
+  },
+);
+const pageElementContentStyle = (pageState, id) => buildSharedElementContentStyle(
+  renderPageState(pageState)?.elementLayout?.[id],
+  {
+    elementType: renderPageState(pageState)?.customElements?.[id]?.type ?? (baseTextElementIds.has(id) ? 'text' : null),
+  },
+);
+const pageRichEditorContainerStyle = (pageState, id) => buildSharedRichEditorContainerStyle(renderPageState(pageState)?.elementLayout?.[id]);
+const pageNeonColorOverride = (pageState, id) => neonColorOverrideFromLayout(renderPageState(pageState)?.elementLayout?.[id]);
+const pageImageFrameStyle = (pageState, id) => buildImageFrameStyle(renderPageState(pageState)?.elementLayout?.[id]);
+const pageImageRenderStyle = (pageState, id) => {
+  const renderState = renderPageState(pageState);
+  const layout = renderState?.elementLayout?.[id];
+  const element = renderState?.customElements?.[id];
+  if (!layout || !element) return {};
+  return buildCoverImageStyle({
+    containerWidth: layout.w ?? 160,
+    containerHeight: layout.h ?? 140,
+    imageWidth: element.intrinsicWidth,
+    imageHeight: element.intrinsicHeight,
+    cropScale: layout.imageCropScale,
+    cropOffsetX: layout.imageCropOffsetX,
+    cropOffsetY: layout.imageCropOffsetY,
+    flipX: layout.flipX,
+    flipY: layout.flipY,
+  });
+};
+const pageImageTintOverlayStyle = (pageState, id) => buildImageTintOverlayStyle(renderPageState(pageState)?.elementLayout?.[id]);
+const pageShapeStyle = (pageState, item) => buildShapeStyle(renderPageState(pageState)?.elementLayout?.[item.id], item.shapeKind, SHAPE_CLIP_PATHS);
+const pageShapeRenderModel = (pageState, item) => buildShapeRenderModel(renderPageState(pageState)?.elementLayout?.[item.id], item.shapeKind, SHAPE_CLIP_PATHS);
+const pageCanvasBackgroundStyle = (pageState) => buildCanvasBackgroundStyle(renderPageState(pageState)?.elementLayout?.background);
+const pageCanvasBackgroundImageSrc = (pageState) => renderPageState(pageState)?.elementLayout?.background?.backgroundImageSrc;
+const pageCanvasBackgroundImageStyle = (pageState) => {
+  const background = renderPageState(pageState)?.elementLayout?.background ?? {};
+  return buildCoverImageStyle({
+    containerWidth: editorCanvasDimensions.value.width,
+    containerHeight: editorCanvasDimensions.value.height,
+    imageWidth: background.backgroundImageWidth,
+    imageHeight: background.backgroundImageHeight,
+    cropScale: background.backgroundImageCropScale,
+    cropOffsetX: background.backgroundImageCropOffsetX,
+    cropOffsetY: background.backgroundImageCropOffsetY,
+    flipX: background.backgroundImageFlipX,
+    flipY: background.backgroundImageFlipY,
+    opacity: background.backgroundImageOpacity,
+    transparencyLayout: background,
+    transparencyPrefix: 'backgroundImage',
+    transparencyOpacityKey: 'backgroundImageOpacity',
+  });
 };
 const isTemplateFieldElement = (id) => Boolean(
   isTemplateBaseEditor.value
@@ -1460,7 +1644,7 @@ const {
   elementMeasurements,
   canvasRef,
   editingElementId,
-  commitTextEdit: () => commitTextEdit(),
+  commitTextEdit: (...args) => commitTextEdit(...args),
   setDragDocumentState: (...args) => setDragDocumentState(...args),
   getEstimatedTextHeight: (...args) => getEstimatedTextHeight(...args),
   getElementText: (...args) => getElementText(...args),
@@ -1645,6 +1829,70 @@ const ensureParagraphStyles = (layout, text = '') => {
 
     return layout.paragraphStyles;
 };
+
+const extractPlainTextFromHtml = (html = '') => {
+  if (typeof document === 'undefined') return String(html ?? '');
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return div.textContent || '';
+};
+
+const parseLinkedParagraphStylesFromHtml = (html = '', layout = {}) => {
+  if (typeof document === 'undefined') return [];
+  const container = document.createElement('div');
+  container.innerHTML = html || '';
+
+  const blockNodes = Array.from(container.querySelectorAll('p,div,li,h1,h2,h3,h4,h5,h6,blockquote,pre'));
+  if (!blockNodes.length) return [];
+
+  return blockNodes.map((node) => {
+    const fallback = buildParagraphStyle(layout);
+    const inline = node.style;
+    const fontSize = Number.parseFloat(inline.fontSize);
+    const letterSpacing = Number.parseFloat(inline.letterSpacing);
+    const lineHeight = Number.parseFloat(inline.lineHeight);
+    const weightRaw = inline.fontWeight || '';
+    const weightNum = Number.parseInt(weightRaw, 10);
+
+    let fontWeight = fallback.fontWeight;
+    if (Number.isFinite(weightNum)) {
+      fontWeight = weightNum >= 600 ? 'bold' : 'regular';
+    } else if (weightRaw) {
+      fontWeight = /bold/i.test(weightRaw) ? 'bold' : (/regular|normal/i.test(weightRaw) ? 'regular' : weightRaw);
+    }
+
+    return {
+      fontSize: Number.isFinite(fontSize) ? fontSize : fallback.fontSize,
+      color: inline.color || fallback.color,
+      fontFamily: inline.fontFamily || fallback.fontFamily,
+      fontWeight,
+      italic: inline.fontStyle === 'italic' ? true : fallback.italic,
+      underline: /underline/i.test(inline.textDecorationLine || inline.textDecoration || '') ? true : fallback.underline,
+      uppercase: inline.textTransform === 'uppercase' ? true : fallback.uppercase,
+      textAlign: inline.textAlign || fallback.textAlign,
+      letterSpacing: Number.isFinite(letterSpacing) ? letterSpacing : fallback.letterSpacing,
+      lineHeight: Number.isFinite(lineHeight) ? lineHeight : fallback.lineHeight,
+    };
+  });
+};
+
+const syncLinkedTextCanonicalFromHtml = (id, html = '') => {
+  const headId = getLinkedTextChainHead(id);
+  const headElement = linkedTextElementFromAnyPage(headId);
+  if (!headElement || headElement.type !== 'linkedText') return;
+
+  const canonicalHtml = String(html ?? '');
+  linkedTextSetElementField(headId, 'html', canonicalHtml);
+  linkedTextSetElementField(headId, 'text', extractPlainTextFromHtml(canonicalHtml));
+
+  const headLayout = linkedTextLayoutFromAnyPage(headId);
+  if (headLayout) {
+    const parsedStyles = parseLinkedParagraphStylesFromHtml(canonicalHtml, headLayout);
+    linkedTextSetLayoutField(headId, 'paragraphStyles', parsedStyles);
+  }
+
+  recalculateLinkedTextAllocations(headId);
+};
 const getTextSourceForSelectedElement = () => {
     if (!state.selectedElementId) return '';
     return getElementText(state.selectedElementId);
@@ -1740,10 +1988,10 @@ const paragraphCount = computed(() => {
         || getParagraphs(getElementText(state.selectedElementId)).length;
 });
 const activeParagraphLabel = computed(() => {
-    if (!paragraphCount.value) return 'Párrafo 1 de 1';
+    if (!paragraphCount.value) return 'PÃ¡rrafo 1 de 1';
 
     if (editingElementId.value !== state.selectedElementId) {
-        return paragraphCount.value === 1 ? 'Todo el texto (1 párrafo)' : `Todo el texto (${paragraphCount.value} párrafos)`;
+        return paragraphCount.value === 1 ? 'Todo el texto (1 pÃ¡rrafo)' : `Todo el texto (${paragraphCount.value} pÃ¡rrafos)`;
     }
 
     const n = paragraphCount.value;
@@ -1751,10 +1999,10 @@ const activeParagraphLabel = computed(() => {
     const last = paragraphSelection.end + 1;
 
     if (!paragraphSelection.active || first === last) {
-        return `Párrafo ${selectedParagraphIndex.value + 1} de ${n}`;
+        return `PÃ¡rrafo ${selectedParagraphIndex.value + 1} de ${n}`;
     }
 
-    return `Párrafos ${Math.min(first, last)}-${Math.max(first, last)} de ${n}`;
+    return `PÃ¡rrafos ${Math.min(first, last)}-${Math.max(first, last)} de ${n}`;
 });
 
 const getMaxZIndex = () => Object.values(state.elementLayout).reduce((max, layout) => Math.max(max, layout?.zIndex ?? 0), 0);
@@ -1812,6 +2060,10 @@ const editorGridStyle = computed(() => {
 const canvasFrameStyle = computed(() => ({
   width: `${editorCanvasDimensions.value.width}px`,
   maxWidth: '100%',
+}));
+const canvasFrameContainerStyle = computed(() => ({
+  ...canvasFrameStyle.value,
+  height: `${editorCanvasDimensions.value.height}px`,
 }));
 const canvasZoomStyle = computed(() => ({
   transform: `scale(${zoomLevel.value / 100})`,
@@ -1997,7 +2249,7 @@ const currentCanvasDimensions = () => ({
 const canvasDimensionsForDesignerState = (snapshot = {}) => {
   const options = resolveObjectiveSizeOptions(snapshot.objective, snapshot.outputType, snapshot.format);
   const option = options.find((item) => item.label === snapshot.size) ?? null;
-  const parsed = applyFormatToDimensions(parseSizeDetail(option?.detail ?? snapshot.size ?? '1080 × 1080 px'), snapshot.format);
+  const parsed = applyFormatToDimensions(parseSizeDetail(option?.detail ?? snapshot.size ?? '1080 Ã— 1080 px'), snapshot.format);
 
   if (parsed?.width > 0 && parsed?.height > 0) {
     const ratio = parsed.width / parsed.height;
@@ -2291,7 +2543,7 @@ const addLinkedTextElement = () => {
       id,
       type: 'linkedText',
       label: 'Texto enlazado',
-      text: 'Escribe tu texto aquí...',
+      text: 'Escribe tu texto aquÃ­...',
     },
   };
   state.elementLayout = {
@@ -2321,7 +2573,7 @@ const handleLinkedTextLinkMove = (event) => {
   const targetElement = document.elementFromPoint(event.clientX, event.clientY);
   const targetEditorElement = targetElement?.closest('[data-editor-element="true"]');
   const targetId = targetEditorElement?.dataset.editorId;
-  if (targetId && state.customElements?.[targetId]?.type === 'linkedText' && targetId !== linkedTextLink.sourceId) {
+  if (targetId && linkedTextElementFromAnyPage(targetId)?.type === 'linkedText' && targetId !== linkedTextLink.sourceId) {
     linkedTextLink.hoverTargetId = targetId;
   } else {
     linkedTextLink.hoverTargetId = null;
@@ -2447,48 +2699,18 @@ const redistributeLinkedText = (startId) => {
   });
 };
 
-const onLinkedTextUpdate = (id, value) => {
-  const element = linkedTextElementFromAnyPage(id);
-  if (!element || element.type !== 'linkedText') return;
-
-  const layout = linkedTextLayoutFromAnyPage(id);
-  if (!layout?.linkedTextGroupId) {
-    linkedTextSetElementField(id, 'text', value);
-    return;
-  }
-
-  const headId = getLinkedTextChainHead(id);
-  const headElement = linkedTextElementFromAnyPage(headId);
-  if (headElement?.type === 'linkedText') {
-    const fragment = linkedTextBoxSystem.getFragmentForBox(layout.linkedTextGroupId, id);
-    const prefixHtml = fragment?.prefixHtml || '';
-    const prefixText = prefixHtml ? (() => { const div = document.createElement('div'); div.innerHTML = prefixHtml; return div.textContent || ''; })() : '';
-    linkedTextSetElementField(headId, 'text', prefixText + value);
-  } else {
-    linkedTextSetElementField(id, 'text', value);
-  }
-  recalculateLinkedTextAllocations(headId);
-};
-
 const onRichEditorHtmlUpdate = (id, html) => {
   const element = linkedTextElementFromAnyPage(id);
   if (!element || element.type !== 'linkedText') return;
 
   const layout = linkedTextLayoutFromAnyPage(id);
   if (!layout?.linkedTextGroupId) {
-    linkedTextSetElementField(id, 'html', html);
+    syncLinkedTextCanonicalFromHtml(id, html);
     return;
   }
 
-  const headId = getLinkedTextChainHead(id);
-  const headElement = linkedTextElementFromAnyPage(headId);
-  if (headElement?.type === 'linkedText') {
-    const fragment = linkedTextBoxSystem.getFragmentForBox(layout.linkedTextGroupId, id);
-    linkedTextSetElementField(headId, 'html', (fragment.prefixHtml || '') + html);
-  } else {
-    linkedTextSetElementField(id, 'html', html);
-  }
-  recalculateLinkedTextAllocations(headId);
+  const fragment = linkedTextBoxSystem.getFragmentForBox(layout.linkedTextGroupId, id);
+  syncLinkedTextCanonicalFromHtml(id, `${fragment.prefixHtml || ''}${html || ''}`);
 };
 
 const addTemplateFieldElement = (fieldKey) => {
@@ -2600,8 +2822,8 @@ const requestImmediateStateFlush = () => {
   });
 };
 
-const resolveThumbnailBackgroundColor = () => {
-  const background = state.elementLayout?.background;
+const resolveThumbnailBackgroundColor = (pageState = null) => {
+  const background = (pageState?.elementLayout ?? state.elementLayout)?.background;
 
   if (background?.fillMode === 'gradient') {
     return null;
@@ -2616,7 +2838,7 @@ const resolveThumbnailBackgroundColor = () => {
 
 
 
-// Genera la miniatura y ejecuta un callback cuando esté lista
+// Genera la miniatura y ejecuta un callback cuando estÃ© lista
 const generateThumbnailAndThen = (cb) => {
   if (thumbnailTimer) {
     clearTimeout(thumbnailTimer);
@@ -2626,12 +2848,17 @@ const generateThumbnailAndThen = (cb) => {
     await nextTick();
     setTimeout(async () => {
       try {
-        if (canvasRef.value) {
+        const firstPageId = state.pages?.[0]?.id;
+        const firstPageCanvas = firstPageId
+          ? documentPageRefs.get(firstPageId)?.querySelector?.('[data-editor-canvas="true"]')
+          : null;
+        const thumbnailCanvas = firstPageCanvas ?? canvasRef.value;
+        if (thumbnailCanvas) {
           const { toJpegExport } = await import('../../utils/useHtml2Image');
-          const dataUrl = await toJpegExport(canvasRef.value, {
+          const dataUrl = await toJpegExport(thumbnailCanvas, {
             quality: 0.6,
             pixelRatio: 0.35,
-            backgroundColor: resolveThumbnailBackgroundColor(),
+            backgroundColor: resolveThumbnailBackgroundColor(state.pages?.[0] ?? null),
             filter: (node) => !(node instanceof Element && node.closest?.('[data-editor-control="true"]')),
           });
           const hash = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(dataUrl));
@@ -2742,14 +2969,14 @@ const syncUploadedAssetsLibrary = async () => {
       });
     });
   } catch (error) {
-    console.error('No se pudo cargar la librería de imágenes del usuario', error);
+    console.error('No se pudo cargar la librerÃ­a de imÃ¡genes del usuario', error);
   }
 };
 
 const humanizeUploadError = (error) => {
   const status = error?.response?.status;
   if (status === 413 || status === 422) {
-    return 'La imagen es demasiado grande o no tiene un formato válido.';
+    return 'La imagen es demasiado grande o no tiene un formato vÃ¡lido.';
   }
 
   return 'No se pudo subir la imagen. Reintenta.';
@@ -3078,7 +3305,7 @@ const uploadImageAsset = async ({ assetId, file, label, dataUrl }) => {
     const canonicalAssetId = response.data?.assetId ?? null;
 
     if (!finalUrl) {
-      throw new Error('La respuesta del servidor no incluyó la URL de la imagen.');
+      throw new Error('La respuesta del servidor no incluyÃ³ la URL de la imagen.');
     }
 
     uploadProgressByAssetId[assetId] = 100;
@@ -3120,7 +3347,7 @@ const queueUploadForAsset = async (assetId, options = {}) => {
       dataUrl: pendingDataUrl,
     });
   } catch (error) {
-    console.error('No se pudo preparar la reanudación del upload de imagen', error);
+    console.error('No se pudo preparar la reanudaciÃ³n del upload de imagen', error);
     updateUploadedImage(assetId, {
       uploadStatus: 'error',
       needsUpload: true,
@@ -3198,7 +3425,7 @@ const onImagePicked = async (event) => {
 
   imagePanelTab.value = 'uploads';
   for (const file of files) {
-    // Desde el picker actúa como subida a la galería del usuario; la inserción en el diseño queda a elección posterior.
+    // Desde el picker actÃºa como subida a la galerÃ­a del usuario; la inserciÃ³n en el diseÃ±o queda a elecciÃ³n posterior.
     // eslint-disable-next-line no-await-in-loop
     await createPendingUploadedImageFromFile(file, { openUploadsPanel: true });
   }
@@ -3374,7 +3601,7 @@ const promoteSelectedImageToBackground = async () => {
   }
 
   if (backgroundHasImage.value) {
-    const confirmed = window.confirm('Ya hay una imagen de fondo. Si continúas, será reemplazada por la imagen seleccionada.');
+    const confirmed = window.confirm('Ya hay una imagen de fondo. Si continÃºas, serÃ¡ reemplazada por la imagen seleccionada.');
     if (!confirmed) {
       return;
     }
@@ -3604,7 +3831,7 @@ const addShapeElement = (shapeKind) => {
 
   const isRectangle = shapeKind === 'rectangle' || shapeKind === 'rectangle-outline';
   const layout = buildDefaultLayout({
-    // El rectángulo base nace cuadrado; luego el usuario puede deformarlo libremente.
+    // El rectÃ¡ngulo base nace cuadrado; luego el usuario puede deformarlo libremente.
     w: isRectangle ? 140 : 140,
     h: isRectangle ? 140 : 140,
     x: getInsertX(140),
@@ -3692,7 +3919,7 @@ const updateElementMeasurement = (id, node) => {
       state.customElements[cloneId] = {
         id: cloneId,
         type: 'linkedText',
-        label: `${sourceElement.label} continuación`,
+        label: `${sourceElement.label} continuaciÃ³n`,
         text: '',
       };
     } else if (sourceElement.type === 'text') {
@@ -4131,7 +4358,7 @@ const getElementText = (id) => {
         case 'extra':
             return state.content[id] ?? '';
         case 'meta':
-            return [state.content.date, state.content.time].filter(Boolean).join(' · ');
+            return [state.content.date, state.content.time].filter(Boolean).join(' Â· ');
         default:
           return state.customElements?.[id]?.text ?? '';
     }
@@ -4201,7 +4428,7 @@ const onRichEditorTextUpdate = (id, newText) => {
   const baseTextKeys = ['title', 'subtitle', 'meta', 'contact', 'extra'];
   if (baseTextKeys.includes(id)) {
     if (id === 'meta') {
-      const parts = newText.split(' · ');
+      const parts = newText.split(' Â· ');
       state.content.date = parts[0] || '';
       state.content.time = parts[1] || '';
     } else {
@@ -4213,7 +4440,7 @@ const onRichEditorTextUpdate = (id, newText) => {
   if (state.customElements?.[id]?.fieldKey) {
     const linkedFieldKey = state.customElements[id].fieldKey;
     if (linkedFieldKey === 'meta') {
-      const parts = newText.split(' · ');
+      const parts = newText.split(' Â· ');
       state.content.date = parts[0] || '';
       state.content.time = parts[1] || '';
     } else {
@@ -4225,7 +4452,6 @@ const onRichEditorTextUpdate = (id, newText) => {
   if (!element) return;
 
   if (element.type === 'linkedText') {
-    onLinkedTextUpdate(id, newText);
     return;
   }
 
@@ -4241,6 +4467,16 @@ const recalculateTextHeight = (id) => {
   const text = getElementText(id);
   const estimatedHeight = getEstimatedTextHeight(layout, text);
   if (estimatedHeight > 0) {
+    if (id === 'title' && layout.h !== estimatedHeight) {
+      frontendLog.info('title-height', 'Cambio de altura calculado para titulo', {
+        id,
+        previousHeight: layout.h ?? null,
+        nextHeight: estimatedHeight,
+        activePageId: activePageId.value,
+        editingElementId: editingElementId.value,
+        textLength: String(text ?? '').length,
+      });
+    }
     layout.h = estimatedHeight;
   }
 };
@@ -4267,6 +4503,12 @@ const handleClipboardKeydown = async (event) => {
 };
 
 const onRichEditorStylesUpdate = (id, newStyles) => {
+    const element = linkedTextElementFromAnyPage(id);
+    if (element?.type === 'linkedText') {
+      if (editingElementId.value !== id) return;
+      return;
+    }
+
     const styleSourceId = getLinkedTextStyleSourceId(id);
     const layout = linkedTextLayoutFromAnyPage(styleSourceId);
     if (!layout) return;
@@ -4315,7 +4557,7 @@ const {
   zoomScale,
   orderedLayerIds,
   selectedTextStyle,
-  commitTextEdit: () => commitTextEdit(),
+  commitTextEdit: (...args) => commitTextEdit(...args),
   beginTextEdit: (...args) => beginTextEdit(...args),
   deleteCurrentSelection: () => deleteCurrentSelection(),
   performUndo: () => performUndo(),
@@ -4378,7 +4620,7 @@ const handleDocumentPointerEnd = async (event) => {
         .filter(Boolean)
     : [];
   const sourceBounds = boundsFromLayoutSnapshots(sourceSnapshots);
-  const sourceSurfaceRect = wasMoveDrag ? pageSurfaceRect(state.activePageId) : null;
+  const sourceSurfaceRect = wasMoveDrag ? pageSurfaceRect(activePageId.value) : null;
   const pointerOffset = sourceBounds && sourceSurfaceRect
     ? {
         x: ((drag.startClientX - sourceSurfaceRect.left) / zoomScale.value) - sourceBounds.x,
@@ -4389,7 +4631,7 @@ const handleDocumentPointerEnd = async (event) => {
 
   endDrag(event);
 
-  if (wasMoveDrag && targetPageId && targetPageId !== state.activePageId && sourceSnapshots.length) {
+  if (wasMoveDrag && targetPageId && targetPageId !== activePageId.value && sourceSnapshots.length) {
     await transferElementsToPage(draggedIds, targetPageId, event, pointerOffset, sourceSnapshots);
   }
 };
@@ -4481,19 +4723,29 @@ const beginTextEdit = async (id, focusToEnd = false, clickEvent = null) => {
     }
 };
 
-const commitTextEdit = () => {
+const commitTextEdit = ({ recalculateHeight = true, reason = 'commit-text-edit' } = {}) => {
     if (!editingElementId.value) return;
 
     const id = editingElementId.value;
     const editorRef = richEditorRefs.value[id];
+    const isLinkedText = state.customElements?.[id]?.type === 'linkedText';
 
-    if (editorRef?.getParagraphStyles) {
+    if (editorRef?.getParagraphStyles && !isLinkedText) {
       onRichEditorStylesUpdate(id, editorRef.getParagraphStyles());
     }
 
-    recalculateTextHeight(id);
+    if (recalculateHeight) {
+      recalculateTextHeight(id);
+    } else if (id === 'title') {
+      frontendLog.info('title-height', 'Se preserva altura de titulo al cerrar edicion', {
+        id,
+        reason,
+        activePageId: activePageId.value,
+        currentHeight: state.elementLayout?.[id]?.h ?? null,
+      });
+    }
 
-    // Si es linkedText, detener edición en el sistema
+    // Si es linkedText, detener ediciÃ³n en el sistema
     if (state.customElements?.[id]?.type === 'linkedText') {
       const layout = state.elementLayout[id];
       if (layout?.linkedTextGroupId) {
@@ -4527,7 +4779,7 @@ const cancelTextEdit = () => {
 
 
 onMounted(() => {
-  // Ya se hizo resetDesignerState y rehidratación arriba
+  // Ya se hizo resetDesignerState y rehidrataciÃ³n arriba
   syncEditorViewport();
   editorViewportQuery = window.matchMedia('(max-width: 767px)');
   editorViewportQuery.addEventListener?.('change', syncEditorViewport);
@@ -4559,7 +4811,7 @@ onMounted(() => {
     templateFormOpen.value = true;
   }
   refreshElementObservers();
-  visuallyFocusedPageId.value = state.activePageId;
+  visuallyFocusedPageId.value = activePageId.value;
   nextTick(() => updateVisuallyFocusedPage());
 
   if (isTemplateBaseEditor.value) {
@@ -4584,7 +4836,7 @@ const flushDesignerStateWithThumbnail = async () => {
       syncActivePageSnapshot();
       await flushDesignerStatePersistence();
     } catch (error) {
-      console.error('No se pudo guardar el estado del diseño automáticamente', error);
+      console.error('No se pudo guardar el estado del diseÃ±o automÃ¡ticamente', error);
     } finally {
       pendingStateFlush = false;
       if (stateFlushRequestedDuringPending) {
@@ -4595,12 +4847,12 @@ const flushDesignerStateWithThumbnail = async () => {
   });
 };
 
-// Watcher principal para cambios en el diseño
+// Watcher principal para cambios en el diseÃ±o
 watch(
   () => [state.content, state.elementLayout, state.customElements],
   () => {
+    if (isSwitchingDocumentPage) return;
     if (exportDialogOpen.value) {
-      syncActivePageSnapshot();
       return;
     }
     scheduleHistorySnapshot();
@@ -4687,6 +4939,12 @@ watch(
     return JSON.stringify(linkedLayouts);
   },
   () => {
+    if (isSwitchingDocumentPage) {
+      frontendLog.debug('linked-text-page-switch', 'Se omite redistribucion de linkedText durante cambio de pagina', {
+        activePageId: activePageId.value,
+      });
+      return;
+    }
     const handledGroups = new Set();
     Object.keys(state.elementLayout).forEach((key) => {
       const layout = state.elementLayout[key];
@@ -4752,12 +5010,12 @@ const setRichEditorRef = (id, element) => {
   delete richEditorRefs.value[id];
 };
 
-// Nuevo handler para abrir el modal de exportación
+// Nuevo handler para abrir el modal de exportaciÃ³n
 const handleExportNavigation = async (event) => {
   event?.preventDefault?.();
   // Si es invitado, mostrar alerta y no abrir el exportador
   if (!authUser.value) {
-    window.alert('Para descargar o exportar tu diseño debes iniciar sesión. Puedes seguir editando como invitado.');
+    window.alert('Para descargar o exportar tu diseÃ±o debes iniciar sesiÃ³n. Puedes seguir editando como invitado.');
     return;
   }
   exportDialogOpen.value = true;
@@ -4781,9 +5039,9 @@ const handleLogin = async () => {
 };
 
 const handleCreateNewDesign = async () => {
-  // Si es invitado y ya existe un diseño temporal, mostrar alerta y no crear otro
+  // Si es invitado y ya existe un diseÃ±o temporal, mostrar alerta y no crear otro
   if (!authUser.value && state.currentDesignUuid == null && window.sessionStorage.getItem('guestDesignCreated')) {
-    window.alert('Solo puedes tener un diseño temporal como invitado. Inicia sesión para guardar y crear más diseños.');
+    window.alert('Solo puedes tener un diseÃ±o temporal como invitado. Inicia sesiÃ³n para guardar y crear mÃ¡s diseÃ±os.');
     return;
   }
   try {
@@ -4793,7 +5051,7 @@ const handleCreateNewDesign = async () => {
   }
 
   resetDesignerState();
-  // Marcar que el invitado ya creó un diseño temporal
+  // Marcar que el invitado ya creÃ³ un diseÃ±o temporal
   if (!authUser.value) {
     window.sessionStorage.setItem('guestDesignCreated', '1');
   }
@@ -4816,7 +5074,7 @@ const handleDuplicateDesign = async () => {
     }
   }
 
-  const currentTitle = (state.designTitle || 'Diseño sin título').trim();
+  const currentTitle = (state.designTitle || 'DiseÃ±o sin tÃ­tulo').trim();
   state.designTitle = currentTitle.toLowerCase().startsWith('copia de ')
     ? currentTitle
     : `Copia de ${currentTitle}`;
@@ -4830,10 +5088,10 @@ const handleDuplicateDesign = async () => {
 };
 
 const handleRenameDesign = async () => {
-  const nextTitle = window.prompt('Nuevo título del diseño', state.designTitle || 'Diseño sin título');
+  const nextTitle = window.prompt('Nuevo tÃ­tulo del diseÃ±o', state.designTitle || 'DiseÃ±o sin tÃ­tulo');
   if (nextTitle === null) return;
 
-  state.designTitle = nextTitle.trim() || 'Diseño sin título';
+  state.designTitle = nextTitle.trim() || 'DiseÃ±o sin tÃ­tulo';
   state.designTitleManual = true;
 
   try {
@@ -4852,7 +5110,7 @@ const handleRenameDesign = async () => {
 
 const ensurePersistedDesign = async () => {
   if (!authUser.value) {
-    throw new Error('Debes iniciar sesión para guardar este diseño.');
+    throw new Error('Debes iniciar sesiÃ³n para guardar este diseÃ±o.');
   }
 
   if (state.currentDesignUuid) {
@@ -4861,16 +5119,16 @@ const ensurePersistedDesign = async () => {
   }
 
   if (!designsStoreEndpoint.value) {
-    throw new Error('No hay endpoint disponible para crear diseños.');
+    throw new Error('No hay endpoint disponible para crear diseÃ±os.');
   }
 
   const response = await axios.post(designsStoreEndpoint.value, {
     state: JSON.parse(JSON.stringify(state)),
-    name: state.designTitle || 'Diseño sin título',
+    name: state.designTitle || 'DiseÃ±o sin tÃ­tulo',
   });
   const uuid = response.data?.design?.uuid;
   if (!uuid) {
-    throw new Error('No se pudo persistir el diseño actual.');
+    throw new Error('No se pudo persistir el diseÃ±o actual.');
   }
 
   state.currentDesignUuid = uuid;
@@ -5044,7 +5302,7 @@ const saveTemplateForm = async () => {
   const categories = templateForm.categoryIds.map((item) => String(item).trim()).filter(Boolean);
   const objectives = templateForm.objectiveIds.map((item) => String(item).trim()).filter(Boolean);
   if (!templateForm.title.trim() || !categories.length || !objectives.length) {
-    window.alert('La plantilla necesita título, al menos una categoría y al menos un objetivo.');
+    window.alert('La plantilla necesita tÃ­tulo, al menos una categorÃ­a y al menos un objetivo.');
     return;
   }
 
@@ -5109,7 +5367,7 @@ const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) =
     try {
       commitTextEdit();
     } catch (_) {
-      // no-op: si el editor rico todavía no está listo, continuamos igualmente
+      // no-op: si el editor rico todavÃ­a no estÃ¡ listo, continuamos igualmente
     }
     const targetSurface = canvasDimensionsForDesignerState(assistantState);
     assistantState.stateRevision = bumpRevision(state.stateRevision);
@@ -5131,7 +5389,7 @@ const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) =
     const returnedState = response.data?.design?.state ?? null;
     if (returnedState) {
       normalizeBrochurePages(returnedState);
-      // Forzar rehidratación del estado del diseñador con el state devuelto por el backend
+      // Forzar rehidrataciÃ³n del estado del diseÃ±ador con el state devuelto por el backend
       useDesignerState({ forceRehydrate: true, overrideState: returnedState });
       ensureDocumentPages(true);
       refreshDocumentPageList();
@@ -5145,7 +5403,7 @@ const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) =
       return;
     }
   } catch (error) {
-    window.alert(error.response?.data?.message || 'No se pudo generar el diseño desde la plantilla.');
+    window.alert(error.response?.data?.message || 'No se pudo generar el diseÃ±o desde la plantilla.');
   }
 
   closeAssistant();
@@ -5157,6 +5415,38 @@ const handleCanvasClick = (event) => {
   selectBackgroundWithoutOpeningPanel();
 };
 
+const ensurePageInteractionContext = (pageId) => {
+  if (!pageId || pageId === activePageId.value) return;
+  void switchToPage(pageId);
+};
+
+const handlePageCanvasPointerDownWithPinch = (pageId, event) => {
+  ensurePageInteractionContext(pageId);
+  handleCanvasPointerDownWithPinch(event);
+};
+
+const handlePageCanvasClick = (pageId, event) => {
+  ensurePageInteractionContext(pageId);
+  handleCanvasClick(event);
+};
+
+const handlePageElementPointerDown = (pageId, event, id) => {
+  ensurePageInteractionContext(pageId);
+  handleElementPointerDown(event, id);
+  linkedTextOverlayRevision.value += 1;
+};
+
+const handlePageElementClick = (pageId, event, id) => {
+  ensurePageInteractionContext(pageId);
+  handleElementClick(event, id);
+  linkedTextOverlayRevision.value += 1;
+};
+
+const beginPageTextEdit = (pageId, id, focusToEnd = false, event = null) => {
+  ensurePageInteractionContext(pageId);
+  beginTextEdit(id, focusToEnd, event);
+};
+
 const normalizeDesignTitleCandidate = (value) => String(value ?? '')
   .trim()
   .replace(/\s+/g, ' ')
@@ -5166,17 +5456,18 @@ const isPlaceholderDesignTitle = (value) => {
   const normalized = normalizeDesignTitleCandidate(value);
   return !normalized || [
     'titulo',
-    'título',
+    'tÃ­tulo',
     'agrega un titulo',
-    'agrega un título',
+    'agrega un tÃ­tulo',
     'diseno sin titulo',
-    'diseño sin título',
+    'diseÃ±o sin tÃ­tulo',
   ].includes(normalized);
 };
 
 watch(() => state.selectedElementId, () => {
     toolbarPosition.x = 0;
     toolbarPosition.y = 3;
+  linkedTextOverlayRevision.value += 1;
   if (state.selectedElementId) {
     selectedGroupId.value = null;
     multiSelectionIds.value = [];
@@ -5450,7 +5741,7 @@ watch(
         />
 
         <div class="relative grid h-full min-h-0 gap-0" :style="editorGridStyle">
-          <!-- Panel de CreaciÃ³n (vertical, siempre visible) -->
+          <!-- Panel de CreaciÃƒÂ³n (vertical, siempre visible) -->
           <EditorInsertSidebar
             class="fixed inset-x-0 bottom-0 z-[60] md:static md:z-auto"
             :class="hasSelection && !hasMultiSelection && !isGroupSelection ? 'max-md:hidden' : ''"
@@ -5546,7 +5837,31 @@ watch(
             @open-settings="handleTemplateSettingsOpen"
           />
 
-          <div class="canvas-grid relative h-full overflow-auto bg-slate-100 px-4 pt-6 pb-28 [touch-action:pan-x_pan-y] dark:bg-slate-950 sm:px-10 sm:pt-4 sm:pb-10 md:px-10 md:pt-16 md:pb-10" :style="canvasGridStyle" @scroll.passive="handleDocumentPagesScroll" @wheel.capture="handleCanvasWheel" @pointerdown="handleCanvasPointerDownWithPinch">
+          <div
+            ref="canvasGridRef"
+            class="canvas-grid relative h-full overflow-auto bg-slate-100 px-4 pt-6 pb-28 [touch-action:pan-x_pan-y] dark:bg-slate-950 sm:px-10 sm:pt-4 sm:pb-10 md:px-10 md:pt-16 md:pb-10"
+            :style="canvasGridStyle"
+            @scroll.passive="handleDocumentPagesScroll"
+            @wheel.capture="handleCanvasWheel"
+            @pointerdown="handleCanvasPointerDownWithPinch"
+          >
+            <svg
+              v-if="linkedTextGlobalLinkLines.length"
+              class="pointer-events-none absolute top-0 left-0 z-[80] overflow-visible text-emerald-400"
+              :style="linkedTextOverlayStyle"
+            >
+              <line
+                v-for="(line, idx) in linkedTextGlobalLinkLines"
+                :key="`linked-text-global-line-${idx}`"
+                :x1="line.x1"
+                :y1="line.y1"
+                :x2="line.x2"
+                :y2="line.y2"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-dasharray="5,5"
+              />
+            </svg>
             <div class="mx-auto flex w-full flex-col items-center gap-8">
               <section
                 v-for="(documentPage, pageIndex) in documentPages"
@@ -5558,7 +5873,7 @@ watch(
                 <div
                   class="absolute top-0 left-1/2 origin-top rounded-[28px] transition-shadow"
                   :class="[
-                    drag.active && documentPage.id === state.activePageId ? 'z-[90]' : 'z-10',
+                    drag.active && documentPage.id === activePageId ? 'z-[90]' : 'z-10',
                     'shadow',
                   ]"
                   :style="pageChromeStyle"
@@ -5566,37 +5881,37 @@ watch(
                 <div class="relative z-50 mb-3 flex w-full items-center justify-between text-sm font-semibold text-slate-500 dark:text-slate-300" @pointerdown.stop>
                   <span>{{ hasMultiplePages ? physicalPageLabel(pageIndex) : '' }}</span>
                   <div class="relative z-50 flex items-center gap-1">
-                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover página hacia arriba">
+                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover pÃ¡gina hacia arriba">
                       <button
                         type="button"
                         class="btn btn-ghost btn-xs"
                         :class="{ 'btn-disabled opacity-40': pageIndex === 0 }"
                         :disabled="pageIndex === 0"
-                        aria-label="Mover página hacia arriba"
+                        aria-label="Mover pÃ¡gina hacia arriba"
                         @click.stop.prevent="moveDocumentPage(documentPage.id, -1)"
                       >
                         <Icon icon="ph:arrow-up" class="h-4 w-4" />
                       </button>
                     </span>
-                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover página hacia abajo">
+                    <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover pÃ¡gina hacia abajo">
                       <button
                         type="button"
                         class="btn btn-ghost btn-xs"
                         :class="{ 'btn-disabled opacity-40': pageIndex === documentPages.length - 1 }"
                         :disabled="pageIndex === documentPages.length - 1"
-                        aria-label="Mover página hacia abajo"
+                        aria-label="Mover pÃ¡gina hacia abajo"
                         @click.stop.prevent="moveDocumentPage(documentPage.id, 1)"
                       >
                         <Icon icon="ph:arrow-down" class="h-4 w-4" />
                       </button>
                     </span>
-                    <span class="tooltip tooltip-bottom" data-tip="Duplicar página">
-                      <button type="button" class="btn btn-ghost btn-xs" aria-label="Duplicar página" @click.stop.prevent="duplicateDocumentPage(documentPage.id)">
+                    <span class="tooltip tooltip-bottom" data-tip="Duplicar pÃ¡gina">
+                      <button type="button" class="btn btn-ghost btn-xs" aria-label="Duplicar pÃ¡gina" @click.stop.prevent="duplicateDocumentPage(documentPage.id)">
                         <Icon icon="ph:copy-simple" class="h-4 w-4" />
                       </button>
                     </span>
-                    <span class="tooltip tooltip-bottom" data-tip="Nueva página">
-                      <button type="button" class="btn btn-ghost btn-xs" aria-label="Nueva página" @click.stop.prevent="addDocumentPage({ afterPageId: documentPage.id })">
+                    <span class="tooltip tooltip-bottom" data-tip="Nueva pÃ¡gina">
+                      <button type="button" class="btn btn-ghost btn-xs" aria-label="Nueva pÃ¡gina" @click.stop.prevent="addDocumentPage({ afterPageId: documentPage.id })">
                         <Icon icon="ph:file-plus" class="h-4 w-4" />
                       </button>
                     </span>
@@ -5608,7 +5923,7 @@ watch(
                       <button
                         type="button"
                         class="btn btn-ghost btn-xs text-error"
-                        aria-label="Eliminar página"
+                        aria-label="Eliminar pÃ¡gina"
                         @click.stop.prevent="deleteDocumentPage(documentPage.id)"
                       >
                         <Icon icon="ph:trash" class="h-4 w-4" />
@@ -5617,134 +5932,106 @@ watch(
                   </div>
                 </div>
 
-                <EditorCanvasStage
-                  v-if="documentPage.id === state.activePageId"
-                  :canvas-grid-style="{ minHeight: 'auto', padding: 0, background: 'transparent', overflow: 'visible', height: 'auto' }"
-                  :canvas-frame-style="canvasFrameStyle"
-                  :canvas-zoom-style="{}"
-                  :is-background-selected="state.selectedElementId === 'background'"
-                  :canvas-background-style="canvasBackgroundStyle"
-                  :canvas-background-image-src="state.elementLayout.background?.backgroundImageSrc"
-                  :canvas-background-image-style="canvasBackgroundImageStyle"
-                  :template-mode="isTemplateBaseEditor"
-                  template-watermark="PLANTILLA"
-                  :show-field-labels="templatePanelHover"
-                  :canvas-element-style="canvasElementStyle"
-                  :editor-elements="editorElements"
-                  :drag="drag"
-                  :file-drag-active="fileDragActive"
-                  :background-drop-preview="backgroundDropPreview"
-                  :active-page="documentPage.id === state.activePageId"
-                  :editing-element-id="editingElementId"
-                  :state="state"
-                  :element-box-style="elementBoxStyle"
-                  :is-element-selected="isElementSelected"
-                  :element-content-style="elementContentStyle"
-                  :rich-editor-container-style="richEditorContainerStyle"
-                  :neon-color-override="neonColorOverride"
-                  :image-frame-style="imageFrameStyle"
-                  :image-render-style="imageRenderStyle"
-                  :image-tint-overlay-style="imageTintOverlayStyle"
-                  :shape-style="shapeStyle"
-                  :shape-render-model="shapeRenderModel"
-                  :canvas-ref-setter="setCanvasRef"
-                  :rich-editor-ref-setter="setRichEditorRef"
-                  :linked-text-link="linkedTextLink"
-                  :active-linked-text-box="activeLinkedTextBox"
-                  :hovered-field-key="hoveredFieldKey"
-                  @canvas-pointer-down="handleCanvasPointerDownWithPinch"
-                  @canvas-click="handleCanvasClick"
-                  @field-hover="hoveredFieldKey = $event"
-                  @canvas-file-drag-enter="handleCanvasFileDragEnter"
-                  @canvas-file-drag-over="handleCanvasFileDragOver"
-                  @canvas-file-drag-leave="handleCanvasFileDragLeave"
-                  @canvas-file-drop="handleCanvasFileDrop"
-                  @element-click="handleElementClick($event.event, $event.id)"
-                  @begin-text-edit="beginTextEdit"
-                  @element-pointer-down="handleElementPointerDown($event.event, $event.id)"
-                  @rich-editor-text-update="onRichEditorTextUpdate($event.id, $event.value)"
-                  @rich-editor-styles-update="onRichEditorStylesUpdate($event.id, $event.value)"
-                  @rich-editor-html-update="onRichEditorHtmlUpdate($event.id, $event.value)"
-                  @rich-editor-selection-change="onRichEditorSelectionChange($event.id, $event.value)"
-                  @rich-editor-blur="onRichEditorBlur($event.id, $event.event)"
-                  @cancel-text-edit="cancelTextEdit"
-                  @commit-text-edit="commitTextEdit"
-                  @linked-text-link-start="handleLinkedTextLinkStart"
+                <div
+                  class="relative mx-auto overflow-hidden"
+                  :class="documentPage.id === activePageId ? 'outline outline-4 outline-primary/80 outline-offset-4 shadow-[0_0_0_8px_rgba(14,165,233,0.16)]' : ''"
+                  :style="canvasFrameContainerStyle"
                 >
-                  <template #overlay>
-                    <SelectionOverlay
-                      v-if="activeSelectionIds.length || selectionMarquee.active || multiSelectionIds.length > 1"
-                      :show-selection-controls="!!(activeSelectionIds.length && state.selectedElementId !== 'background')"
-                      :show-marquee="selectionMarquee.active"
-                      :show-group-button="multiSelectionIds.length > 1"
-                      :show-edit-text-button="selectedElementType === 'text'"
-                      :show-clone-button="canCloneCurrentSelection"
-                      :overlay-control-target-id="overlayControlTargetId"
-                      :is-group-selection="isGroupSelection"
-                      :has-multi-selection="hasMultiSelection"
-                      :selected-element-type="selectedElementType"
-                      :selected-action-bar-style="selectedActionBarStyle"
-                      :selected-overlay-style="selectedOverlayStyle"
-                      :selected-handle-metrics="selectedHandleMetrics"
-                      :control-zoom-style="controlZoomStyle"
-                      :marquee-rect-style="marqueeRectStyle"
-                      @mark-editor-control-interaction="markEditorControlInteraction"
-                      @group-selected-elements="groupSelectedElements"
-                      @edit-selected-text-element="editSelectedTextElement"
-                      @clone-current-selection="cloneCurrentSelection"
-                      @delete-current-selection="deleteCurrentSelection"
-                      @start-rotate="startRotate($event.event, $event.id)"
-                      @reset-rotation="resetRotation"
-                      @start-resize="startResize($event.event, $event.id, $event.handle)"
-                    />
-                    <!-- Guías de alineación -->
-                    <div v-if="guides.length" class="pointer-events-none absolute inset-0 z-[5000]">
-                      <div
-                        v-for="(guide, index) in guides"
-                        :key="`guide-${index}`"
-                        class="absolute bg-primary/70"
-                        :style="guide.type === 'vertical'
-                          ? { left: `${guide.x}px`, top: `${guide.start}px`, width: '1px', height: `${guide.end - guide.start}px` }
-                          : { left: `${guide.start}px`, top: `${guide.y}px`, width: `${guide.end - guide.start}px`, height: '1px' }"
-                      ></div>
-                    </div>
-                  </template>
-                </EditorCanvasStage>
-
-                <button
-                  v-else
-                  type="button"
-                  class="relative z-10 mx-auto block overflow-hidden shadow-2xl ring-1 ring-transparent transition hover:ring-primary"
-                  :style="canvasFrameStyle"
-                  @pointerdown.stop
-                  @click.stop="switchToPage(documentPage.id)"
-                >
-                  <div data-page-surface="true" class="relative overflow-hidden p-7 text-left text-white" :style="readonlyPageSurfaceStyle(documentPage)">
-                    <img
-                      v-if="documentPage.elementLayout?.background?.backgroundImageSrc"
-                      :src="documentPage.elementLayout.background.backgroundImageSrc"
-                      alt="Fondo de la página"
-                      class="pointer-events-none absolute inset-0 h-full w-full object-cover"
-                      draggable="false"
-                    />
-                    <div
-                      v-for="position in foldGuidePositionsForFormat(state.format)"
-                      :key="`readonly-fold-guide-${documentPage.id}-${position}`"
-                      class="pointer-events-none absolute top-0 bottom-0 z-[60] w-0 -translate-x-1/2 border-l border-dashed border-white/75 mix-blend-difference"
-                      :style="{ left: `${position}%` }"
-                      aria-hidden="true"
-                    ></div>
-                    <div
-                      v-for="item in readonlyPageElements(documentPage)"
-                      :key="item.id"
-                      :style="readonlyPageElementStyle(documentPage, item.id)"
-                    >
-                      <img v-if="item.type === 'image' && item.src" :src="item.src" :alt="item.label" class="h-full w-full object-cover" draggable="false" />
-                      <span v-else-if="item.type === 'shape'" class="block h-full w-full rounded-xl bg-white/40"></span>
-                      <span v-else>{{ item.text }}</span>
-                    </div>
-                  </div>
-                </button>
+                  <EditorCanvasStage
+                    class="absolute inset-0 z-20"
+                    :canvas-grid-style="{ minHeight: 'auto', padding: 0, background: 'transparent', overflow: 'visible', height: 'auto' }"
+                    :canvas-frame-style="canvasFrameStyle"
+                    :canvas-zoom-style="{}"
+                    :is-background-selected="documentPage.id === activePageId && state.selectedElementId === 'background'"
+                    :canvas-background-style="pageCanvasBackgroundStyle(documentPage)"
+                    :canvas-background-image-src="pageCanvasBackgroundImageSrc(documentPage)"
+                    :canvas-background-image-style="pageCanvasBackgroundImageStyle(documentPage)"
+                    :template-mode="isTemplateBaseEditor"
+                    template-watermark="PLANTILLA"
+                    :show-field-labels="templatePanelHover"
+                    :canvas-element-style="canvasElementStyle"
+                    :editor-elements="editorElementsForPage(documentPage)"
+                    :drag="drag"
+                    :file-drag-active="documentPage.id === activePageId && fileDragActive"
+                    :background-drop-preview="documentPage.id === activePageId && backgroundDropPreview"
+                    :active-page="documentPage.id === activePageId"
+                    :active-page-id="activePageId"
+                    :editing-element-id="documentPage.id === activePageId ? editingElementId : null"
+                    :state="stageStateForPage(documentPage)"
+                    :element-box-style="(id) => pageElementBoxStyle(documentPage, id)"
+                    :is-element-selected="(id) => documentPage.id === activePageId && isElementSelected(id)"
+                    :element-content-style="(id) => pageElementContentStyle(documentPage, id)"
+                    :rich-editor-container-style="(id) => pageRichEditorContainerStyle(documentPage, id)"
+                    :neon-color-override="(id) => pageNeonColorOverride(documentPage, id)"
+                    :image-frame-style="(id) => pageImageFrameStyle(documentPage, id)"
+                    :image-render-style="(id) => pageImageRenderStyle(documentPage, id)"
+                    :image-tint-overlay-style="(id) => pageImageTintOverlayStyle(documentPage, id)"
+                    :shape-style="(item) => pageShapeStyle(documentPage, item)"
+                    :shape-render-model="(item) => pageShapeRenderModel(documentPage, item)"
+                    :canvas-ref-setter="documentPage.id === activePageId ? setCanvasRef : null"
+                    :rich-editor-ref-setter="documentPage.id === activePageId ? setRichEditorRef : null"
+                    :linked-text-link="linkedTextLink"
+                    :active-linked-text-box="activeLinkedTextBox"
+                    :hovered-field-key="hoveredFieldKey"
+                    @canvas-pointer-down="handlePageCanvasPointerDownWithPinch(documentPage.id, $event)"
+                    @canvas-click="handlePageCanvasClick(documentPage.id, $event)"
+                    @field-hover="hoveredFieldKey = $event"
+                    @canvas-file-drag-enter="handleCanvasFileDragEnter"
+                    @canvas-file-drag-over="handleCanvasFileDragOver"
+                    @canvas-file-drag-leave="handleCanvasFileDragLeave"
+                    @canvas-file-drop="handleCanvasFileDrop"
+                    @element-click="handlePageElementClick(documentPage.id, $event.event, $event.id)"
+                    @begin-text-edit="beginPageTextEdit(documentPage.id, $event)"
+                    @element-pointer-down="handlePageElementPointerDown(documentPage.id, $event.event, $event.id)"
+                    @rich-editor-text-update="onRichEditorTextUpdate($event.id, $event.value)"
+                    @rich-editor-styles-update="onRichEditorStylesUpdate($event.id, $event.value)"
+                    @rich-editor-html-update="onRichEditorHtmlUpdate($event.id, $event.value)"
+                    @rich-editor-selection-change="onRichEditorSelectionChange($event.id, $event.value)"
+                    @rich-editor-blur="onRichEditorBlur($event.id, $event.event)"
+                    @cancel-text-edit="cancelTextEdit"
+                    @commit-text-edit="commitTextEdit"
+                    @linked-text-link-start="handleLinkedTextLinkStart"
+                  >
+                    <template #overlay>
+                      <SelectionOverlay
+                        v-if="documentPage.id === activePageId && (activeSelectionIds.length || selectionMarquee.active || multiSelectionIds.length > 1)"
+                        :show-selection-controls="!!(activeSelectionIds.length && state.selectedElementId !== 'background')"
+                        :show-marquee="selectionMarquee.active"
+                        :show-group-button="multiSelectionIds.length > 1"
+                        :show-edit-text-button="selectedElementType === 'text'"
+                        :show-clone-button="canCloneCurrentSelection"
+                        :overlay-control-target-id="overlayControlTargetId"
+                        :is-group-selection="isGroupSelection"
+                        :has-multi-selection="hasMultiSelection"
+                        :selected-element-type="selectedElementType"
+                        :selected-action-bar-style="selectedActionBarStyle"
+                        :selected-overlay-style="selectedOverlayStyle"
+                        :selected-handle-metrics="selectedHandleMetrics"
+                        :control-zoom-style="controlZoomStyle"
+                        :marquee-rect-style="marqueeRectStyle"
+                        @mark-editor-control-interaction="markEditorControlInteraction"
+                        @group-selected-elements="groupSelectedElements"
+                        @edit-selected-text-element="editSelectedTextElement"
+                        @clone-current-selection="cloneCurrentSelection"
+                        @delete-current-selection="deleteCurrentSelection"
+                        @start-rotate="startRotate($event.event, $event.id)"
+                        @reset-rotation="resetRotation"
+                        @start-resize="startResize($event.event, $event.id, $event.handle)"
+                      />
+                      <!-- GuÃ­as de alineaciÃ³n -->
+                      <div v-if="documentPage.id === activePageId && guides.length" class="pointer-events-none absolute inset-0 z-[5000]">
+                        <div
+                          v-for="(guide, index) in guides"
+                          :key="`guide-${index}`"
+                          class="absolute bg-primary/70"
+                          :style="guide.type === 'vertical'
+                            ? { left: `${guide.x}px`, top: `${guide.start}px`, width: '1px', height: `${guide.end - guide.start}px` }
+                            : { left: `${guide.start}px`, top: `${guide.y}px`, width: `${guide.end - guide.start}px`, height: '1px' }"
+                        ></div>
+                      </div>
+                    </template>
+                  </EditorCanvasStage>
+                </div>
                 <div
                   v-if="isBrochureDocument()"
                   class="mt-2 grid grid-cols-2 gap-2 text-center text-xs font-semibold text-slate-500 dark:text-slate-300"
@@ -5771,7 +6058,7 @@ watch(
       </div>
     </div>
     </section>
-    <!-- Diálogo de asistente -->
+    <!-- DiÃ¡logo de asistente -->
     <dialog v-if="assistantOpen" class="modal modal-open backdrop-blur-sm" style="z-index:90;">
       <div class="modal-box w-full max-w-lg lg:max-w-5xl p-0 overflow-visible bg-base-100 rounded-[30px] shadow-2xl border border-base-300">
         <DesignerAssistant

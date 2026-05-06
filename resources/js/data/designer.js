@@ -464,7 +464,6 @@ export const initialDesignerState = {
     stateRevision: 0,
     templateRevision: 0,
     designSurface: null,
-    activePageId: 'page-1',
     content: {
         title: '',
         subtitle: '',

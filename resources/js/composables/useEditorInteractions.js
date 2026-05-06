@@ -137,6 +137,10 @@ export const useEditorInteractions = ({
         commitTextEdit();
         return;
       }
+      if (nextTarget.closest('[data-document-page-switcher="true"]')) {
+        commitTextEdit({ recalculateHeight: false, reason: 'switch-page-blur' });
+        return;
+      }
       if (nextTarget.closest('[data-editor-element="true"]')) {
         commitTextEdit();
         return;

@@ -106,41 +106,6 @@ CAJA 3: fullTextHtml = "AAAA BBBB CCCC DDDD EEEE FFFF"  (TODO)
 
 ---
 
-### `editorTopOffset`
-
-**Definición:** Desplazamiento vertical (en píxeles) desde el inicio del texto completo hasta el punto donde **empieza el contenido de esta caja**. Representa cuánto hay que "subir" el editor TipTap para que el texto visible coincida con el fragmento de esta caja.
-
-**Cálculo (`measureEditorTopOffset`, línea 357):**
-1. Renderiza el HTML de las unidades **anteriores** a esta caja (`prefixHtml`) en el div de medición
-2. Mide `offsetHeight` → altura real del contenido precedente
-3. Como refinamiento, inserta un marcador invisible (`<span data-linked-text-flow-marker>`) en la posición exacta del split y mide su `getBoundingClientRect().top` relativo al contenedor
-4. Devuelve `max(prefixHeight, markerTop)` en píxeles
-
-**Uso en RichTextEditor.vue:**
-- Se aplica como `transform: translateY(-${editorTopOffset}px)` al wrapper cuando está en modo edición (`wrapperStyle`, línea 165)
-- Se aplica como `transform: translate3d(0, -${editorTopOffset}px, 0)` al contenido interno del editor (`linkedTextEditorInnerStyle`, línea 187)
-- Efecto: el editor TipTap (que contiene el texto completo) se desplaza hacia arriba para que la porción visible corresponda exactamente a esta caja
-
-```
-                     editorTopOffset = 0            editorTopOffset = 72px
-                          │                                │
-    ┌──────────────────┐   │        ┌──────────────────┐   │
-    │ Lorem ipsum dolor│   │        │                  │   │
-    │ sit amet, consec │   │        │ adipiscing elit, │ ← visible
-    │ tetur adipiscing │   │   ─ ─ ─│ sed do eiusmod   │   ─ ─ ─
-    │ elit, sed do     │   │        │ tempor incididunt│
-    │ eiusmod tempor   │   │  ┌─────┤ ut labore et     │
-    │ incididunt ut... │   │  │     │ dolore magna     │
-    └──────────────────┘   │  │     └──────────────────┘
-                           │  │
-                     EDITOR TIPTAK (texto completo)
-                     │                       │
-                     ├── CAJA 1: translateY(0)
-                     └── CAJA 2: translateY(-72px)
-```
-
----
-
 ### `editorTextOffset`
 
 **Definición:** Número de caracteres que hay **antes** del contenido de esta caja en el texto fuente completo.
@@ -200,8 +165,7 @@ const fitsInBox = isLastInChain && (unitIdx + fitUnits) >= totalUnits;
 | `fullTextHtml` | `String` | `''` | HTML completo del texto fuente (idéntico para todas las cajas de una cadena) |
 | `tailHtml` | `String` | `''` | HTML desde el inicio de esta caja hasta el final del documento (no incluye texto de cajas anteriores) |
 | `showOverflow` | `Boolean` | `false` | Si se debe mostrar el texto overflow (cadena activa/seleccionada) |
-| `linkedTextActive` | `Boolean` | `false` | Si algún elemento de la cadena está seleccionado/activo/edición |
-| `editorTopOffset` | `Number` | `0` | Desplazamiento vertical en px para alinear el editor TipTap con el fragmento de esta caja |
+| `linkedTextActive` | `Boolean` | `false` | Si algún elemento de la cadena está seleccionado/activo/edición 
 | `editorTextOffset` | `Number` | `0` | Offset de caracteres para posicionar el cursor en la posición correcta al editar |
 
 ### Eventos emitidos
@@ -266,7 +230,7 @@ Búsqueda binaria por caja     ← Para cada caja de la cadena, secuencialmente:
     │                           6. Avanza unitIdx += bestFit para la siguiente caja
     │
     ▼
-Fragmentos                     ← { html, overflowHtml, fullTextHtml, editorTopOffset, editorTextOffset, fitsInBox }
+Fragmentos                     ← { html, overflowHtml, fullTextHtml, editorTextOffset, fitsInBox }
 ```
 
 ### Tokenización de unidades
@@ -302,15 +266,6 @@ Se usa un **único div reutilizado** (`#measure`) posicionado fuera de pantalla 
 - Se calcula el ancho a partir del elemento real si existe en el DOM, o se usa `layout.w` como fallback
 - Se le aplica la clase `.linked-text-display` para heredar estilos CSS del modo display
 - **Sin padding** para no alterar el ancho de medición
-
-### Medición del editorTopOffset
-
-Para calcular cuánto desplazar el editor TipTap verticalmente:
-
-1. Se renderiza el HTML de las unidades anteriores a esta caja (`prefixHtml`) → se mide `offsetHeight`
-2. Se inserta un marcador invisible (`<span data-linked-text-flow-marker>`) en la posición exacta del split dentro del texto completo
-3. Se mide `marker.getBoundingClientRect().top - container.getBoundingClientRect().top`
-4. Se toma `max(prefixHeight, markerTop)` como offset definitivo
 
 Esto da la posición en píxeles donde empieza el contenido de la caja dentro del texto completo.
 
@@ -419,35 +374,6 @@ Estado ACTIVO (elemento seleccionado):
 │ tempor incididunt│   indicando que hay más contenido
 ```
 
-### Modo edición: El truco del Viewport
-
-Cuando el usuario edita una caja que **no es la primera**, el editor TipTap contiene TODO el texto, pero solo debe verse la porción de esa caja:
-
-```
-┌────────── Editor Viewport ──────────┐
-│ overflow: hidden (recorta a la caja)│
-│                                     │
-│  ┌─── Editor Content ────────────┐  │
-│  │ translateY(-editorTopOffset)  │  │
-│  │                               │  │
-│  │ "Lorem ipsum dolor sit amet,  │  │ ← Oculto (fuera del viewport)
-│  │  consectetur adipiscing elit, │  │ ← Oculto
-│  │  ──────────────────────────── │  │ ← Borde del viewport
-│  │  sed do eiusmod tempor        │  │ ← VISIBLE (dentro del viewport)
-│  │  incididunt ut labore et      │  │ ← VISIBLE
-│  │  dolore magna aliqua."        │  │ ← VISIBLE
-│  │  ──────────────────────────── │  │ ← Borde del viewport
-│  │  Ut enim ad minim veniam...   │  │ ← Oculto
-│  └───────────────────────────────┘  │
-│                                     │
-└─────────────────────────────────────┘
-```
-
-- **`linked-text-editor-viewport`**: Contenedor con `overflow: hidden` y dimensiones de la caja
-- **`linked-text-editor-content`**: Contenedor interno con `transform: translateY(-editorTopOffset)` que desplaza el editor hacia arriba
-- **Efecto:** Solo la porción de texto que corresponde a esta caja es visible en el viewport
-
----
 
 ## 6. CSS Classes de Referencia
 
@@ -501,15 +427,14 @@ Evento disparador                     Función llamada
   6. Para cada caja secuencialmente:
      a. Configurar div de medición con estilos de la caja
      b. Búsqueda binaria para encontrar cuántas unidades caben
-     c. Calcular editorTopOffset con medición de marcador
-     d. Calcular editorTextOffset sumando caracteres previos
-     e. Asignar fragmento al sistema (system.fragments[boxId])
-     f. Avanzar unitIdx += unidades que cupieron
+     c. Calcular editorTextOffset sumando caracteres previos
+     d. Asignar fragmento al sistema (system.fragments[boxId])
+     e. Avanzar unitIdx += unidades que cupieron
          │
          ▼
   7. Los fragmentos están disponibles en system.fragments
   8. Cada RichTextEditor.vue consume su fragmento vía props
-     (displayHtml, overflowHtml, fullTextHtml, editorTopOffset, editorTextOffset, fitsInBox)
+     (displayHtml, overflowHtml, fullTextHtml, editorTextOffset, fitsInBox)
 ```
 
 ---
@@ -519,10 +444,6 @@ Evento disparador                     Función llamada
 ### Párrafos vacíos
 
 Los párrafos vacíos (línea en blanco por presionar ENTER) se tratan como unidades de tipo `'paragraph'` sin palabras. Esto permite que ocupen altura real en la medición (se renderizan con `<br>`) y empujen correctamente el contenido a la siguiente caja.
-
-### Marcador de medición (`data-linked-text-flow-marker`)
-
-Para medir el `editorTopOffset` con precisión, se inserta un `<span>` invisible con `height: 1em` en la posición exacta del split. Midiendo su `getBoundingClientRect().top` relativo al contenedor, se obtiene el desplazamiento en píxeles sin depender de conteo de líneas.
 
 ### Scroll reset en editor
 
@@ -570,3 +491,32 @@ Al arrastrar la flecha desde una caja A a otra caja B:
 - Se unifica el `linkedTextGroupId` de toda la cadena resultante
 - Se actualizan los `linkedTextChainIndex`
 - Se recalcula la distribución del texto
+
+## 10. Sincronización canónica de estilos (fix de estabilidad)
+
+Para evitar cambios visuales de estilo al seleccionar/editar cajas enlazadas (incluyendo cross-page), se aplicó esta regla:
+
+1. **Fuente canónica = HTML completo del head de la cadena**.
+2. Al editar cualquier caja, el update:html se recompone como prefixHtml + html_editado.
+3. Con ese HTML canónico se actualiza:
+   - head.html
+   - head.text (texto plano derivado)
+   - head.paragraphStyles (extraído desde los estilos inline del HTML)
+4. Luego se ejecuta una sola redistribución (ecalculateLinkedTextAllocations(headId)).
+
+### Guardas anti-drift
+
+- RichTextEditor en modo linked text **no emite** update:paragraphStyles cuando está en display/no editable.
+- onRichEditorStylesUpdate ignora actualizaciones de linked text para evitar sobrescrituras parciales desde cajas intermedias.
+- commitTextEdit no fuerza getParagraphStyles() para linked text (evita truncar estilos del documento global al estilo del tail de una caja).
+
+Con esto se elimina la ruta que sobrescribía estilos globales con fragmentos parciales.
+
+## 11. Política de pegado enriquecido (nuevo)
+
+En cajas de texto enlazable, si el portapapeles contiene HTML con formato, se muestra confirmación al usuario:
+
+- **Conservar formato**: se deja el pegado rico por defecto.
+- **Pegar sin formato**: se intercepta el paste y se inserta texto plano normalizado (\r\n -> \n).
+
+Objetivo: preservar formato en la medida de lo posible, con control explícito del usuario cuando hay contenido rico.

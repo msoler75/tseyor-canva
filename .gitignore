@@ -32,15 +32,6 @@ Thumbs.db
 /storage/app/private/*
 /storage/app/public/*
 /storage/framework/cache/*
-/storage/framework/compiled.php
-/storage/framework/config.php
-/storage/framework/down
-/storage/framework/events.scanned.php
-/storage/framework/maintenance.php
-/storage/framework/routes.php
-/storage/framework/routes.scanned.php
-/storage/framework/schedule-*
-/storage/framework/services.json
 /storage/framework/sessions/*
 /storage/framework/testing/*
 /storage/framework/views/*

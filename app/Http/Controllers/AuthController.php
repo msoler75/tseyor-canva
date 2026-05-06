@@ -47,7 +47,7 @@ class AuthController extends Controller
 
         // sino, redirigimos al portal principal de login
         $portalLoginUrl = $this->portalLoginUrl();
-        // dd($portalLoginUrl);
+
         if ($portalLoginUrl) {
             Log::info('Auth login redirecting to remote portal', [
                 'portal_host' => parse_url($portalLoginUrl, PHP_URL_HOST),

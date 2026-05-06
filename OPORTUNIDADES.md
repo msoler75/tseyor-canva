@@ -14,7 +14,7 @@ El rol admin se determina comparando el campo `name` del usuario con el string `
 
 **Impacto**: cualquier persona con nombre `admin` es automáticamente superadmin.
 
-**Solución propuesta**: añadir columna `role` o `is_admin` a la tabla `users` y usar Gates/Policies de Laravel.
+**Solución propuesta**: NO HAREMOS NADA. ES REQUISITO FUNCIONAL TAL COMO ESTA.
 
 ---
 
@@ -28,23 +28,13 @@ El rol admin se determina comparando el campo `name` del usuario con el string `
 
 ---
 
-### 3. Código muerto con `dd()` en AuthController
-
-**Archivo**: `app/Http/Controllers/AuthController.php:93-103`
-
-Bloque `if(0) dd(...)` que incluye un `dd()` con datos sensibles del token JWT (payload completo, token crudo). Si alguien cambia `if(0)` a `if(1)` por error en desarrollo, expone la clave JWT y datos de usuario.
-
-**Solución propuesta**: eliminar el bloque por completo.
-
----
-
 ### 4. Ausencia de rate limiting en endpoints de escritura
 
 **Archivo**: `routes/web.php`
 
-`POST /designer/state` (saveState), `POST /designer/designs` (store), `POST /designer/uploads` (storeUpload) no tienen middleware `throttle`. Permiten abuso de almacenamiento y CPU sin límites.
+`POST/PUT /designer/state` (saveState), `POST /designer/designs` (store), `POST /designer/uploads` (storeUpload) no tienen middleware `throttle`. Permiten abuso de almacenamiento y CPU sin límites.
 
-**Solución propuesta**: añadir `throttle:30,1` u otra política a estos endpoints.
+**Solución propuesta**: añadir `throttle:x,1` u otra política a estos endpoints, donde x es muy grande para el state (60 por minuto, y el resto 10 por minuto)
 
 ---
 
@@ -76,13 +66,16 @@ Bloque `if(0) dd(...)` que incluye un `dd()` con datos sensibles del token JWT (
 
 El comentario dice "Siempre usar el disco 'thumbnails'" pero el método usa `$disk = 'users'`. Hay un `//dd($path)` vestigial.
 
+
+Expicación del tecnico: No pasa nada, porque los uploads van a  disco 'users' pero si esos uploads son de imagenes, y se crean thumbnails de esas imagenes, los thumbnails correspondientes siempre van al disco 'thumbnails'. Solo revisar que así sea. remover dd vestigial.
+
 ---
 
 ### 8. `recoverSessionDesign` — inconsistencia en carpeta de invitados
 
 **Archivo**: `app/Http/Controllers/DesignerController.php:196`
 
-Al mover imágenes temporales tras login, se usa `str_starts_with($storagePath, $sessionId.'/') || str_starts_with($storagePath, 'guest/')`. Pero en `storeUpload:661` la carpeta para invitados es `trim($request->session()->getId()) ?: 'guest'`, mientras que en `saveState:524` usa solo `$sessionId` sin el fallback. La inconsistencia puede causar pérdida de archivos al recuperar después de login.
+Al mover imágenes temporales tras login, se usa `str_starts_with($storagePath, $sessionId.'/') || str_starts_with($storagePath, 'guest/')`. Pero en `storeUpload:661` la carpeta para invitados es `trim($request->session()->getId()) ?: 'guest'`, mientras que en `saveState:524` usa solo `$sessionId` sin el fallback. La inconsistencia puede causar pérdida de archivos al recuperar después de login. 
 
 **Solución propuesta**: extraer la lógica de path de invitado a un helper compartido.
 
@@ -190,12 +183,15 @@ La generación de thumbnails SVG y la adaptación de superficies (escalado posic
 
 **Solución propuesta**: mover `storeThumbnailSvg` y `adaptStateToSurface` a jobs (`GenerateDesignThumbnail`, `AdaptTemplateToSurface`).
 
+**DECISION DEL CEO**: no podemos permitirnos ahora más jobs. Dejarlo todo sincrono.
+
 ---
 
 ### 20. Sin logging estructurado para auditoría
 
 Hay uso abundante de `Log::info/debug`, pero las acciones críticas (cambio de plantilla, publicación, duplicación) no se registran de forma consistente con un canal dedicado.
 
+**Solucion propuesta**: adoptar una solucion adecuada y profesional.
 ---
 
 ## OPORTUNIDADES DE MEJORA — BASE DE DATOS
@@ -205,13 +201,15 @@ Hay uso abundante de `Log::info/debug`, pero las acciones críticas (cambio de p
 - `designs.selected_template_id`: se usa en joins pero no tiene índice.
 - `designs.public`: usado en `where('public', true)` en welcome, solo existe en índice compuesto `[user_id, updated_at]`.
 
-**Solución propuesta**: añadir índices `INDEX selected_template_id` y `INDEX public` en `designs`.
+**Solución propuesta**: añadir índices `INDEX selected_template_id` y `INDEX public` en `designs`. Para ello crear una migracion.
 
 ---
 
 ### 22. `unsignedTinyInteger` para `pages_count` restrictivo
 
-Máximo 255 páginas. `unsignedSmallInteger` (65535) sería más seguro a futuro.
+Máximo 255 páginas. `unsignedSmallInteger` (65535) sería más seguro a futuro. 
+
+**CEO**: no es necesario, es muy dificil que se creen documentos de mas de 200 paginas.
 
 ---
 
@@ -220,6 +218,8 @@ Máximo 255 páginas. `unsignedSmallInteger` (65535) sería más seguro a futuro
 Impide que dos assets apunten al mismo archivo. Si dos usuarios comparten contenido con el mismo path, fallará.
 
 **Solución propuesta**: eliminar el UNIQUE de `path` o añadir `user_id` al constraint compuesto.
+
+**CEO**: Nunca se compartirán assets entre usuarios. Pero sí diseños o templates. No hacer nada.
 
 ---
 
@@ -258,6 +258,8 @@ Impide que dos assets apunten al mismo archivo. Si dos usuarios comparten conten
 
 **Solución propuesta**: limitar o mover thumbnails a disco antes de guardar en sesión.
 
+**CEO**:  no hacer nada. Habrá pocos usuarios.
+
 ---
 
 ### 27. Sin validación de tipo MIME real en uploads
@@ -266,17 +268,23 @@ Impide que dos assets apunten al mismo archivo. Si dos usuarios comparten conten
 
 **Solución propuesta**: usar validación de contenido con `finfo` o librerías de validación de imágenes.
 
+**CEO**: no hacer nada.
+
 ---
 
 ### 28. `showThumbnail` / `showUpload` sin sanitización explícita de path
 
 Aunque usan `Storage::disk()->exists($path)` y Laravel protege contra path traversal, conviene validar que el path no contenga `../` ni barras sospechosas.
 
+**CEO**: es vital añadir comprobación.
+
 ---
 
 ### 29. `CACHE_STORE=database` y `QUEUE_CONNECTION=database` en `.env.example`
 
 Usar BD para colas y caché en producción es subóptimo frente a Redis.
+
+**CEO**: No habrá jobs ni queues en este proyecto.
 
 ---
 

@@ -41,6 +41,8 @@ const props = defineProps({
   showFieldLabels: Boolean,
   hoveredFieldKey: String,
   activePage: Boolean,
+  activePageId: String,
+  showPermanentLinkLines: Boolean,
   canvasRefSetter: Function,
   richEditorRefSetter: Function,
   linkedTextLink: Object,
@@ -69,12 +71,27 @@ const emit = defineEmits([
 ]);
 
 const assignRichEditorRef = (id, element) => {
+  if (!props.activePage) return;
   props.richEditorRefSetter?.(id, element);
 };
 
 const foldGuidePositions = computed(() => foldGuidePositionsForFormat(props.state?.format));
 const PI = Math.PI;
 const DEG_TO_RAD = PI / 180;
+const layoutFor = (id) => {
+  if (props.state?.elementLayout?.[id]) return props.state.elementLayout[id];
+  for (const page of props.state?.pages ?? []) {
+    if (page.elementLayout?.[id]) return page.elementLayout[id];
+  }
+  return null;
+};
+const elementFor = (id) => {
+  if (props.state?.customElements?.[id]) return props.state.customElements[id];
+  for (const page of props.state?.pages ?? []) {
+    if (page.customElements?.[id]) return page.customElements[id];
+  }
+  return null;
+};
 
 // Función para rotar un punto (x,y) alrededor de un centro (cx,cy) por un ángulo en grados
 const rotatePoint = (x, y, cx, cy, angleDeg) => {
@@ -92,7 +109,7 @@ const rotatePoint = (x, y, cx, cy, angleDeg) => {
 
 const getLinkSourcePosition = computed(() => {
   if (!props.linkedTextLink?.active || !props.linkedTextLink.sourceId) return null;
-  const layout = props.state?.elementLayout?.[props.linkedTextLink.sourceId];
+  const layout = layoutFor(props.linkedTextLink.sourceId);
   if (!layout) return null;
   // Botón en bottom-1 right-1 (24x24px). Tailwind bottom-1 = 4px, right-1 = 4px
   // Centro del botón: (x + w - 4px - 12px, y + h - 4px - 12px)
@@ -117,7 +134,7 @@ const getLinkTargetPosition = computed(() => {
     }
     return null;
   }
-  const targetLayout = props.state?.elementLayout?.[targetId];
+  const targetLayout = layoutFor(targetId);
   if (!targetLayout) return null;
   // Esquina superior izquierda (sin rotación)
   const x = targetLayout.x ?? 0;
@@ -129,26 +146,21 @@ const getLinkTargetPosition = computed(() => {
 });
 
 const permanentLinkLines = computed(() => {
+  if (!props.showPermanentLinkLines) return [];
   const selectedId = props.state?.selectedElementId;
   if (!selectedId) return [];
   const allPages = props.state?.pages ?? [];
-  const el = props.state?.customElements?.[selectedId]
-    ?? allPages.find(p => p.customElements?.[selectedId])?.customElements?.[selectedId];
+  const el = elementFor(selectedId);
   if (!el || el.type !== 'linkedText') return [];
-  const layout = props.state?.elementLayout?.[selectedId]
-    ?? allPages.find(p => p.elementLayout?.[selectedId])?.elementLayout?.[selectedId];
+  const layout = layoutFor(selectedId);
   const groupId = layout?.linkedTextGroupId;
   if (!groupId) return [];
 
   const lookupLayout = (id) => {
-    if (props.state?.elementLayout?.[id]) return props.state.elementLayout[id];
-    for (const page of allPages) {
-      if (page.elementLayout?.[id]) return page.elementLayout[id];
-    }
-    return null;
+    return layoutFor(id);
   };
 
-  const activePageIndex = allPages.findIndex(p => p.id === props.state?.activePageId);
+  const activePageIndex = allPages.findIndex(p => p.id === props.activePageId);
   const findElementPageIndex = (id) => {
     if (props.state?.elementLayout?.[id] || props.state?.customElements?.[id]) return activePageIndex;
     for (let i = 0; i < allPages.length; i++) {
@@ -223,7 +235,7 @@ const getLinkedTextChainHead = (boxId) => {
   const visited = new Set();
   while (currentId && !visited.has(currentId)) {
     visited.add(currentId);
-    const l = props.state?.elementLayout?.[currentId];
+    const l = layoutFor(currentId);
     if (!l) break;
     if (l.linkedTextPrev) {
       currentId = l.linkedTextPrev;
@@ -234,11 +246,11 @@ const getLinkedTextChainHead = (boxId) => {
   return boxId;
 };
 
-const getLinkedTextStyleSourceId = (item) => (
-  item?.type === 'linkedText'
-    ? (item.linkedTextStyleSourceId || getLinkedTextChainHead(item.id))
-    : item?.id
-);
+const getLinkedTextStyleSourceId = (item) => {
+  if (item?.type !== 'linkedText') return item?.id;
+  const sourceId = item.linkedTextStyleSourceId || getLinkedTextChainHead(item.id);
+  return layoutFor(sourceId) ? sourceId : item.id;
+};
 
 const getLinkedTextChain = (headId) => {
   const chain = [];
@@ -246,7 +258,7 @@ const getLinkedTextChain = (headId) => {
   const visited = new Set();
   while (currentId && !visited.has(currentId)) {
     visited.add(currentId);
-    const l = props.state?.elementLayout?.[currentId];
+    const l = layoutFor(currentId);
     if (!l) break;
     chain.push(currentId);
     currentId = l.linkedTextNext;
@@ -262,8 +274,8 @@ const isLinkedTextInChainBeingEdited = (boxId) => {
   if (boxId === props.activeLinkedTextBox) return false;
 
   // Verificar que ambas cajas pertenecen al mismo grupo
-  const boxLayout = props.state?.elementLayout?.[boxId];
-  const activeLayout = props.state?.elementLayout?.[props.activeLinkedTextBox];
+  const boxLayout = layoutFor(boxId);
+  const activeLayout = layoutFor(props.activeLinkedTextBox);
 
   if (!boxLayout?.linkedTextGroupId || !activeLayout?.linkedTextGroupId) return true;
   if (boxLayout.linkedTextGroupId !== activeLayout.linkedTextGroupId) return true;
@@ -274,12 +286,12 @@ const isLinkedTextInChainBeingEdited = (boxId) => {
 
 // Regla 3/4/6: Overflow visible solo cuando algún elemento de la cadena está seleccionado O en edición
 const isLinkedTextChainActive = (boxId) => {
-  const boxLayout = props.state?.elementLayout?.[boxId];
+  const boxLayout = layoutFor(boxId);
   if (!boxLayout?.linkedTextGroupId) return false;
 
   // Si hay edición activa en cualquier caja de la cadena
   if (props.editingElementId) {
-    const editingLayout = props.state?.elementLayout?.[props.editingElementId];
+    const editingLayout = layoutFor(props.editingElementId);
     if (editingLayout?.linkedTextGroupId === boxLayout.linkedTextGroupId) {
       return true;
     }
@@ -288,7 +300,7 @@ const isLinkedTextChainActive = (boxId) => {
   // Si hay selección activa en cualquier caja de la cadena
   const selectedId = props.state?.selectedElementId;
   if (selectedId) {
-    const selectedLayout = props.state?.elementLayout?.[selectedId];
+    const selectedLayout = layoutFor(selectedId);
     if (selectedLayout?.linkedTextGroupId === boxLayout.linkedTextGroupId) {
       return true;
     }
@@ -396,17 +408,17 @@ const isLinkedTextChainActive = (boxId) => {
             <template v-if="item.type === 'text' || item.type === 'linkedText'">
               <RichTextEditor
                 :key="`${item.id}-${state.templateRevision ?? 0}`"
-                :ref="(el) => assignRichEditorRef(item.id, el)"
-                :paragraph-styles="item.type === 'linkedText' ? (item.linkedTextParagraphStyles ?? []) : (state.elementLayout[item.id].paragraphStyles ?? [])"
+                :ref="activePage ? (el) => assignRichEditorRef(item.id, el) : null"
+                :paragraph-styles="item.type === 'linkedText' ? (item.linkedTextParagraphStyles ?? []) : (layoutFor(item.id)?.paragraphStyles ?? [])"
                 :text="item.text ?? ''"
                 :editable="editingElementId === item.id"
                 :editor-style="richEditorContainerStyle(getLinkedTextStyleSourceId(item))"
                 :color-override="neonColorOverride(getLinkedTextStyleSourceId(item))"
-                :transparent-fill="!!state.elementLayout[getLinkedTextStyleSourceId(item)]?.hollowText"
+                :transparent-fill="!!layoutFor(getLinkedTextStyleSourceId(item))?.hollowText"
                 :is-linked-text="item.type === 'linkedText'"
                 :linked-text-active="item.type === 'linkedText' && isLinkedTextChainActive(item.id)"
-                :linked-text-next="item.type === 'linkedText' ? (state.elementLayout[item.id]?.linkedTextNext ?? null) : null"
-                :box-dimensions="item.type === 'linkedText' ? { w: state.elementLayout[item.id]?.w, h: state.elementLayout[item.id]?.h, fontSize: state.elementLayout[item.id]?.fontSize, lineHeight: state.elementLayout[item.id]?.lineHeight } : null"
+                :linked-text-next="item.type === 'linkedText' ? (layoutFor(item.id)?.linkedTextNext ?? null) : null"
+                :box-dimensions="item.type === 'linkedText' ? { w: layoutFor(item.id)?.w, h: layoutFor(item.id)?.h, fontSize: layoutFor(item.id)?.fontSize, lineHeight: layoutFor(item.id)?.lineHeight } : null"
                 :display-mode="item.type === 'linkedText' && editingElementId !== item.id && isLinkedTextInChainBeingEdited(item.id)"
                 :initial-html="item.type === 'linkedText' ? (item.linkedTextInitialHtml ?? '') : ''"
                 :display-html="item.type === 'linkedText' ? (item.linkedTextDisplayHtml ?? '') : ''"
@@ -452,7 +464,7 @@ const isLinkedTextChainActive = (boxId) => {
                   draggable="false"
                 />
                 <div
-                  v-if="item.src && (state.elementLayout[item.id]?.imageTintStrength ?? 0) > 0"
+                  v-if="item.src && (layoutFor(item.id)?.imageTintStrength ?? 0) > 0"
                   class="pointer-events-none absolute inset-0"
                   :style="imageTintOverlayStyle(item.id)"
                 ></div>

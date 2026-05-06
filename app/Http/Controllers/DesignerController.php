@@ -862,14 +862,13 @@ class DesignerController extends Controller
             ];
         }, $pages, array_keys($pages));
 
-        $activePageId = (string) ($state['activePageId'] ?? ($pages[0]['id'] ?? 'page-1'));
-        $activePage = collect($pages)->firstWhere('id', $activePageId) ?? $pages[0];
-
-        $state['activePageId'] = $activePage['id'];
         $state['pages'] = $pages;
-        $state['content'] = $activePage['content'];
-        $state['elementLayout'] = $activePage['elementLayout'];
-        $state['customElements'] = $activePage['customElements'];
+        if (isset($pages[0])) {
+            $state['content'] = $pages[0]['content'];
+            $state['elementLayout'] = $pages[0]['elementLayout'];
+            $state['customElements'] = $pages[0]['customElements'];
+        }
+        unset($state['activePageId']);
 
         return $state;
     }

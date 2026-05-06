@@ -127,7 +127,7 @@ const props = defineProps({
     tailHtml: { type: String, default: '' },
     showOverflow: { type: Boolean, default: false },
     linkedTextActive: { type: Boolean, default: false },
-    editorTopOffset: { type: Number, default: 0 },
+    editorTopOffset: { type: Number, default: 0 }, /* este atributo ya no se usa */
     editorTextOffset: { type: Number, default: 0 },
     isLastInChain: { type: Boolean, default: false },
 });
@@ -255,6 +255,18 @@ const editor = useEditor({
             if (!props.isLinkedText || !ed) return false;
 
             const pastedText = event?.clipboardData?.getData('text/plain') || '';
+            const pastedHtml = event?.clipboardData?.getData('text/html') || '';
+            const hasRichFormatting = htmlContainsRichFormatting(pastedHtml);
+
+            if (hasRichFormatting && typeof window !== 'undefined') {
+                const keepFormatting = window.confirm('Este texto tiene formato. ¿Quieres conservarlo al pegar?');
+                if (!keepFormatting) {
+                    event?.preventDefault?.();
+                    ed.commands.insertContent(String(pastedText ?? '').replace(/\r\n/g, '\n'));
+                    return true;
+                }
+            }
+
             const htmlBefore = ed.getHTML();
             const textBefore = ed.getText();
             const charsBefore = textBefore.length;
@@ -289,6 +301,7 @@ const editor = useEditor({
         const { text, styles } = extractFromDoc(ed.state.doc);
 
         if (!props.editable || props.displayMode) {
+            if (props.isLinkedText) return;
             emit('update:paragraphStyles', styles);
             return;
         }
@@ -470,6 +483,13 @@ const htmlTextContent = (html) => {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = html;
     return tempDiv.textContent || '';
+};
+
+const htmlContainsRichFormatting = (html = '') => {
+    if (!html || !html.trim()) return false;
+    if (/\sstyle=|\sclass=|<a\b/i.test(html)) return true;
+    if (/<(strong|b|em|i|u|span|font|mark|h[1-6]|ul|ol|li|table|blockquote|code)\b/i.test(html)) return true;
+    return false;
 };
 
 const syncEditorContentFromProps = ({ force = false } = {}) => {

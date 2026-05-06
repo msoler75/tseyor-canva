@@ -23,7 +23,6 @@ final class DesignerStateRules
             "{$prefix}.designTitle" => ['nullable', 'string', 'max:255'],
             "{$prefix}.designTitleManual" => ['nullable', 'boolean'],
             "{$prefix}.currentDesignUuid" => ['nullable', 'string', 'max:36'],
-            "{$prefix}.activePageId" => ['nullable', 'string', 'max:120'],
             // stateRevision evita que un save antiguo sobrescriba un diseño más nuevo.
             "{$prefix}.stateRevision" => ['nullable', 'integer', 'min:0'],
             // templateRevision fuerza re-montar el editor rico cuando reaplicamos una plantilla.
