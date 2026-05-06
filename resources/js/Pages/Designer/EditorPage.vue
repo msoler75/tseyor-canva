@@ -780,7 +780,7 @@ const fontOptions = (page.props.fontFamilies ?? []).map(f => ({
 const textPropertyTabs = [
     { id: 'typography', label: 'TipografÃ­a' , class: 'order-first text-xl border-1 border-gray-500'},
     // { id: 'color', label: 'A', labelClass:'text-shadow-xs text-xl border-b-3',class: '' },
-    { id: 'fontSize', icon: 'radix-icons:font-size', label: 'TamaÃ±o', title: 'TamaÃ±o', class: 'order-first md:hidden' },
+    { id: 'fontSize', icon: 'radix-icons:font-size', label: 'Tamaño', title: 'Tamaño', class: 'order-first md:hidden' },
     { id: 'format', icon: 'mdi:format-text', label: 'Formato', title: 'Formato', class: 'order-last md:hidden' },
     { id: 'spacing', icon: 'mdi:format-line-spacing', title: 'Interlineado y espaciado', class: 'order-last' },
     { id: 'opacity', icon: 'carbon:opacity', class: 'order-last', iconClass: 'text-3xl' },
@@ -994,9 +994,9 @@ const templateFieldLabels = {
   extra: 'Texto adicional',
 };
 const coreTemplateFieldDefinitions = [
-  { id: 'title', key: 'title', label: 'TÃ­tulo', type: 'text', description: 'Campo principal del diseÃ±o.' },
+  { id: 'title', key: 'title', label: 'TÃ­tulo', type: 'text', description: 'Campo principal del diseño.' },
   { id: 'subtitle', key: 'subtitle', label: 'SubtÃ­tulo', type: 'text', description: 'Texto secundario o claim.' },
-  { id: 'meta', key: 'meta', label: 'Fecha / hora', type: 'text', description: 'Campo combinado de fecha y hora del diseÃ±o.' },
+  { id: 'meta', key: 'meta', label: 'Fecha / hora', type: 'text', description: 'Campo combinado de fecha y hora del diseño.' },
   { id: 'contact', key: 'contact', label: 'Contacto', type: 'text', description: 'Información de contacto o inscripción.' },
   { id: 'extra', key: 'extra', label: 'Texto adicional', type: 'textarea', description: 'Notas, requisitos o información complementaria.' },
 ];
@@ -1415,15 +1415,15 @@ const brochurePanelLabels = (pageIndex) => brochurePagePairForPhysicalPage(pageI
   .map((pageNumber) => `Página de folleto ${pageNumber}`);
 const addPageButtonLabel = computed(() => (
   isBrochureDocument()
-    ? '+ AÃ±adir 2 páginas fÃ­sicas (4 páginas de folleto)'
-    : '+ AÃ±adir una página'
+    ? '+ Añadir 2 páginas físicas (4 páginas de folleto)'
+    : '+ Añadir una página'
 ));
 const deletePageTip = computed(() => (
   isBrochureDocument()
-    ? 'Eliminar este pliego (2 páginas fÃ­sicas)'
+    ? 'Eliminar este pliego (2 páginas físicas)'
     : 'Eliminar página'
 ));
-const pageMetaLine = (content = {}) => [content.date, content.time].filter(Boolean).join(' Â· ');
+const pageMetaLine = (content = {}) => [content.date, content.time].filter(Boolean).join(' · ');
 const linkedPageFieldText = (content = {}, fieldKey, fallback = '') => {
   if (!fieldKey) return fallback;
   if (fieldKey === 'meta') return pageMetaLine(content);
@@ -3452,7 +3452,7 @@ const onImagePicked = async (event) => {
 
   imagePanelTab.value = 'uploads';
   for (const file of files) {
-    // Desde el picker actÃºa como subida a la galerÃ­a del usuario; la inserción en el diseÃ±o queda a elección posterior.
+    // Desde el picker actÃºa como subida a la galerÃ­a del usuario; la inserción en el diseño queda a elección posterior.
     // eslint-disable-next-line no-await-in-loop
     await createPendingUploadedImageFromFile(file, { openUploadsPanel: true });
   }
@@ -3899,6 +3899,13 @@ const updateElementMeasurement = (id, node) => {
         width: node.offsetWidth,
         height: node.offsetHeight,
     };
+
+    if (isTextElement(id) && !isLinkedTextElement(id)) {
+        const layout = state.elementLayout[id];
+        if (layout && layout.h !== node.offsetHeight) {
+            layout.h = node.offsetHeight;
+        }
+    }
 };
 
   const cloneSelectedElement = () => {
@@ -4461,6 +4468,7 @@ const onRichEditorTextUpdate = (id, newText) => {
     } else {
       state.content[id] = newText;
     }
+    recalculateTextHeight(id);
     return;
   }
 
@@ -4473,6 +4481,7 @@ const onRichEditorTextUpdate = (id, newText) => {
     } else {
       state.content[linkedFieldKey] = newText;
     }
+    recalculateTextHeight(id);
   }
 
   const element = state.customElements?.[id];
@@ -4484,6 +4493,7 @@ const onRichEditorTextUpdate = (id, newText) => {
 
   if (element.type === 'text') {
     element.text = newText;
+    recalculateTextHeight(id);
   }
 };
 
@@ -4863,7 +4873,7 @@ const flushDesignerStateWithThumbnail = async () => {
       syncActivePageSnapshot();
       await flushDesignerStatePersistence();
     } catch (error) {
-      console.error('No se pudo guardar el estado del diseÃ±o automáticamente', error);
+      console.error('No se pudo guardar el estado del diseño automáticamente', error);
     } finally {
       pendingStateFlush = false;
       if (stateFlushRequestedDuringPending) {
@@ -4874,7 +4884,7 @@ const flushDesignerStateWithThumbnail = async () => {
   });
 };
 
-// Watcher principal para cambios en el diseÃ±o
+// Watcher principal para cambios en el diseño
 watch(
   () => [state.content, state.elementLayout, state.customElements],
   () => {
@@ -5042,7 +5052,7 @@ const handleExportNavigation = async (event) => {
   event?.preventDefault?.();
   // Si es invitado, mostrar alerta y no abrir el exportador
   if (!authUser.value) {
-    window.alert('Para descargar o exportar tu diseÃ±o debes iniciar sesión. Puedes seguir editando como invitado.');
+    window.alert('Para descargar o exportar tu diseño debes iniciar sesión. Puedes seguir editando como invitado.');
     return;
   }
   exportDialogOpen.value = true;
@@ -5066,9 +5076,9 @@ const handleLogin = async () => {
 };
 
 const handleCreateNewDesign = async () => {
-  // Si es invitado y ya existe un diseÃ±o temporal, mostrar alerta y no crear otro
+  // Si es invitado y ya existe un diseño temporal, mostrar alerta y no crear otro
   if (!authUser.value && state.currentDesignUuid == null && window.sessionStorage.getItem('guestDesignCreated')) {
-    window.alert('Solo puedes tener un diseÃ±o temporal como invitado. Inicia sesión para guardar y crear más diseÃ±os.');
+    window.alert('Solo puedes tener un diseño temporal como invitado. Inicia sesión para guardar y crear más diseños.');
     return;
   }
   try {
@@ -5078,7 +5088,7 @@ const handleCreateNewDesign = async () => {
   }
 
   resetDesignerState();
-  // Marcar que el invitado ya creó un diseÃ±o temporal
+  // Marcar que el invitado ya creó un diseño temporal
   if (!authUser.value) {
     window.sessionStorage.setItem('guestDesignCreated', '1');
   }
@@ -5101,7 +5111,7 @@ const handleDuplicateDesign = async () => {
     }
   }
 
-  const currentTitle = (state.designTitle || 'DiseÃ±o sin tÃ­tulo').trim();
+  const currentTitle = (state.designTitle || 'Diseño sin tÃ­tulo').trim();
   state.designTitle = currentTitle.toLowerCase().startsWith('copia de ')
     ? currentTitle
     : `Copia de ${currentTitle}`;
@@ -5115,10 +5125,10 @@ const handleDuplicateDesign = async () => {
 };
 
 const handleRenameDesign = async () => {
-  const nextTitle = window.prompt('Nuevo tÃ­tulo del diseÃ±o', state.designTitle || 'DiseÃ±o sin tÃ­tulo');
+  const nextTitle = window.prompt('Nuevo tÃ­tulo del diseño', state.designTitle || 'Diseño sin tÃ­tulo');
   if (nextTitle === null) return;
 
-  state.designTitle = nextTitle.trim() || 'DiseÃ±o sin tÃ­tulo';
+  state.designTitle = nextTitle.trim() || 'Diseño sin tÃ­tulo';
   state.designTitleManual = true;
 
   try {
@@ -5137,7 +5147,7 @@ const handleRenameDesign = async () => {
 
 const ensurePersistedDesign = async () => {
   if (!authUser.value) {
-    throw new Error('Debes iniciar sesión para guardar este diseÃ±o.');
+    throw new Error('Debes iniciar sesión para guardar este diseño.');
   }
 
   if (state.currentDesignUuid) {
@@ -5146,16 +5156,16 @@ const ensurePersistedDesign = async () => {
   }
 
   if (!designsStoreEndpoint.value) {
-    throw new Error('No hay endpoint disponible para crear diseÃ±os.');
+    throw new Error('No hay endpoint disponible para crear diseños.');
   }
 
   const response = await axios.post(designsStoreEndpoint.value, {
     state: JSON.parse(JSON.stringify(state)),
-    name: state.designTitle || 'DiseÃ±o sin tÃ­tulo',
+    name: state.designTitle || 'Diseño sin tÃ­tulo',
   });
   const uuid = response.data?.design?.uuid;
   if (!uuid) {
-    throw new Error('No se pudo persistir el diseÃ±o actual.');
+    throw new Error('No se pudo persistir el diseño actual.');
   }
 
   state.currentDesignUuid = uuid;
@@ -5416,7 +5426,7 @@ const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) =
     const returnedState = response.data?.design?.state ?? null;
     if (returnedState) {
       normalizeBrochurePages(returnedState);
-      // Forzar rehidratación del estado del diseÃ±ador con el state devuelto por el backend
+      // Forzar rehidratación del estado del diseñador con el state devuelto por el backend
       useDesignerState({ forceRehydrate: true, overrideState: returnedState });
       ensureDocumentPages(true);
       refreshDocumentPageList();
@@ -5430,7 +5440,7 @@ const handleAssistantFinish = async ({ selectedTemplate, designerState } = {}) =
       return;
     }
   } catch (error) {
-    window.alert(error.response?.data?.message || 'No se pudo generar el diseÃ±o desde la plantilla.');
+    window.alert(error.response?.data?.message || 'No se pudo generar el diseño desde la plantilla.');
   }
 
   closeAssistant();
@@ -5493,7 +5503,7 @@ const isPlaceholderDesignTitle = (value) => {
     'agrega un titulo',
     'agrega un tÃ­tulo',
     'diseno sin titulo',
-    'diseÃ±o sin tÃ­tulo',
+    'diseño sin tÃ­tulo',
   ].includes(normalized);
 };
 
