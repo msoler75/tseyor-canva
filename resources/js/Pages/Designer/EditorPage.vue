@@ -2585,6 +2585,11 @@ const handleLinkedTextLinkStart = ({ event, id }) => {
   linkedTextLink.sourceId = id;
   linkedTextLink.currentX = event.clientX;
   linkedTextLink.currentY = event.clientY;
+  if (canvasRef.value) {
+    const rect = canvasRef.value.getBoundingClientRect();
+    linkedTextLink.canvasX = event.clientX - rect.left;
+    linkedTextLink.canvasY = event.clientY - rect.top;
+  }
   event.target.setPointerCapture(event.pointerId);
 };
 
