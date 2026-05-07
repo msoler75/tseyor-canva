@@ -1864,6 +1864,18 @@ const extractPlainTextFromHtml = (html = '') => {
   return div.textContent || '';
 };
 
+const normalizeColor = (color) => {
+  if (!color || typeof color !== 'string') return color;
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.fillStyle = color;
+    const normalized = ctx.fillStyle;
+    return typeof normalized === 'string' && normalized.length <= 32 ? normalized : color.substring(0, 32);
+  } catch {
+    return color.substring(0, 32);
+  }
+};
+
 const parseLinkedParagraphStylesFromHtml = (html = '', layout = {}) => {
   if (typeof document === 'undefined') return [];
   const container = document.createElement('div');
@@ -1890,7 +1902,7 @@ const parseLinkedParagraphStylesFromHtml = (html = '', layout = {}) => {
 
     return {
       fontSize: Number.isFinite(fontSize) ? fontSize : fallback.fontSize,
-      color: inline.color || fallback.color,
+      color: normalizeColor(inline.color) || fallback.color,
       fontFamily: inline.fontFamily || fallback.fontFamily,
       fontWeight,
       italic: inline.fontStyle === 'italic' ? true : fallback.italic,
@@ -1942,9 +1954,15 @@ const applyParagraphStyleField = (field, value) => {
     if (!layout) return;
 
     const sourceText = getElementText(styleSourceId);
-    const styles = ensureParagraphStyles(layout, sourceText);
+    // Para texto enlazado no en edición, usar el texto completo de toda la cadena
+    const isLinkedNotEditing = state.customElements?.[styleSourceId]?.type === 'linkedText'
+      && editingElementId.value !== state.selectedElementId;
+    const fullSourceText = isLinkedNotEditing
+      ? (linkedTextElementFromAnyPage(styleSourceId)?.text ?? sourceText)
+      : sourceText;
+    const styles = ensureParagraphStyles(layout, fullSourceText);
     const applyToStyle = (style) => {
-      style[field] = value;
+      style[field] = field === 'color' ? normalizeColor(value) : value;
     };
 
     if (editingElementId.value === state.selectedElementId && paragraphSelection.active) {
@@ -1959,14 +1977,20 @@ const applyParagraphStyleField = (field, value) => {
       styles.forEach(applyToStyle);
     }
 
-    if (field === 'fontSize' || field === 'fontFamily' || field === 'fontWeight' || field === 'italic' || field === 'letterSpacing' || field === 'lineHeight' || field === 'color') {
-      layout[field] = value;
+    if (field === 'fontSize' || field === 'fontFamily' || field === 'fontWeight' || field === 'italic' || field === 'letterSpacing' || field === 'lineHeight' || field === 'color' || field === 'textAlign' || field === 'underline' || field === 'uppercase') {
+      layout[field] = field === 'color' ? normalizeColor(value) : value;
     }
 
     const editorRef = richEditorRefs.value[state.selectedElementId];
 
+    const CHAR_STYLE_FIELDS = new Set(['color', 'fontWeight', 'italic', 'underline', 'fontSize', 'fontFamily']);
+
     if (editorRef && editingElementId.value === state.selectedElementId) {
-        editorRef.applyStyle(field, value);
+        if (paragraphSelection.active && CHAR_STYLE_FIELDS.has(field)) {
+            editorRef.applyCharacterStyle(field, value);
+        } else {
+            editorRef.applyStyle(field, value);
+        }
     } else if (editorRef) {
         editorRef.applyStyleAll(field, value);
     }

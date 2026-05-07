@@ -252,10 +252,16 @@ export function createLinkedTextBoxSystem() {
         .filter(Boolean)
         .join('; ');
 
-      const paragraphCssForIndex = (paragraph, index, layout) => mergeCssText(
-        paragraph?.style ?? '',
-        styleObjectToCss(layout?.paragraphStyles?.[index] ?? {}),
-      );
+      const paragraphCssForIndex = (paragraph, index, layout) => {
+        const style = layout?.paragraphStyles?.[index];
+        const merged = style
+          ? styleObjectToCss(style)
+          : styleObjectToCss(layout ?? {});
+        return mergeCssText(
+          paragraph?.style ?? '',
+          merged,
+        );
+      };
 
       // Función para configurar el div de medición DINÁMICO
       const setupMeasureDiv = (layout) => {

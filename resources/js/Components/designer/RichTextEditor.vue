@@ -352,13 +352,11 @@ const applyStyle = (field, value) => {
     editor.value.state.doc.forEach((node, offset) => {
         if (node.type.name !== 'paragraph') return;
         const nodeEnd = offset + node.nodeSize;
-        if (offset < to && nodeEnd > from) patches.push({ pos: offset + 1, attrs: { ...node.attrs } });
+        if (offset < to && nodeEnd > from) patches.push({ pos: offset, attrs: { ...node.attrs } });
     });
     const tr = editor.value.state.tr;
     patches.forEach(({ pos, attrs }) => {
-        const resolvedPos = editor.value.state.doc.resolve(pos);
-        const node = resolvedPos.parent;
-        tr.setNodeMarkup(resolvedPos.before(), undefined, { ...attrs, [field]: value });
+        tr.setNodeMarkup(pos, undefined, { ...attrs, [field]: value });
     });
     editor.value.view.dispatch(tr);
 };
@@ -367,12 +365,11 @@ const applyStyleAll = (field, value) => {
     if (!editor?.value) return;
     const patches = [];
     editor.value.state.doc.forEach((node, offset) => {
-        if (node.type.name === 'paragraph') patches.push({ pos: offset + 1, attrs: { ...node.attrs } });
+        if (node.type.name === 'paragraph') patches.push({ pos: offset, attrs: { ...node.attrs } });
     });
     const tr = editor.value.state.tr;
     patches.forEach(({ pos, attrs }) => {
-        const resolvedPos = editor.value.state.doc.resolve(pos);
-        tr.setNodeMarkup(resolvedPos.before(), undefined, { ...attrs, [field]: value });
+        tr.setNodeMarkup(pos, undefined, { ...attrs, [field]: value });
     });
     editor.value.view.dispatch(tr);
 };
@@ -474,6 +471,30 @@ const toggleMarkStyle = (markType, attrs = {}) => {
     }
 };
 
+const CHAR_STYLE_TO_MARK = {
+  color: 'color',
+  fontWeight: 'fontWeight',
+  italic: { mark: 'styledText', attr: 'fontStyle', value: 'italic' },
+  underline: { mark: 'styledText', attr: 'textDecoration', value: 'underline' },
+  fontSize: 'fontSize',
+  fontFamily: 'fontFamily',
+};
+
+const applyCharacterStyle = (field, value) => {
+    if (!editor?.value) return;
+    const { from, to } = editor.value.state.selection;
+    if (from === to) return;
+    const mapping = CHAR_STYLE_TO_MARK[field];
+    if (!mapping) return;
+    const mark = editor.value.schema.marks.styledText;
+    if (!mark) return;
+    const attrs = typeof mapping === 'object'
+      ? { [mapping.attr]: mapping.value }
+      : { [mapping]: value };
+    const tr = editor.value.state.tr.addMark(from, to, mark.create(attrs));
+    editor.value.view.dispatch(tr);
+};
+
 const setContentDirect = (html) => {
     if (!editor?.value) return;
     editor.value.commands.setContent(html, false);
@@ -520,6 +541,7 @@ const getHtml = () => {
 defineExpose({
     applyStyle,
     applyStyleAll,
+    applyCharacterStyle,
     getActiveAttrs,
     focusAtEnd,
     focusAtPosition,
