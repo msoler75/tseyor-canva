@@ -58,9 +58,10 @@ const getTabLabelStyle = (tab, selectedTextStyle) => {
   return {};
 };
 
-const getLabel = (tab) => {
+const getLabel = (tab, selectedTextStyle) => {
   if (tab.id === 'typography') {
-    return 'Fuente';
+    const name = selectedTextStyle?.fontFamily;
+    return name ? name.split(',')[0].replace(/['"]/g, '') : 'Fuente';
   }
   return tab.label || '';
 };
