@@ -403,7 +403,7 @@ export function createLinkedTextBoxSystem() {
                .filter((unit) => unit.type === 'word')
                .map((unit) => escapeHtml(unit.word))
                .join('');
-             const contents = text || '<br>';
+              const contents = text || '\u200B';
              htmlParts.push(`<${tag}${styleAttr}>${contents}</${tag}>`);
            }
 
@@ -431,7 +431,7 @@ export function createLinkedTextBoxSystem() {
            const style = paragraphCssForIndex(para, group.paragraphIndex, layout);
            const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
            const text = group.words.map((word) => escapeHtml(word)).join('');
-           const contents = text || '<br>';
+            const contents = text || '\u200B';
            return `<${tag}${styleAttr}>${contents}</${tag}>`;
          }).join('');
        };

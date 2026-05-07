@@ -793,6 +793,9 @@ const logLinkedTextStyles = () => {
     text-shadow: inherit;
     -webkit-text-stroke: inherit;
 }
+.linked-text-display p:empty {
+    min-height: 1em;
+}
 .ProseMirror-gapcursor:after {
     border-top-color: #ff8c00 !important;
 }

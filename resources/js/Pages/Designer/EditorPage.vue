@@ -1219,9 +1219,32 @@ const recalculateLinkedTextAllocations = (headId) => {
   const headElement = linkedTextElementFromAnyPage(headId);
   if (!headElement || headElement.type !== 'linkedText') return;
 
-  const fullHtml = headElement.html || headElement.text || '';
   const groupId = linkedTextLayoutFromAnyPage(headId)?.linkedTextGroupId;
   if (!groupId) return;
+
+  // Reconstruir fullHtml con los estilos actuales del layout para que
+  // tailHtml / linked-text-base-layer siempre refleje el formato vigente
+  const headLayout = linkedTextLayoutFromAnyPage(headId);
+  const rawText = headElement.text || '';
+  const plainLines = rawText.split('\n');
+  const headStyles = Array.isArray(headLayout?.paragraphStyles) ? headLayout.paragraphStyles : [];
+  const fullHtml = plainLines.map((line, i) => {
+    const s = headStyles[i] || headStyles[headStyles.length - 1] || {};
+    const style = [
+      s.fontSize ? `font-size:${s.fontSize}px` : '',
+      s.color ? `color:${s.color}` : '',
+      s.fontFamily ? `font-family:${s.fontFamily}` : '',
+      s.fontWeight ? `font-weight:${s.fontWeight === 'bold' ? 700 : s.fontWeight === 'regular' ? 400 : s.fontWeight}` : '',
+      s.italic ? 'font-style:italic' : '',
+      s.underline ? 'text-decoration:underline' : '',
+      s.uppercase ? 'text-transform:uppercase' : '',
+      s.textAlign ? `text-align:${s.textAlign}` : '',
+      s.letterSpacing != null ? `letter-spacing:${s.letterSpacing}px` : '',
+      s.lineHeight != null ? `line-height:${s.lineHeight}` : '',
+    ].filter(Boolean).join(';');
+    const styleAttr = style ? ` style="${style}"` : '';
+    return `<p${styleAttr}>${line}</p>`;
+  }).join('');
 
   const chainLayouts = chain.map((item) => {
     const l = linkedTextLayoutFromAnyPage(item.id) || {};
@@ -1861,7 +1884,13 @@ const extractPlainTextFromHtml = (html = '') => {
   if (typeof document === 'undefined') return String(html ?? '');
   const div = document.createElement('div');
   div.innerHTML = html;
-  return div.textContent || '';
+  const parts = [];
+  for (const child of div.childNodes) {
+      if (child.nodeType === Node.ELEMENT_NODE && /^[ph]\d?$|^div$|^li$|^blockquote$|^pre$/i.test(child.tagName)) {
+      parts.push(child.textContent);
+    }
+  }
+  return parts.join('\n');
 };
 
 const normalizeColor = (color) => {
@@ -1884,8 +1913,9 @@ const parseLinkedParagraphStylesFromHtml = (html = '', layout = {}) => {
   const blockNodes = Array.from(container.querySelectorAll('p,div,li,h1,h2,h3,h4,h5,h6,blockquote,pre'));
   if (!blockNodes.length) return [];
 
-  return blockNodes.map((node) => {
-    const fallback = buildParagraphStyle(layout);
+  const fallback = buildParagraphStyle(layout);
+
+  const styles = blockNodes.map((node) => {
     const inline = node.style;
     const fontSize = Number.parseFloat(inline.fontSize);
     const letterSpacing = Number.parseFloat(inline.letterSpacing);
@@ -1901,6 +1931,18 @@ const parseLinkedParagraphStylesFromHtml = (html = '', layout = {}) => {
     }
 
     return {
+      _explicit: {
+        fontSize: Number.isFinite(fontSize),
+        color: !!inline.color,
+        fontFamily: !!inline.fontFamily,
+        fontWeight: !!weightRaw,
+        italic: !!inline.fontStyle,
+        underline: !!(inline.textDecorationLine || inline.textDecoration),
+        uppercase: !!inline.textTransform,
+        textAlign: !!inline.textAlign,
+        letterSpacing: Number.isFinite(letterSpacing),
+        lineHeight: Number.isFinite(lineHeight),
+      },
       fontSize: Number.isFinite(fontSize) ? fontSize : fallback.fontSize,
       color: normalizeColor(inline.color) || fallback.color,
       fontFamily: inline.fontFamily || fallback.fontFamily,
@@ -1912,6 +1954,26 @@ const parseLinkedParagraphStylesFromHtml = (html = '', layout = {}) => {
       letterSpacing: Number.isFinite(letterSpacing) ? letterSpacing : fallback.letterSpacing,
       lineHeight: Number.isFinite(lineHeight) ? lineHeight : fallback.lineHeight,
     };
+  });
+
+  // Propagar estilos explicitos del primer nodo que los tenga a todos
+  const firstExplicit = {};
+  for (const key of ['fontSize', 'color', 'fontFamily', 'fontWeight', 'italic', 'underline', 'uppercase', 'textAlign', 'letterSpacing', 'lineHeight']) {
+    for (const s of styles) {
+      if (s._explicit[key]) {
+        firstExplicit[key] = s[key];
+        break;
+      }
+    }
+  }
+
+  return styles.map((s) => {
+    const out = { ...s };
+    delete out._explicit;
+    for (const key of Object.keys(firstExplicit)) {
+      if (!s._explicit[key]) out[key] = firstExplicit[key];
+    }
+    return out;
   });
 };
 
