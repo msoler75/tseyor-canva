@@ -1,4 +1,5 @@
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
+import { useLinkedTextBoxSystem } from './useLinkedTextBoxSystem';
 
 const HISTORY_LIMIT = 80;
 
@@ -222,6 +223,8 @@ export const useEditorHistory = ({
   };
 
   const applyHistorySnapshot = (snapshot) => {
+    const linkedTextBoxSystem = useLinkedTextBoxSystem();
+    linkedTextBoxSystem.resetAllSystems();
     historyApplying.value = true;
 
     state.content = cloneSnapshotValue(snapshot.content ?? {});

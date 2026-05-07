@@ -148,3 +148,44 @@ El texto en modo display y modo edición debe verse **idéntico**:
 
 Para garantizar esto, los estilos CSS de `.ProseMirror` (edición) y `.linked-text-display` (display) deben ser **idénticos**.
 
+---
+
+### 10. Duplicación de páginas con texto enlazable
+
+Cuando se duplica una página que contiene cajas de texto enlazable (`linkedText`), **todas las cajas enlazables de la página duplicada se convierten en cajas independientes (standalone)**, sin enlaces entre sí ni con las cajas de la página original.
+
+**Reglas:**
+- A cada caja `linkedText` del clon se le asigna un **nuevo `linkedTextGroupId`** único
+- Se limpian `linkedTextNext`, `linkedTextPrev` y `linkedTextChainIndex` (valor por defecto: 0)
+- Se copia el contenido visible (`html`/`text`) del fragmento que mostraba esa caja en la página original. Si el fragmento no está disponible (página no activa), se usa el texto completo del `head` de la cadena original como fallback
+- Esto evita colisiones de identidad entre páginas y cadenas corruptas cross-page
+
+**Motivo:** `clonePlain` (deep clone via `JSON.parse(JSON.stringify(...))`) preserva los `linkedTextGroupId`, `linkedTextNext` y `linkedTextPrev` originales, creando referencias fantasma entre dos páginas distintas. La sanitización rompe estos enlaces explícitamente.
+
+---
+
+### 11. Clonación de caja grande (>60% altura de página)
+
+Al clonar una caja de texto enlazable cuya altura (`h`) supera el **60% de la altura de la página** (`editorCanvasDimensions.height`), la nueva caja clonada **se coloca en la siguiente "página" lógica** (misma posición relativa), en lugar de en la página actual con offset.
+
+- **Documento normal:** la caja va a `state.pages[currentIndex + 1]`, misma posición `(x, y)`
+- **Formato folleto:** cada página física tiene dos paneles (izquierdo y derecho) que representan dos páginas de folleto consecutivas en el flujo de lectura:
+  - Si la caja está en el **panel izquierdo** (`x < halfWidth`): el clon va al **panel derecho** de la **misma** página física, en `x + halfWidth`
+  - Si la caja está en el **panel derecho** (`x >= halfWidth`): el clon va al **panel izquierdo** de la **siguiente** página física, en `x - halfWidth`
+- Si **no hay página/panel siguiente**, se aplica el comportamiento normal (offset +18px en la misma página)
+- La caja clonada se **intercala en la cadena** entre la caja origen y su antiguo `next` (cadena cross-page, soportada por `linkedTextLayoutFromAnyPage()`)
+
+**Motivo:** Una caja que ocupa más del 60% de la página probablemente está llena de texto. Su clon natural es una continuación en la página siguiente (o panel siguiente en folleto), imitando el flujo de texto entre páginas.
+
+---
+
+### 12. Robustez ante undo/redo
+
+Al aplicar undo o redo (`applyHistorySnapshot`), el sistema de texto enlazable limpia su caché interno de fragmentos (`linkedTextBoxSystem.resetAllSystems()`) **antes** de restaurar el estado. Esto fuerza que los fragmentos se recalculen desde cero a partir del estado restaurado, evitando datos stale.
+
+- El **texto global** (`html`/`text` en `customElements[headId]`) se preserva íntegramente porque está almacenado en el snapshot de historial
+- La caché de fragmentos (`systemsMap`, `fragments`) es **datos derivados** que se reconstruyen bajo demanda cuando `getLinkedTextBoxText()` detecta el sistema vacío
+- El watcher de redistribución (línea 5073) también reactiva el recálculo para toda cadena detectada en `state.elementLayout`
+
+**Motivo:** El singleton `useLinkedTextBoxSystem` retiene fragmentos calculados del estado previo al undo. Sin limpieza, `getLinkedTextBoxText()` encuentra fragmentos stale que no corresponden al estado restaurado.
+

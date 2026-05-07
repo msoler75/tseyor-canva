@@ -784,6 +784,15 @@ export function createLinkedTextBoxSystem() {
     return system?.editorId || null;
   }
 
+  /**
+   * Reiniciar todos los sistemas (limpiar caché de fragmentos y editor activo).
+   * Se usa tras undo/redo para forzar recálculo limpio desde el estado restaurado.
+   */
+  function resetAllSystems() {
+    systemsMap.clear();
+    activeEditorId.value = null;
+  }
+
   return {
     systems: systemsMap,
     activeEditorId,
@@ -797,6 +806,7 @@ export function createLinkedTextBoxSystem() {
     stopEditing,
     isBoxBeingEdited,
     getEditingBoxId,
+    resetAllSystems,
   };
 }
 

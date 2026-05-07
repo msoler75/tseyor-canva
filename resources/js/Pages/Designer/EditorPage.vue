@@ -356,6 +356,37 @@ const handleDocumentPagesScroll = () => {
     activateVisibleDocumentPage(mostVisible, { hydrate: false });
   });
 };
+const sanitizePageLinkedTextDuplicates = (page) => {
+  const layout = page.elementLayout;
+  const elements = page.customElements;
+  if (!layout || !elements) return;
+
+  Object.entries(elements).forEach(([id, element]) => {
+    if (element?.type !== 'linkedText' || !layout[id]) return;
+    const l = layout[id];
+
+    const fragment = l.linkedTextGroupId
+      ? linkedTextBoxSystem.getFragmentForBox(l.linkedTextGroupId, id)
+      : null;
+    if (fragment?.html) {
+      element.html = fragment.html;
+      element.text = fragment.html.replace(/<[^>]*>/g, '').trim();
+    } else {
+      const headId = getLinkedTextChainHead(id);
+      const headEl = linkedTextElementFromAnyPage(headId);
+      if (headEl) {
+        element.html = headEl.html || '';
+        element.text = headEl.text || '';
+      }
+    }
+
+    l.linkedTextGroupId = `linked-group-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    l.linkedTextNext = null;
+    l.linkedTextPrev = null;
+    l.linkedTextChainIndex = 0;
+  });
+};
+
 const addDocumentPage = async ({ afterPageId = activePageId.value, duplicate = false } = {}) => {
   try {
     commitTextEdit();
@@ -367,10 +398,16 @@ const addDocumentPage = async ({ afterPageId = activePageId.value, duplicate = f
     ? clonePlain(state.pages.find((page) => page.id === afterPageId) ?? clonePageFromState())
     : createBlankPage();
   source.id = createPageId();
+  if (duplicate) {
+    sanitizePageLinkedTextDuplicates(source);
+  }
   const pagesToInsert = [source];
   if (isBrochureDocument()) {
     const extraPage = duplicate ? clonePlain(source) : createBlankPage();
     extraPage.id = createPageId();
+    if (duplicate) {
+      sanitizePageLinkedTextDuplicates(extraPage);
+    }
     pagesToInsert.push(extraPage);
   }
   const insertAfterIndex = Math.max(0, state.pages.findIndex((page) => page.id === afterPageId));
@@ -4034,6 +4071,99 @@ const updateElementMeasurement = (id, node) => {
     const sourceLayout = state.elementLayout[sourceId];
     const sourceElement = editorElements.value.find((item) => item.id === sourceId);
     if (!sourceLayout || !sourceElement) return;
+
+    const pageHeight = editorCanvasDimensions.value.height;
+    const isLargeLinkedText = sourceElement.type === 'linkedText'
+      && sourceLayout.h > 0
+      && pageHeight > 0
+      && (sourceLayout.h / pageHeight) > 0.6;
+
+    if (isLargeLinkedText) {
+      const currentPageIndex = state.pages.findIndex((p) => p.id === workingDocumentPageId.value);
+      const isBrochure = isBrochureDocument();
+      const canvasWidth = editorCanvasDimensions.value.width;
+      const halfWidth = isBrochure ? canvasWidth / 2 : 0;
+
+      let placeOnCurrentPage = false;
+      let targetPage = null;
+      let cloneX = sourceLayout.x ?? 0;
+      let cloneY = sourceLayout.y ?? 0;
+
+      if (isBrochure && (sourceLayout.x ?? 0) < halfWidth) {
+        // Panel izquierdo → panel derecho de la MISMA página física
+        placeOnCurrentPage = true;
+        cloneX = (sourceLayout.x ?? 0) + halfWidth;
+      } else if (isBrochure) {
+        // Panel derecho → panel izquierdo de la SIGUIENTE página física
+        targetPage = state.pages[currentPageIndex + 1];
+        cloneX = (sourceLayout.x ?? 0) - halfWidth;
+      } else {
+        // Documento normal → siguiente página
+        targetPage = state.pages[currentPageIndex + 1];
+      }
+
+      if (!placeOnCurrentPage && !targetPage) {
+        // No hay página/panel siguiente, se sigue con el clon normal
+      } else {
+        const cloneId = createElementId(sourceElement.type || 'element');
+        const oldNextId = sourceLayout.linkedTextNext ?? null;
+        const linkedTextGroupId = sourceLayout.linkedTextGroupId || `linked-group-${Date.now()}`;
+
+        const refLayout = placeOnCurrentPage ? state.elementLayout : (targetPage.elementLayout || {});
+        const maxZ = Object.values(refLayout).reduce((max, l) => Math.max(max, l?.zIndex ?? 0), 500);
+
+        const cloneLayout = {
+          ...sourceLayout,
+          x: cloneX,
+          y: cloneY,
+          zIndex: maxZ + 10,
+          paragraphStyles: Array.isArray(sourceLayout.paragraphStyles)
+            ? sourceLayout.paragraphStyles.map((s) => ({ ...s }))
+            : undefined,
+        };
+
+        sourceLayout.linkedTextGroupId = linkedTextGroupId;
+        sourceLayout.linkedTextNext = cloneId;
+
+        cloneLayout.linkedTextGroupId = linkedTextGroupId;
+        cloneLayout.linkedTextPrev = sourceId;
+        cloneLayout.linkedTextNext = oldNextId;
+
+        if (oldNextId && linkedTextLayoutFromAnyPage(oldNextId)) {
+          linkedTextSetLayoutField(oldNextId, 'linkedTextPrev', cloneId);
+          linkedTextSetLayoutField(oldNextId, 'linkedTextGroupId', linkedTextGroupId);
+        }
+
+        if (placeOnCurrentPage) {
+          state.customElements[cloneId] = {
+            id: cloneId,
+            type: 'linkedText',
+            label: `${sourceElement.label} continuación`,
+            text: '',
+          };
+          state.elementLayout[cloneId] = cloneLayout;
+        } else {
+          if (!targetPage.customElements) targetPage.customElements = {};
+          targetPage.customElements[cloneId] = {
+            id: cloneId,
+            type: 'linkedText',
+            label: `${sourceElement.label} continuación`,
+            text: '',
+          };
+          if (!targetPage.elementLayout) targetPage.elementLayout = {};
+          targetPage.elementLayout[cloneId] = cloneLayout;
+        }
+
+        const headId = getLinkedTextChainHead(sourceId);
+        const chain = getLinkedTextChain(headId);
+        chain.forEach((item, index) => {
+          item.layout.linkedTextChainIndex = index;
+          item.layout.linkedTextGroupId = linkedTextGroupId;
+        });
+        recalculateLinkedTextAllocations(headId);
+        return;
+      }
+    }
 
     const cloneId = createElementId(sourceElement.type || 'element');
     const oldNextId = sourceElement.type === 'linkedText' ? (sourceLayout.linkedTextNext ?? null) : null;
