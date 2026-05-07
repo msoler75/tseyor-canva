@@ -2003,7 +2003,10 @@ const getParagraphStyleForElement = (id, index = 0, text = null) => {
     const layout = state.elementLayout[styleSourceId];
     if (!layout) return null;
 
-    const sourceText = text ?? getElementText(id);
+    // Para texto enlazado, usar siempre el texto completo del head
+    // para que ensureParagraphStyles cree entradas para todos los párrafos de la cadena
+    const isLinked = state.customElements?.[styleSourceId]?.type === 'linkedText';
+    const sourceText = isLinked ? (linkedTextElementFromAnyPage(styleSourceId)?.text ?? '') : (text ?? getElementText(id));
     const styles = ensureParagraphStyles(layout, sourceText);
 
     return styles[clamp(index, 0, Math.max(0, styles.length - 1))] ?? buildParagraphStyle(layout);
@@ -2039,8 +2042,13 @@ const applyParagraphStyleField = (field, value) => {
       styles.forEach(applyToStyle);
     }
 
-    if (field === 'fontSize' || field === 'fontFamily' || field === 'fontWeight' || field === 'italic' || field === 'letterSpacing' || field === 'lineHeight' || field === 'color' || field === 'textAlign' || field === 'underline' || field === 'uppercase') {
-      layout[field] = field === 'color' ? normalizeColor(value) : value;
+    const isLinkedStyle = state.customElements?.[styleSourceId]?.type === 'linkedText';
+    // Para texto enlazado en edición selectiva, NO actualizar la propiedad base del layout,
+    // porque el cambio es solo en el párrafo seleccionado, no debe propagarse a todos.
+    if (!isLinkedStyle || editingElementId.value !== state.selectedElementId) {
+      if (field === 'fontSize' || field === 'fontFamily' || field === 'fontWeight' || field === 'italic' || field === 'letterSpacing' || field === 'lineHeight' || field === 'color' || field === 'textAlign' || field === 'underline' || field === 'uppercase') {
+        layout[field] = field === 'color' ? normalizeColor(value) : value;
+      }
     }
 
     const editorRef = richEditorRefs.value[state.selectedElementId];
@@ -2086,10 +2094,12 @@ const selectedTextStyle = computed(() => {
         get(target, key) {
             return target[key];
         },
-        set(_, key, value) {
+        set(target, key, value) {
             if (typeof key !== 'string') return true;
-            if (paragraphStyleFields.has(key)) {
-                applyParagraphStyleField(key, value);
+            if (paragraphStyleFields.has(key) && value !== undefined && value !== null && !(typeof value === 'number' && Number.isNaN(value))) {
+                if (target[key] !== value) {
+                    applyParagraphStyleField(key, value);
+                }
             }
             return true;
         },
@@ -5605,6 +5615,7 @@ watch(() => state.selectedElementId, () => {
   if (state.selectedElementId) {
     selectedGroupId.value = null;
     multiSelectionIds.value = [];
+    activePropertyPanel.value = null;
   }
 });
 
