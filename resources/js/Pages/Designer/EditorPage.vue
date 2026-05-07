@@ -1698,7 +1698,7 @@ const selectedPropertyTabs = computed(() => {
   if (isGroupSelection.value || hasMultiSelection.value) return [];
   if (!hasSelection.value) return textPropertyTabs;
   if (state.selectedElementId === 'background') return selectedBackgroundPropertyTabs.value;
-  if (selectedElementType.value === 'text') return textPropertyTabs;
+  if (selectedElementType.value === 'text' || selectedElementType.value === 'linkedText') return textPropertyTabs;
   return selectedElementType.value === 'image' ? imagePropertyTabs : shapePropertyTabs;
 });
 const hasSidebarPanelContent = computed(() => (
