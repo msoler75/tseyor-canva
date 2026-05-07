@@ -17,6 +17,7 @@ const props = defineProps({
   textPanelOpen: Boolean,
   imagePanelOpen: Boolean,
   shapePanelOpen: Boolean,
+  floating: Boolean,
   templateMode: Boolean,
   templateFields: Array,
   templateFieldUsage: Object,
@@ -84,6 +85,7 @@ const {
   textPanelOpen,
   imagePanelOpen,
   shapePanelOpen,
+  floating,
   templateMode,
   templateFields,
   templateFieldUsage,
@@ -156,6 +158,13 @@ const imageUrlInput = computed({
 const shapeCategoryFilter = computed({
   get: () => props.shapeCategoryFilter,
   set: (value) => emit('updateShapeCategoryFilter', value),
+});
+
+const panelClasses = computed(() => {
+  if (floating.value) {
+    return 'absolute left-[70px] top-0 z-40 h-full w-80 max-h-none overflow-y-auto rounded-r-xl border-r border-base-300 bg-base-100 shadow-xl';
+  }
+  return 'fixed inset-x-0 bottom-20 top-auto z-50 max-h-[calc(70vh-6rem)] w-full overflow-y-auto rounded-t-[28px] border-t border-base-300 bg-base-100 shadow-2xl transition-transform md:static md:inset-auto md:z-40 md:h-full md:max-h-none md:w-80 md:rounded-none md:border-r md:border-t-0 md:shadow-none';
 });
 
 const isBackgroundOpacityTarget = computed(() => props.state?.selectedElementId === 'background');
@@ -241,7 +250,7 @@ const endPanelCloseDrag = () => {
 <template>
 <aside
   data-editor-keep-selection="true"
-  class="fixed inset-x-0 bottom-20 top-auto z-50 max-h-[calc(70vh-6rem)] w-full overflow-y-auto rounded-t-[28px] border-t border-base-300 bg-base-100 shadow-2xl transition-transform md:static md:inset-auto md:z-40 md:h-full md:max-h-none md:w-80 md:rounded-none md:border-r md:border-t-0 md:shadow-none"
+  :class="panelClasses"
   :style="panelDragStyle"
 >
             <div class="md:space-y-5">

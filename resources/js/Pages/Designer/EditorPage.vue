@@ -56,6 +56,8 @@ const state = hydrateDesignerStateFromPage();
 const bumpRevision = (value) => Number(value ?? 0) + 1;
 const isMobileEditor = ref(false);
 let editorViewportQuery = null;
+const isContextPanelFloating = ref(false);
+let floatingPanelQuery = null;
 
 const linkedTextBoxSystem = useLinkedTextBoxSystem();
 const frontendLog = useFrontendLog();
@@ -63,6 +65,12 @@ const frontendLog = useFrontendLog();
 const syncEditorViewport = () => {
   isMobileEditor.value = typeof window !== 'undefined'
     ? window.matchMedia('(max-width: 767px)').matches
+    : false;
+};
+
+const syncFloatingPanel = () => {
+  isContextPanelFloating.value = typeof window !== 'undefined'
+    ? window.matchMedia('(min-width: 1200px)').matches
     : false;
 };
 
@@ -2174,6 +2182,12 @@ const canvasGridStyle = computed(() => ({
 const editorGridStyle = computed(() => {
   if (isMobileEditor.value) {
     return { gridTemplateColumns: 'minmax(0,1fr)' };
+  }
+
+  if (isContextPanelFloating.value) {
+    return {
+      gridTemplateColumns: `70px minmax(0,1fr)${isTemplateBaseEditor.value ? ' 320px' : ''}`,
+    };
   }
 
   return {
@@ -4921,6 +4935,9 @@ onMounted(() => {
   syncEditorViewport();
   editorViewportQuery = window.matchMedia('(max-width: 767px)');
   editorViewportQuery.addEventListener?.('change', syncEditorViewport);
+  syncFloatingPanel();
+  floatingPanelQuery = window.matchMedia('(min-width: 1200px)');
+  floatingPanelQuery.addEventListener?.('change', syncFloatingPanel);
   const nextSurface = currentCanvasDimensions();
   if (state.designSurface?.width && state.designSurface?.height) {
     rescaleDesignSurface(state.designSurface, nextSurface);
@@ -5002,6 +5019,8 @@ watch(
 onBeforeUnmount(() => {
   editorViewportQuery?.removeEventListener?.('change', syncEditorViewport);
   editorViewportQuery = null;
+  floatingPanelQuery?.removeEventListener?.('change', syncFloatingPanel);
+  floatingPanelQuery = null;
   document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
   document.removeEventListener('pointermove', handlePinchPointerMove);
   document.removeEventListener('pointermove', moveDrag);
@@ -5904,6 +5923,7 @@ watch(
           <!-- Panel de Opciones (condicionalmente visible) -->
           <EditorContextPanel
             v-if="isOptionsPanelVisible"
+            :floating="isContextPanelFloating"
             :state="state"
             :has-selection="hasSelection"
             :has-text-selection="hasTextSelection"
