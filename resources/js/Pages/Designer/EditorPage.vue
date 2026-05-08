@@ -1019,7 +1019,7 @@ const {
   contentFieldLabels,
 });
 
-const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' Â· '));
+const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
 const isTemplateBaseEditor = computed(() => Boolean(
   backendTemplateBaseMode.value
   || currentDesignBaseTemplate.value?.base_design_uuid === currentDesignUuid.value
@@ -1086,7 +1086,7 @@ const templateFieldDefaultTexts = {
   price: 'Precio de prueba',
   contact: 'Contacto de prueba',
   extra: 'Texto adicional de prueba',
-  meta: 'Fecha de prueba Â· Hora de prueba',
+  meta: 'Fecha de prueba · Hora de prueba',
 };
 const templateContentFieldIds = new Set(['title', 'subtitle', 'contact', 'extra']);
 const normalizePlainTextValue = (value) => String(value ?? '')
@@ -1476,7 +1476,7 @@ const hasMultiplePages = computed(() => documentPages.value.length > 1);
 const canDeleteDocumentPage = computed(() => documentPages.value.length > minimumDocumentPageCount());
 const physicalPageLabel = (pageIndex) => (
   isBrochureDocument()
-    ? `Página física ${pageIndex + 1} Â· folleto ${brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length).join('-')}`
+    ? `Página física ${pageIndex + 1} · folleto ${brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length).join('-')}`
     : `Página ${pageIndex + 1}`
 );
 const brochurePanelLabels = (pageIndex) => brochurePagePairForPhysicalPage(pageIndex, documentPages.value.length)
@@ -4637,7 +4637,7 @@ const getElementText = (id) => {
         case 'extra':
             return state.content[id] ?? '';
         case 'meta':
-            return [state.content.date, state.content.time].filter(Boolean).join(' Â· ');
+            return [state.content.date, state.content.time].filter(Boolean).join(' · ');
         default:
           return state.customElements?.[id]?.text ?? '';
     }
@@ -4707,7 +4707,7 @@ const onRichEditorTextUpdate = (id, newText) => {
   const baseTextKeys = ['title', 'subtitle', 'meta', 'contact', 'extra'];
   if (baseTextKeys.includes(id)) {
     if (id === 'meta') {
-      const parts = newText.split(' Â· ');
+      const parts = newText.split(' · ');
       state.content.date = parts[0] || '';
       state.content.time = parts[1] || '';
     } else {
@@ -4720,7 +4720,7 @@ const onRichEditorTextUpdate = (id, newText) => {
   if (state.customElements?.[id]?.fieldKey) {
     const linkedFieldKey = state.customElements[id].fieldKey;
     if (linkedFieldKey === 'meta') {
-      const parts = newText.split(' Â· ');
+      const parts = newText.split(' · ');
       state.content.date = parts[0] || '';
       state.content.time = parts[1] || '';
     } else {

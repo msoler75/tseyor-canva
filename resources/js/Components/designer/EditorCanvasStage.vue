@@ -400,7 +400,7 @@ const isLinkedTextChainActive = (boxId) => {
                     ? 'z-40 ring-2 ring-emerald-400/70 bg-emerald-400/15'
                     : 'z-10'))),
             item.type === 'linkedText' && !item.text && editingElementId !== item.id ? 'linked-text-empty-box' : '']"
-            :style="[elementBoxStyle(item.id), item.type === 'linkedText' && !item.text && editingElementId !== item.id ? { outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: '-1px' } : {}]"
+            :style="[elementBoxStyle(item.id), item.type === 'linkedText' && !item.text && editingElementId !== item.id ? { outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: '-1px' } : {}, item.type === 'linkedText' && editingElementId === item.id ? { overflow: 'hidden' } : {}]"
           @click="emit('elementClick', { event: $event, id: item.id })"
           @pointerdown="emit('elementPointerDown', { event: $event, id: item.id })"
           @mouseenter="item.fieldKey && emit('fieldHover', item.fieldKey)"
