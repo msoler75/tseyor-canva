@@ -484,6 +484,20 @@ const isLinkedTextChainActive = (boxId) => {
                 </div>
               </div>
             </template>
+            <template v-else-if="item.type === 'qr'">
+              <div class="relative h-full w-full overflow-hidden rounded-xl" :style="imageFrameStyle(item.id)">
+                <img
+                  v-if="item.qrDataUrl"
+                  :src="item.qrDataUrl"
+                  :alt="item.label"
+                  class="h-full w-full object-contain"
+                  draggable="false"
+                />
+                <div v-else class="flex h-full w-full items-center justify-center text-xs font-semibold text-white/80">
+                  QR
+                </div>
+              </div>
+            </template>
             <template v-else>
               <div class="relative h-full w-full">
                 <svg

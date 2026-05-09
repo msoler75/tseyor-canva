@@ -62,6 +62,11 @@ const props = defineProps({
   getUploadProgress: Function,
   retryUploadedImage: Function,
   addShapeElement: Function,
+  qrPanelOpen: Boolean,
+  qrUrlInput: String,
+  addQrElement: Function,
+  regenerateQrCode: Function,
+  selectedQrElement: Object,
   applyGradientPreset: Function,
   applyShapeGradientPreset: Function,
   swapGradientStops: Function,
@@ -126,6 +131,11 @@ const {
   getUploadProgress,
   retryUploadedImage,
   addShapeElement,
+  qrPanelOpen,
+  qrUrlInput,
+  addQrElement,
+  regenerateQrCode,
+  selectedQrElement,
   applyGradientPreset,
   applyShapeGradientPreset,
   swapGradientStops,
@@ -145,7 +155,7 @@ const safeFontOptions = computed(() => props.fontOptions ?? []);
 
 // Ya no es necesario cargar fuentes dinámicamente, todo está en fonts.css global
 
-const emit = defineEmits(['closePanel', 'updateImagePanelTab', 'updateImageUrlInput', 'updateShapeCategoryFilter']);
+const emit = defineEmits(['closePanel', 'updateImagePanelTab', 'updateImageUrlInput', 'updateShapeCategoryFilter', 'updateQrUrlInput']);
 
 const imagePanelTab = computed({
   get: () => props.imagePanelTab,
@@ -158,6 +168,10 @@ const imageUrlInput = computed({
 const shapeCategoryFilter = computed({
   get: () => props.shapeCategoryFilter,
   set: (value) => emit('updateShapeCategoryFilter', value),
+});
+const qrUrlInputModel = computed({
+  get: () => props.qrUrlInput,
+  set: (value) => emit('updateQrUrlInput', value),
 });
 
 const panelClasses = computed(() => {
@@ -467,6 +481,23 @@ const endPanelCloseDrag = () => {
                     </template>
                   </div>
                 </div>
+
+                <!-- Opciones de QR (inline) -->
+                <div v-if="qrPanelOpen" class="card border border-base-300 bg-base-100/80">
+                  <div class="card-body p-4">
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Código QR</p>
+                    <p class="mt-1 text-xs text-base-content/60">Introduce una URL para generar un código QR.</p>
+                    <div class="mt-3 flex items-center gap-2">
+                      <input
+                        v-model="qrUrlInputModel"
+                        type="url"
+                        placeholder="https://ejemplo.com"
+                        class="input input-bordered input-sm flex-1"
+                      />
+                      <button type="button" class="btn btn-primary btn-sm" @click="addQrElement(qrUrlInputModel)">Generar QR</button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div v-else-if="activePropertyPanel === 'typography' && hasTextSelection" class="card border border-base-300 bg-base-100/80">
@@ -679,10 +710,10 @@ const endPanelCloseDrag = () => {
                     />
                   </div>
 
-                  <div v-else-if="selectedElementType === 'shape'">
+                  <div v-else-if="selectedElementType === 'shape' || selectedElementType === 'qr'">
                     <div class="flex items-center justify-between gap-3">
                       <div>
-                        <p class="text-sm font-semibold text-base-content">Color de la figura</p>
+                        <p class="text-sm font-semibold text-base-content">Color de la {{ selectedElementType === 'qr' ? 'QR' : 'figura' }}</p>
                         <p class="text-xs text-base-content/60">Puedes usar color sólido o degradado.</p>
                       </div>
                       <span class="rounded-full border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70">
@@ -1055,7 +1086,7 @@ const endPanelCloseDrag = () => {
                     </button>
                   </template>
 
-                  <template v-else-if="selectedElementType === 'shape' || selectedElementType === 'image'">
+                  <template v-else-if="selectedElementType === 'shape' || selectedElementType === 'image' || selectedElementType === 'qr'">
                     <template v-for="(effectRow, rowIndex) in visualEffectRows" :key="`visual-effect-row-${rowIndex}`">
                       <div class="grid grid-cols-3 gap-2">
                         <button
@@ -1205,7 +1236,7 @@ const endPanelCloseDrag = () => {
               </div>
               </div>
 
-              <div v-else-if="activePropertyPanel === 'border' && (selectedElementType === 'shape' || selectedElementType === 'image')" class="card border border-base-300 bg-base-100/80">
+              <div v-else-if="activePropertyPanel === 'border' && (selectedElementType === 'shape' || selectedElementType === 'image' || selectedElementType === 'qr')" class="card border border-base-300 bg-base-100/80">
                 <div class="card-body p-4 space-y-4">
                   <div class="flex items-center justify-between gap-3">
                     <div>
@@ -1574,6 +1605,31 @@ const endPanelCloseDrag = () => {
                     <button type="button" class="btn btn-outline btn-sm rounded-full" @click="changeLayer('backward')">Atrás</button>
                     <button type="button" class="btn btn-outline btn-sm rounded-full" @click="changeLayer('front')">Al frente</button>
                     <button type="button" class="btn btn-outline btn-sm rounded-full" @click="changeLayer('back')">Al fondo</button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="activePropertyPanel === 'qrUrl' && selectedElementType === 'qr'" class="card border border-base-300 bg-base-100/80">
+                <div class="card-body p-4 space-y-4">
+                  <div>
+                    <p class="text-sm font-semibold text-base-content">URL del código QR</p>
+                    <p class="text-xs text-base-content/60">Cambia la URL y regenera el código QR.</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <input
+                      :value="selectedQrElement?.url ?? ''"
+                      type="url"
+                      placeholder="https://ejemplo.com"
+                      class="input input-bordered input-sm flex-1"
+                      @input="(e) => { if (selectedQrElement) selectedQrElement.url = e.target.value; }"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      @click="regenerateQrCode(state.selectedElementId, selectedQrElement?.url ?? '')"
+                    >
+                      Regenerar QR
+                    </button>
                   </div>
                 </div>
               </div>

@@ -18,7 +18,6 @@ final class JwtService
     public function decodeWithFirebase(string $token): ?object
     {
         try {
-            // Usa la misma clave que para la generación
             $key = config('jwt.secret') ?? '';
             if (!$key) {
                 throw new \RuntimeException('JWT secret no configurado.');

@@ -37,6 +37,7 @@ import {
 import { useLinkedTextBoxSystem } from '../../composables/useLinkedTextBoxSystem';
 import { useFrontendLog } from '../../composables/useFrontendLog';
 import { dataUrlToFile, extractImageFilesFromDataTransfer, fileToDataUrl, hasFilesInTransfer, isDataImageUrl, isEditableTarget, optimizeImageFile } from '../../utils/imageUploads';
+import QRCode from 'qrcode';
 
 const DesignerAssistant = defineAsyncComponent(() => import('../../Components/designer/DesignerAssistant.vue'));
 const EditorContextPanel = defineAsyncComponent(() => import('../../Components/designer/EditorContextPanel.vue'));
@@ -663,6 +664,8 @@ const imageUrlInput = ref('');
 const imagePanelOpen = ref(false);
 const imagePanelTab = ref('insert');
 const shapePanelOpen = ref(false);
+const qrPanelOpen = ref(false);
+const qrUrlInput = ref('');
 const textPanelOpen = ref(false);
 const optionsPanelOpen = ref(true);
 const shapeCategoryFilter = ref('all');
@@ -844,6 +847,14 @@ const imagePropertyTabs = [
   { id: 'set-as-background', icon: 'tabler:background', title: 'Fijar como fondo', class: 'order-last' },
 ];
 const shapePropertyTabs = [
+  { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
+  { id: 'border', icon: 'radix-icons:border-width', title: 'Borde', class: 'order-first' },
+  { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
+  { id: 'effects', label: 'Efectos', class: 'order-last' },
+  { id: 'arrange', label: 'Posición', class: 'order-last' },
+];
+const qrPropertyTabs = [
+  { id: 'qrUrl', icon: 'mdi:link-variant', title: 'URL del QR', class: 'order-first' },
   { id: 'color', icon: 'mdi:palette-outline', label: 'Color', class: 'order-first' },
   { id: 'border', icon: 'radix-icons:border-width', title: 'Borde', class: 'order-first' },
   { id: 'opacity', icon: 'carbon:opacity', class: 'order-last' },
@@ -1461,6 +1472,8 @@ const editorElements = computed(() => {
       linkedTextIsLastInChain: element.type === 'linkedText' ? (linkedTextBoxData?.isLastInChain ?? false) : false,
       src: element.type === 'image' ? element.src : null,
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
+      qrDataUrl: element.type === 'qr' ? element.qrDataUrl : null,
+      qrUrl: element.type === 'qr' ? element.url : null,
     };
   });
 
@@ -1572,6 +1585,8 @@ const editorElementsForPage = (pageState) => {
       linkedTextIsLastInChain: element.type === 'linkedText' ? (linkedTextBoxData?.isLastInChain ?? false) : false,
       src: element.type === 'image' ? element.src : null,
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
+      qrDataUrl: element.type === 'qr' ? element.qrDataUrl : null,
+      qrUrl: element.type === 'qr' ? element.url : null,
     };
   });
 
@@ -1747,6 +1762,10 @@ const {
   isTextElement: (...args) => isTextElement(...args),
 });
 const backgroundHasImage = computed(() => Boolean(state.elementLayout.background?.backgroundImageSrc));
+const selectedQrElement = computed(() => {
+  if (selectedElementType.value !== 'qr' || !state.selectedElementId) return null;
+  return state.customElements?.[state.selectedElementId] ?? null;
+});
 const selectedBackgroundPropertyTabs = computed(() => {
   const tabs = [...backgroundPropertyTabs];
 
@@ -1767,6 +1786,7 @@ const selectedPropertyTabs = computed(() => {
   if (!hasSelection.value) return textPropertyTabs;
   if (state.selectedElementId === 'background') return selectedBackgroundPropertyTabs.value;
   if (selectedElementType.value === 'text' || selectedElementType.value === 'linkedText') return textPropertyTabs;
+  if (selectedElementType.value === 'qr') return qrPropertyTabs;
   return selectedElementType.value === 'image' ? imagePropertyTabs : shapePropertyTabs;
 });
 const hasSidebarPanelContent = computed(() => (
@@ -1774,6 +1794,7 @@ const hasSidebarPanelContent = computed(() => (
   || textPanelOpen.value
   || imagePanelOpen.value
   || shapePanelOpen.value
+  || qrPanelOpen.value
 ));
 const isOptionsPanelVisible = computed(() => (
   optionsPanelOpen.value && hasSidebarPanelContent.value
@@ -4041,6 +4062,54 @@ const addShapeElement = (shapeKind) => {
   state.selectedElementId = id;
 };
 
+const addQrCodeElement = async (url) => {
+  activateVisibleDocumentPage();
+  if (!url) return;
+
+  const qrDataUrl = await QRCode.toDataURL(url, { width: 400, margin: 2 });
+
+  const id = createElementId('qr');
+  const layout = buildDefaultLayout({
+    w: 160,
+    h: 160,
+    x: getInsertX(160),
+    y: 150,
+    backgroundColor: '#ffffff',
+    opacity: 100,
+    border: false,
+    borderRadius: 0,
+    contourWidth: 0,
+    contourColor: '#000000',
+  });
+  placeInsideCanvas(layout);
+
+  state.customElements = {
+    ...(state.customElements ?? {}),
+    [id]: {
+      id,
+      type: 'qr',
+      label: 'Código QR',
+      url,
+      qrDataUrl,
+    },
+  };
+  state.elementLayout = {
+    ...(state.elementLayout ?? {}),
+    [id]: layout,
+  };
+  state.selectedElementId = id;
+};
+
+const regenerateQrCode = async (id, url) => {
+  const element = state.customElements?.[id];
+  if (!element || element.type !== 'qr') return;
+  if (!url) return;
+
+  const qrDataUrl = await QRCode.toDataURL(url, { width: 400, margin: 2 });
+  element.url = url;
+  element.qrDataUrl = qrDataUrl;
+};
+
 const getEstimatedTextHeight = (layout, text = '') => ensureParagraphStyles(layout, text)
     .reduce((total, style) => total + Math.max((style.fontSize ?? layout.fontSize ?? 16) * (style.lineHeight ?? 1.3), 16), 0);
 
@@ -4224,6 +4293,13 @@ const updateElementMeasurement = (id, node) => {
         label: `${sourceElement.label} copia`,
         shapeKind: sourceElement.shapeKind,
       };
+    } else if (sourceElement.type === 'qr') {
+      state.customElements[cloneId] = {
+        type: 'qr',
+        label: `${sourceElement.label} copia`,
+        url: sourceElement.qrUrl ?? '',
+        qrDataUrl: sourceElement.qrDataUrl ?? '',
+      };
     } else {
       return;
     }
@@ -4358,6 +4434,13 @@ const cloneElementsByIds = (ids) => {
           label: `${sourceElement.label} copia`,
           shapeKind: sourceElement.shapeKind,
         };
+      } else if (sourceElement.type === 'qr') {
+        state.customElements[cloneId] = {
+          type: 'qr',
+          label: `${sourceElement.label} copia`,
+          url: sourceElement.qrUrl ?? '',
+          qrDataUrl: sourceElement.qrDataUrl ?? '',
+        };
       } else if (sourceElement.type === 'linkedText') {
         const cloneGroupId = `linked-group-${Date.now()}`;
         cloneLayout.linkedTextGroupId = cloneGroupId;
@@ -4463,6 +4546,13 @@ const cloneElementsByIds = (ids) => {
           type: 'shape',
           label: element.label ? `${element.label} copia` : 'Figura copia',
           shapeKind: element.shapeKind,
+        };
+      } else if (element.type === 'qr') {
+        state.customElements[cloneId] = {
+          type: 'qr',
+          label: element.label ? `${element.label} copia` : 'Código QR copia',
+          url: element.url ?? '',
+          qrDataUrl: element.qrDataUrl ?? '',
         };
       } else {
         return;
@@ -5249,6 +5339,7 @@ const closeOptionsPanel = () => {
   textPanelOpen.value = false;
   imagePanelOpen.value = false;
   shapePanelOpen.value = false;
+  qrPanelOpen.value = false;
 };
 
 const selectBackgroundWithoutOpeningPanel = () => {
@@ -5266,22 +5357,32 @@ const openTextInsertPanel = () => {
   textPanelOpen.value = true;
   imagePanelOpen.value = false;
   shapePanelOpen.value = false;
+  qrPanelOpen.value = false;
   optionsPanelOpen.value = true;
 };
 const openImageInsertPanel = () => {
   imagePanelOpen.value = true;
   textPanelOpen.value = false;
   shapePanelOpen.value = false;
+  qrPanelOpen.value = false;
   optionsPanelOpen.value = true;
 };
 const openShapeInsertPanel = () => {
   shapePanelOpen.value = true;
   textPanelOpen.value = false;
   imagePanelOpen.value = false;
+  qrPanelOpen.value = false;
   optionsPanelOpen.value = true;
 };
 const openBackgroundPanel = () => {
   selectBackgroundWithoutOpeningPanel();
+};
+const openQrInsertPanel = () => {
+  qrPanelOpen.value = true;
+  textPanelOpen.value = false;
+  imagePanelOpen.value = false;
+  shapePanelOpen.value = false;
+  optionsPanelOpen.value = true;
 };
 const setImageInputRef = (element) => {
   imageInputRef.value = element;
@@ -6042,10 +6143,12 @@ watch(
             :text-panel-open="textPanelOpen"
             :image-panel-open="imagePanelOpen"
             :shape-panel-open="shapePanelOpen"
+            :qr-panel-open="qrPanelOpen"
             :is-background-selected="state.selectedElementId === 'background'"
             @open-text-panel="openTextInsertPanel"
             @open-image-panel="openImageInsertPanel"
             @open-shape-panel="openShapeInsertPanel"
+            @open-qr-panel="openQrInsertPanel"
             @select-background-panel="openBackgroundPanel"
             @add-linked-text="addLinkedTextElement"
           />
@@ -6106,6 +6209,11 @@ watch(
             :get-upload-progress="getUploadProgress"
             :retry-uploaded-image="retryUploadedImage"
             :add-shape-element="addShapeElement"
+            :qr-panel-open="qrPanelOpen"
+            :qr-url-input="qrUrlInput"
+            :add-qr-element="addQrCodeElement"
+            :regenerate-qr-code="regenerateQrCode"
+            :selected-qr-element="selectedQrElement"
             :apply-gradient-preset="applyGradientPreset"
             :apply-shape-gradient-preset="applyShapeGradientPreset"
             :swap-gradient-stops="swapGradientStops"
@@ -6121,6 +6229,7 @@ watch(
             @update-image-panel-tab="imagePanelTab = $event"
             @update-image-url-input="imageUrlInput = $event"
             @update-shape-category-filter="shapeCategoryFilter = $event"
+            @update-qr-url-input="qrUrlInput = $event"
           />
 
           <TemplateAdjustmentsPanel

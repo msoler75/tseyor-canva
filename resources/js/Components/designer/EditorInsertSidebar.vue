@@ -14,13 +14,17 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  qrPanelOpen: {
+    type: Boolean,
+    default: false,
+  },
   isBackgroundSelected: {
     type: Boolean,
     default: false,
   },
 });
 
-const emit = defineEmits(['openTextPanel', 'openImagePanel', 'openShapePanel', 'selectBackgroundPanel']);
+const emit = defineEmits(['openTextPanel', 'openImagePanel', 'openShapePanel', 'openQrPanel', 'selectBackgroundPanel']);
 </script>
 
 <template>
@@ -56,6 +60,17 @@ const emit = defineEmits(['openTextPanel', 'openImagePanel', 'openShapePanel', '
     >
       <Icon icon="mdi:shape-outline" class="text-2xl" />
       <span class="text-[9px] font-medium">Figura</span>
+    </button>
+
+    <button
+      type="button"
+      class="flex h-16 min-w-20 flex-col items-center justify-center gap-1 rounded-2xl border transition md:h-14 md:w-14 md:min-w-0"
+      :class="qrPanelOpen ? 'border-primary bg-primary/10 text-primary' : 'border-base-300 bg-base-100/80 hover:border-primary/50 hover:bg-primary/10'"
+      title="Agregar Código QR"
+      @click="emit('openQrPanel')"
+    >
+      <Icon icon="material-symbols:qr-code" class="text-2xl" />
+      <span class="text-[9px] font-medium">QR</span>
     </button>
 
     <button

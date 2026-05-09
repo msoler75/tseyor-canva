@@ -74,6 +74,7 @@ const tabTooltipLabels = {
   detach: 'Separar imagen del fondo',
   effects: 'Efectos',
   opacity: 'Opacidad',
+  qrUrl: 'URL del QR',
   roundness: 'Redondez',
   rotate: 'Girar',
   spacing: 'Interlineado y espaciado',
