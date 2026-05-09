@@ -21,7 +21,7 @@ class DesignController extends Controller
         $designs = $user->designs()
             ->whereDoesntHave('baseTemplate')
             ->latest('updated_at')
-            ->get([
+            ->paginate(20, [
                 'id',
                 'uuid',
                 'name',
@@ -84,6 +84,24 @@ class DesignController extends Controller
 
         $existingDesign = Design::query()->where('uuid', $uuid)->first();
         abort_if($existingDesign && ! $existingDesign->user?->is($user), 409);
+
+        if ($existingDesign) {
+            $existingState = $existingDesign->state ?? [];
+            $existingPages = is_array($existingState['pages'] ?? null) ? $existingState['pages'] : [];
+            $incomingPages = is_array($state['pages'] ?? null) ? $state['pages'] : [];
+            $existingById = [];
+            foreach ($existingPages as $ep) {
+                if (isset($ep['id'])) {
+                    $existingById[$ep['id']] = $ep;
+                }
+            }
+            foreach ($incomingPages as $ip) {
+                if (isset($ip['id'])) {
+                    $existingById[$ip['id']] = $ip;
+                }
+            }
+            $state['pages'] = array_values($existingById);
+        }
 
         $attributes = [
             ...$this->extractDesignMetadata($state),
@@ -157,6 +175,22 @@ class DesignController extends Controller
         ]);
 
         $state = $validated['state'];
+
+        $existingState = $design->state ?? [];
+        $existingPages = is_array($existingState['pages'] ?? null) ? $existingState['pages'] : [];
+        $incomingPages = is_array($state['pages'] ?? null) ? $state['pages'] : [];
+        $existingById = [];
+        foreach ($existingPages as $ep) {
+            if (isset($ep['id'])) {
+                $existingById[$ep['id']] = $ep;
+            }
+        }
+        foreach ($incomingPages as $ip) {
+            if (isset($ip['id'])) {
+                $existingById[$ip['id']] = $ip;
+            }
+        }
+        $state['pages'] = array_values($existingById);
 
         $design->fill([
             ...$this->extractDesignMetadata($state),

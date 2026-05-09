@@ -20,9 +20,9 @@ Route::prefix('auth')->group(function (): void {
 });
 
 Route::prefix('designer')->group(function (): void {
-    Route::put('/state', [DesignerController::class, 'saveState'])->name('designer.state.save');
+    Route::put('/state', [DesignerController::class, 'saveState'])->name('designer.state.save')->middleware('throttle:60,1');
     Route::delete('/state', [DesignerController::class, 'resetState'])->name('designer.state.reset');
-    Route::post('/uploads', [DesignerController::class, 'storeUpload'])->name('designer.uploads.store');
+    Route::post('/uploads', [DesignerController::class, 'storeUpload'])->name('designer.uploads.store')->middleware('throttle:30,1');
     Route::get('/storage/uploads/{path}', [DesignerController::class, 'showUpload'])
         ->where('path', '.*')
         ->name('designer.uploads.show');
@@ -34,7 +34,7 @@ Route::prefix('designer')->group(function (): void {
     Route::get('/editor', [DesignerController::class, 'editor'])->name('designer.editor');
 
     Route::get('/designs', [DesignController::class, 'index'])->name('designer.designs.index');
-    Route::post('/designs', [DesignController::class, 'store'])->name('designer.designs.store');
+    Route::post('/designs', [DesignController::class, 'store'])->name('designer.designs.store')->middleware('throttle:10,1');
     Route::get('/designs/{design:uuid}/edit', [DesignerController::class, 'editor'])->name('designer.designs.edit');
     Route::put('/designs/{design:uuid}', [DesignController::class, 'update'])->name('designer.designs.update');
     Route::patch('/designs/{design:uuid}/rename', [DesignController::class, 'rename'])->name('designer.designs.rename');

@@ -44,7 +44,7 @@ El rol admin se determina comparando el campo `name` del usuario con el string `
 
 `designs.selected_template_id` es un `VARCHAR(120)` que referencia `design_templates.uuid`, pero no tiene constraint FK en la base de datos. El modelo usa `belongsTo(DesignTemplate::class, 'selected_template_id', 'uuid')` sin respaldo estructural.
 
-**Solución propuesta**: añadir FK en migración o usar `id` autoincremental como clave.
+**Solución propuesta**: añadir FK en migración.
 
 ---
 
@@ -56,7 +56,7 @@ El rol admin se determina comparando el campo `name` del usuario con el string `
 - `app/Http/Controllers/AuthController.php:234` — `authenticateFromToken()`: no llamado desde ningún punto.
 - `app/Http/Controllers/DesignerController.php:639` — `resetState()`: la ruta `DELETE /designer/state` existe pero el método solo devuelve `['reset' => true]` sin limpiar sesión ni BD.
 
-**Solución propuesta**: eliminar código no utilizado o implementar las rutas faltantes. Implementar `resetState` para que realmente limpie el estado.
+**Solución propuesta**: eliminar código no utilizado. Implementar `resetState` para que realmente limpie el estado (puede ser útil más adelante).
 
 ---
 
@@ -67,7 +67,7 @@ El rol admin se determina comparando el campo `name` del usuario con el string `
 El comentario dice "Siempre usar el disco 'thumbnails'" pero el método usa `$disk = 'users'`. Hay un `//dd($path)` vestigial.
 
 
-Expicación del tecnico: No pasa nada, porque los uploads van a  disco 'users' pero si esos uploads son de imagenes, y se crean thumbnails de esas imagenes, los thumbnails correspondientes siempre van al disco 'thumbnails'. Solo revisar que así sea. remover dd vestigial.
+**Explicación del tecnico**: No pasa nada, porque los uploads van a  disco 'users' pero si esos uploads son de imagenes, y se crean thumbnails de esas imagenes, los thumbnails correspondientes siempre van al disco 'thumbnails'. Solo revisar que así sea. remover dd vestigial.
 
 ---
 
@@ -133,7 +133,7 @@ Mezcla: gestión de estado, thumbnails, normalización de documentos, resolució
 
 Todas las verificaciones de propiedad son inline: `abort_unless($request->user()?->is($design->user), 404)`. Laravel soporta Policies y Gates nativos.
 
-**Solución propuesta**: crear `DesignPolicy` y `DesignTemplatePolicy`, usar `$this->authorize()` en controladores.
+**Solución propuesta**: no hacer nada,no hay necesidad pues solo habrá 2 niveles de usuario, y solo 1 usuario 'admin'.
 
 ---
 
@@ -157,7 +157,7 @@ Todas las verificaciones de propiedad son inline: `abort_unless($request->user()
 
 `DesignerController::fontFamilies()` lee `resources/fonts_list.txt` del disco en cada petición al editor.
 
-**Solución propuesta**: cachear la lista de fuentes en memoria (propiedad estática o `Cache::rememberForever`).
+**Solución propuesta**: cachear la lista de fuentes en memoria (`Cache::rememberForever`).
 
 ---
 
@@ -165,7 +165,7 @@ Todas las verificaciones de propiedad son inline: `abort_unless($request->user()
 
 La columna `state` (JSON) contiene `content`, `elementLayout`, `customElements`, `pages`, `userUploadedImages`. Para diseños complejos multipágina con imágenes base64 puede alcanzar megabytes.
 
-**Solución propuesta**: separar assets/imágenes en su propia tabla y referenciar por ID; limitar el tamaño máximo del JSON de estado.
+**Solución propuesta**: si se detecta imágenes con data URI, generar imágenes y separar assets/imágenes en su propia tabla y referenciar por ID o SRC.
 
 ---
 
@@ -175,6 +175,8 @@ No se despachan eventos al crear diseño, publicar plantilla, etc. Los side-effe
 
 **Solución propuesta**: usar el sistema de eventos de Laravel (`DesignCreated`, `TemplatePublished`, `DesignDuplicated`) para desacoplar auditoría, notificaciones y caché.
 
+**Decisión del CEO**: no hacer nada por ahora.
+
 ---
 
 ### 19. Sin queues para tareas pesadas
@@ -183,7 +185,7 @@ La generación de thumbnails SVG y la adaptación de superficies (escalado posic
 
 **Solución propuesta**: mover `storeThumbnailSvg` y `adaptStateToSurface` a jobs (`GenerateDesignThumbnail`, `AdaptTemplateToSurface`).
 
-**DECISION DEL CEO**: no podemos permitirnos ahora más jobs. Dejarlo todo sincrono.
+**DECISION DEL CEO**: no podemos permitirnos ahora más jobs. Dejarlo todo síncrono.
 
 ---
 
@@ -219,7 +221,7 @@ Impide que dos assets apunten al mismo archivo. Si dos usuarios comparten conten
 
 **Solución propuesta**: eliminar el UNIQUE de `path` o añadir `user_id` al constraint compuesto.
 
-**CEO**: Nunca se compartirán assets entre usuarios. Pero sí diseños o templates. No hacer nada.
+**CEO**: Nunca se compartirán assets entre usuarios. Pero sí diseños o templates. Además el path se creará en función de cada usuario, cada uno tiene su carpeta. No hacer nada.
 
 ---
 

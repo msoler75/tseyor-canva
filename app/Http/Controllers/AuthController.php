@@ -5,15 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Support\JwtService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
-use RuntimeException;
 
 class AuthController extends Controller
 {
@@ -90,17 +87,6 @@ class AuthController extends Controller
             $payloadArr = json_decode(json_encode($payload), true);
             $exp = $payloadArr['exp'] ?? null;
         }
-        if(0)
-            dd([
-            'now' => $now,
-            'now_datetime' => date('Y-m-d H:i:s', $now),
-            'now_timezone' => date_default_timezone_get(),
-            'exp' => $exp,
-            'exp_datetime' => $exp ? date('Y-m-d H:i:s', $exp) : null,
-            'exp_timezone' => $exp ? (new \DateTimeImmutable('@'.$exp))->setTimezone(new \DateTimeZone(date_default_timezone_get()))->getTimezone()->getName() : null,
-            'payload' => $payload,
-            'token' => $validated['token'],
-        ]);
         if (!$payload) {
             Log::warning('Portal JWT callback rejected: invalid token');
 
@@ -229,94 +215,6 @@ class AuthController extends Controller
         return response()->json([
             'logged_out' => true,
         ]);
-    }
-
-    private function authenticateFromToken(Request $request, string $token): RedirectResponse
-    {
-        try {
-            $user = $this->resolveUserFromToken($token);
-        } catch (RuntimeException $exception) {
-            return redirect()->route('designer.welcome')->with('error', $exception->getMessage());
-        }
-
-        Auth::login($user);
-        $request->session()->regenerate();
-
-        return redirect()->route('designer.welcome');
-    }
-
-    private function loginWithCredentials(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
-        ]);
-
-        /** @var User|null $user */
-        $user = User::query()->where('email', $validated['email'])->first();
-
-        if (!$user || !Hash::check($validated['password'], $user->password)) {
-            return response()->json([
-                'message' => 'Credenciales inválidas.',
-            ], 422);
-        }
-
-        Auth::login($user);
-        $request->session()->regenerate();
-
-        return response()->json([
-            'token_type' => 'Bearer',
-            'access_token' => $this->jwtService->issueTokenForUser($user),
-            'expires_in' => (int) config('jwt.ttl', 60) * 60,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'image' => $user->image,
-            ],
-            'redirect_to' => route('designer.welcome'),
-        ]);
-    }
-
-    private function resolveUserFromToken(string $token): User
-    {
-        $payload = $this->jwtService->decodeToken($token);
-        $email = (string) data_get($payload, 'user.email', data_get($payload, 'email', data_get($payload, 'sub', '')));
-        $name = (string) data_get($payload, 'user.name', data_get($payload, 'name', 'Usuario'));
-        $image = (string) data_get($payload, 'user.image', data_get($payload, 'image', ''));
-
-        if ($email === '') {
-            throw new RuntimeException('El token no contiene un email válido.');
-        }
-
-        Log::debug('Resolviendo usuario desde token JWT', [
-            'email' => $email,
-            'name' => $name,
-            'has_image' => $image !== '',
-        ]);
-
-        /** @var User $user */
-        $user = User::query()->firstOrCreate(
-            ['email' => $email],
-            [
-                'name' => $name,
-                'image' => $image !== '' ? $image : null,
-                'password' => Str::password(32),
-            ]
-        );
-
-        $updates = [];
-        if ($user->name !== $name) {
-            $updates['name'] = $name;
-        }
-        if ($image !== '' && $user->image !== $image) {
-            $updates['image'] = $image;
-        }
-        if ($updates !== []) {
-            $user->forceFill($updates)->save();
-        }
-
-        return $user;
     }
 
     private function portalLoginUrl(): ?string

@@ -6,6 +6,9 @@ use App\Models\Design;
 use App\Models\DesignTemplate;
 use App\Models\User;
 use App\Support\DesignerStateRules;
+use App\Support\DesignerStateSync;
+use App\Support\HasRevisionTracking;
+use App\Support\HasThumbnailRouting;
 use App\Support\JwtService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,6 +17,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -21,6 +25,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DesignerController extends Controller
 {
+    use HasRevisionTracking;
+    use HasThumbnailRouting;
 
     public static function sessionKey(): string
     {
@@ -120,21 +126,23 @@ class DesignerController extends Controller
 
     private function fontFamilies(): array
     {
-        $fontsListPath = base_path('resources/fonts_list.txt');
-        if (! file_exists($fontsListPath)) {
-            return [];
-        }
-
-        $fontFamilies = [];
-        $lines = file($fontsListPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line !== '' && $line[0] !== '#') {
-                $fontFamilies[] = $line;
+        return Cache::rememberForever('designer.font_families', function (): array {
+            $fontsListPath = base_path('resources/fonts_list.txt');
+            if (! file_exists($fontsListPath)) {
+                return [];
             }
-        }
 
-        return $fontFamilies;
+            $fontFamilies = [];
+            $lines = file($fontsListPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if ($line !== '' && $line[0] !== '#') {
+                    $fontFamilies[] = $line;
+                }
+            }
+
+            return $fontFamilies;
+        });
     }
     /**
      * Guarda la miniatura en el disco 'thumbnails' para cualquier usuario (invitado o autenticado).
@@ -193,7 +201,7 @@ class DesignerController extends Controller
 
         // --- Mover imágenes temporales a la carpeta del usuario y registrar assets ---
         $userUploadedImages = $sessionState['userUploadedImages'] ?? [];
-        $sessionId = trim((string) $request->session()->getId()) ?: 'guest';
+        $sessionId = $this->guestFolder($request);
         $assetsMap = [];
         foreach ($userUploadedImages as &$image) {
             $storagePath = $image['storagePath'] ?? null;
@@ -283,14 +291,6 @@ class DesignerController extends Controller
     }
 
     private const SESSION_KEY = 'designer.state';
-
-    /**
-     * @param  int ...$values
-     */
-    private function nextRevision(int ...$values): int
-    {
-        return (max($values) ?: 0) + 1;
-    }
 
     public function __construct(
         private readonly JwtService $jwtService,
@@ -521,7 +521,7 @@ class DesignerController extends Controller
 
             $state['stateRevision'] = $this->nextRevision($existingRevision, $incomingRevision);
             if (!empty($validated['thumbnailDataUrl'])) {
-                $sessionId = trim((string) $request->session()->getId()) ?: 'guest';
+                $sessionId = $this->guestFolder($request);
                 $uuid = $sessionId;
                 // Eliminar miniatura anterior si existe
                 if (!empty($state['thumbnail_path'])) {
@@ -604,6 +604,22 @@ class DesignerController extends Controller
             $state['stateRevision'] = $this->nextRevision($existingRevision, $incomingRevision);
             $state['currentDesignUuid'] = $design->uuid;
 
+            $existingState = $design->state ?? [];
+            $existingPages = is_array($existingState['pages'] ?? null) ? $existingState['pages'] : [];
+            $incomingPages = is_array($state['pages'] ?? null) ? $state['pages'] : [];
+            $existingById = [];
+            foreach ($existingPages as $ep) {
+                if (isset($ep['id'])) {
+                    $existingById[$ep['id']] = $ep;
+                }
+            }
+            foreach ($incomingPages as $ip) {
+                if (isset($ip['id'])) {
+                    $existingById[$ip['id']] = $ip;
+                }
+            }
+            $state['pages'] = array_values($existingById);
+
             $design->fill([
                 'name' => trim((string) ($state['designTitle'] ?? '')) ?: 'Diseño sin título',
                 'name_manual' => (bool) ($state['designTitleManual'] ?? false),
@@ -638,6 +654,21 @@ class DesignerController extends Controller
 
     public function resetState(Request $request): JsonResponse
     {
+        $request->session()->forget(self::SESSION_KEY);
+
+        if (Auth::check()) {
+            $designUuid = $request->input('designUuid');
+            if ($designUuid) {
+                $design = $request->user()->designs()->where('uuid', $designUuid)->first();
+                if ($design) {
+                    $design->forceFill([
+                        'state' => [],
+                        'pages_count' => 1,
+                    ])->save();
+                }
+            }
+        }
+
         return response()->json([
             'reset' => true,
         ]);
@@ -658,7 +689,7 @@ class DesignerController extends Controller
             $folder = $user->id;
             $disk = 'users';
         } else {
-            $folder = trim((string) $request->session()->getId()) ?: 'guest';
+            $folder = $this->guestFolder($request);
             $disk = 'users';
         }
         $extension = $file->guessExtension() ?: $file->extension() ?: 'bin';
@@ -693,7 +724,7 @@ class DesignerController extends Controller
 
     public function showThumbnail(string $path): BinaryFileResponse
     {
-        // Siempre usar el disco 'thumbnails' para miniaturas
+        $this->validateStoragePath($path);
         $disk = 'thumbnails';
         Log::info('[showThumbnail] Buscando archivo', ['path' => $path, 'disk' => $disk]);
         abort_unless(Storage::disk($disk)->exists($path), 404);
@@ -710,8 +741,7 @@ class DesignerController extends Controller
 
       public function showUpload(string $path): BinaryFileResponse
     {
-        // Siempre usar el disco 'thumbnails' para miniaturas
-        //dd($path);
+        $this->validateStoragePath($path);
         $disk = 'users';
         Log::info('[showUpload] Buscando archivo', ['path' => $path, 'disk' => $disk]);
         abort_unless(Storage::disk($disk)->exists($path), 404);
@@ -746,74 +776,31 @@ class DesignerController extends Controller
      */
     private function publishedTemplates(): array
     {
-        return DesignTemplate::query()
-            ->with('baseDesign:id,uuid,thumbnail_path,updated_at')
-            ->where('status', 'published')
-            ->orderByDesc('featured')
-            ->orderBy('sort_order')
-            ->orderBy('title')
-            ->get()
-            ->map(fn (DesignTemplate $template): array => $this->serializeTemplate($template))
-            ->values()
-            ->all();
+        return Cache::remember('designer.published_templates', now()->addHours(1), function (): array {
+            return DesignTemplate::query()
+                ->with('baseDesign:id,uuid,thumbnail_path,updated_at')
+                ->where('status', 'published')
+                ->orderByDesc('featured')
+                ->orderBy('sort_order')
+                ->orderBy('title')
+                ->get()
+                ->map(fn (DesignTemplate $template): array => $this->serializeTemplate($template))
+                ->values()
+                ->all();
+        });
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function serializeTemplate(DesignTemplate $template): array
+    private function guestFolder(Request $request): string
     {
-        $template->loadMissing('baseDesign:id,uuid,thumbnail_path,updated_at');
-
-        return [
-            'id' => $template->uuid,
-            'uuid' => $template->uuid,
-            'title' => $template->title,
-            'name' => $template->title,
-            'description' => $template->description,
-            'category_ids' => $template->category_ids ?? [],
-            'objective_ids' => $template->objective_ids ?? [],
-            'category' => ($template->category_ids ?? ['all'])[0] ?? 'all',
-            'adaptation_mode' => $template->adaptation_mode,
-            'field_mappings' => $template->field_mappings ?? [],
-            'status' => $template->status,
-            'featured' => $template->featured,
-            'sort_order' => $template->sort_order,
-            'base_design_uuid' => $template->baseDesign?->uuid,
-            'thumbnail_url' => $template->baseDesign?->thumbnail_path
-                ? $this->versionedThumbnailRoute(
-                    $template->baseDesign->thumbnail_path,
-                    optional($template->baseDesign->updated_at)->timestamp,
-                )
-                : null,
-        ];
+        return trim((string) $request->session()->getId()) ?: 'guest';
     }
 
-    private function versionedThumbnailRoute(string $path, mixed $version = null): string
+    private function validateStoragePath(string $path): void
     {
-        return route('designer.thumbnails.show', [
-            'path' => $path,
-            'v' => $this->resolveAssetVersion($path, $version),
-        ]);
-    }
-
-    private function versionedUploadRoute(string $path, mixed $version = null): string
-    {
-        return route('designer.uploads.show', [
-            'path' => $path,
-            'v' => $this->resolveAssetVersion($path, $version),
-        ]);
-    }
-
-    private function resolveAssetVersion(string $path, mixed $version = null): string
-    {
-        $normalizedVersion = is_scalar($version) ? trim((string) $version) : '';
-
-        if ($normalizedVersion !== '') {
-            return $normalizedVersion;
-        }
-
-        return sha1($path);
+        abort_if(
+            str_contains($path, '../') || str_contains($path, '..\\') || str_starts_with($path, '/') || str_starts_with($path, '\\'),
+            404
+        );
     }
 
     /**

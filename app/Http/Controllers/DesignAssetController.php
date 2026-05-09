@@ -20,8 +20,8 @@ class DesignAssetController extends Controller
         return response()->json([
             'assets' => $user->designAssets()
                 ->latest('created_at')
-                ->get()
-                ->map(fn (DesignAsset $asset): array => [
+                ->paginate(20)
+                ->through(fn (DesignAsset $asset): array => [
                     'id' => $asset->id,
                     'uuid' => $asset->uuid,
                     'label' => $asset->label,

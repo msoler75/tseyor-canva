@@ -54,9 +54,7 @@ class DeployController extends Controller
     private function authorizeDeployRequest(Request $request): void
     {
         $expectedToken = (string) config('deploy.token', '');
-        if ($expectedToken === '') {
-            return;
-        }
+        abort_unless($expectedToken !== '', 403, 'DEPLOY_TOKEN no configurado en el servidor.');
 
         $providedToken = (string) $request->header('X-Deploy-Token', '');
         abort_unless(hash_equals($expectedToken, $providedToken), 403);
