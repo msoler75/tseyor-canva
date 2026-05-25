@@ -3,6 +3,7 @@ import { watch, onBeforeUnmount, onMounted, nextTick, ref, computed } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
 import { TextAlign } from '@tiptap/extension-text-align';
+import ListItem from '@tiptap/extension-list-item';
 import { Node, Mark } from '@tiptap/core';
 import { TextSelection } from '@tiptap/pm/state';
 import { useFrontendLog } from '../../composables/useFrontendLog';
@@ -53,6 +54,37 @@ const attrsToStyle = (attrs) => {
     if (attrs.textAlign     != null) parts.push(`text-align:${attrs.textAlign}`);
     return parts.join(';');
 };
+
+const StyledListItem = ListItem.extend({
+    addNodeView() {
+        return ({ node }) => {
+            const dom = document.createElement('li');
+
+            const updateStyle = () => {
+                const firstParagraph = node.firstChild;
+                const fontSize = firstParagraph?.attrs?.fontSize;
+                if (fontSize) {
+                    dom.style.fontSize = `${fontSize}px`;
+                } else {
+                    dom.style.fontSize = '';
+                }
+            };
+
+            updateStyle();
+
+            return {
+                dom,
+                contentDOM: dom,
+                update: (updatedNode) => {
+                    if (updatedNode.type.name !== 'listItem') return false;
+                    node = updatedNode;
+                    updateStyle();
+                    return true;
+                },
+            };
+        };
+    },
+});
 
 const StyledParagraph = Node.create({
     name: 'paragraph',
@@ -134,55 +166,101 @@ const props = defineProps({
 const emit = defineEmits(['update:text', 'update:paragraphStyles', 'update:html', 'selectionChange', 'blur']);
 
 
+const buildParagraphAttrs = (s) => ({
+    fontSize:      s.fontSize      ?? null,
+    color:         s.color         ?? null,
+    fontFamily:    s.fontFamily    ?? null,
+    fontWeight:    s.fontWeight    ?? null,
+    italic:        s.italic        ?? null,
+    underline:     s.underline     ?? null,
+    uppercase:     s.uppercase     ?? null,
+    letterSpacing: s.letterSpacing ?? null,
+    lineHeight:    s.lineHeight    ?? null,
+    textAlign:     s.textAlign     ?? null,
+});
+
+const buildParagraphNode = (line, attrs) => ({
+    type: 'paragraph',
+    attrs: buildParagraphAttrs(attrs),
+    content: line ? [{ type: 'text', text: line }] : [],
+});
+
 const buildDoc = (text, styles) => {
     const lines = String(text ?? '').replace(/\r\n/g, '\n').split('\n');
-    return {
-        type: 'doc',
-        content: lines.map((line, i) => {
-            const s = styles[i] ?? styles[styles.length - 1] ?? {};
-            const node = {
-                type: 'paragraph',
-                attrs: {
-                    fontSize:      s.fontSize      ?? null,
-                    color:         s.color         ?? null,
-                    fontFamily:    s.fontFamily    ?? null,
-                    fontWeight:    s.fontWeight    ?? null,
-                    italic:        s.italic        ?? null,
-                    underline:     s.underline     ?? null,
-                    uppercase:     s.uppercase     ?? null,
-                    letterSpacing: s.letterSpacing ?? null,
-                    lineHeight:    s.lineHeight    ?? null,
-                    textAlign:     s.textAlign     ?? null,
-                },
-                content: line ? [{ type: 'text', text: line }] : [],
-            };
-            return node;
-        }),
+    const content = [];
+    let listBuffer = [];
+    let listTypeBuffer = null;
+
+    const flushList = () => {
+        if (listBuffer.length === 0) return;
+        const nodeType = listTypeBuffer === 'bullet' ? 'bulletList' : 'orderedList';
+        content.push({
+            type: nodeType,
+            content: listBuffer.map(({ line, s }) => ({
+                type: 'listItem',
+                content: [buildParagraphNode(line, s)],
+            })),
+        });
+        listBuffer = [];
+        listTypeBuffer = null;
     };
+
+    lines.forEach((line, i) => {
+        const s = styles[i] ?? styles[styles.length - 1] ?? {};
+        const lt = s.listType ?? null;
+
+        if (lt) {
+            if (lt !== listTypeBuffer) {
+                flushList();
+                listTypeBuffer = lt;
+            }
+            listBuffer.push({ line, s });
+        } else {
+            flushList();
+            content.push(buildParagraphNode(line, s));
+        }
+    });
+
+    flushList();
+    return { type: 'doc', content };
 };
 
 const extractFromDoc = (doc) => {
     const lines = [];
     const styles = [];
-    doc.forEach((node) => {
-        if (node.type.name !== 'paragraph') return;
-        let lineText = '';
-        node.forEach((child) => { lineText += child.text ?? ''; });
-        lines.push(lineText);
-        const a = node.attrs;
-        styles.push({
-            fontSize:      a.fontSize      ?? 16,
-            color:         a.color         ?? '#ffffff',
-            fontFamily:    a.fontFamily    ?? 'Inter, sans-serif',
-            fontWeight:    a.fontWeight    ?? 'regular',
-            italic:        a.italic        ?? false,
-            underline:     a.underline     ?? false,
-            uppercase:     a.uppercase     ?? false,
-            textAlign:     a.textAlign     ?? 'left',
-            letterSpacing: a.letterSpacing ?? 0,
-            lineHeight:    a.lineHeight    ?? 1.3,
+
+    const walk = (nodes, currentListType) => {
+        if (!nodes || !nodes.forEach) return;
+        nodes.forEach((node) => {
+            if (node.type.name === 'bulletList') {
+                walk(node.content, 'bullet');
+            } else if (node.type.name === 'orderedList') {
+                walk(node.content, 'ordered');
+            } else if (node.type.name === 'listItem') {
+                walk(node.content, currentListType);
+            } else if (node.type.name === 'paragraph') {
+                let lineText = '';
+                node.forEach((child) => { lineText += child.text ?? ''; });
+                lines.push(lineText);
+                const a = node.attrs;
+                styles.push({
+                    fontSize:      a.fontSize      ?? 16,
+                    color:         a.color         ?? '#ffffff',
+                    fontFamily:    a.fontFamily    ?? 'Inter, sans-serif',
+                    fontWeight:    a.fontWeight    ?? 'regular',
+                    italic:        a.italic        ?? false,
+                    underline:     a.underline     ?? false,
+                    uppercase:     a.uppercase     ?? false,
+                    textAlign:     a.textAlign     ?? 'left',
+                    letterSpacing: a.letterSpacing ?? 0,
+                    lineHeight:    a.lineHeight    ?? 1.3,
+                    listType:      currentListType  ?? null,
+                });
+            }
         });
-    });
+    };
+
+    walk(doc.content, null);
     return { text: lines.join('\n'), styles };
 };
 
@@ -239,8 +317,9 @@ const syncEditorViewportOffset = async () => {
 
 const editor = useEditor({
     extensions: [
-        StarterKit.configure({ paragraph: false, bold: false, italic: false, code: false, codeBlock: false, blockquote: false, horizontalRule: false, heading: false }),
+        StarterKit.configure({ paragraph: false, bold: false, italic: false, code: false, codeBlock: false, blockquote: false, horizontalRule: false, heading: false, listItem: false }),
         TextAlign.configure({ types: ['paragraph'] }),
+        StyledListItem,
         StyledParagraph,
         StyledTextMark,
     ],
@@ -313,30 +392,26 @@ const editor = useEditor({
         suppressWatch = false;
     },
     onSelectionUpdate({ editor: ed }) {
-        const { from } = ed.state.selection;
+        const { from, to: selectionTo } = ed.state.selection;
+
+        const paragraphs = [];
+        ed.state.doc.nodesBetween(0, ed.state.doc.content.size, (node, pos) => {
+            if (node.type.name === 'paragraph') {
+                paragraphs.push({ pos, end: pos + node.nodeSize });
+            }
+        });
+
         const paragraphIndex = (() => {
-            let idx = 0;
-            ed.state.doc.forEach((node, offset) => {
-                if (node.type.name !== 'paragraph') return;
-                const nodeEnd = offset + node.nodeSize;
-                if (offset <= from && nodeEnd > from) return;
-                if (nodeEnd <= from) idx++;
-            });
-            return idx;
+            for (let i = 0; i < paragraphs.length; i++) {
+                const { pos, end } = paragraphs[i];
+                if (pos <= from && end > from) return i;
+            }
+            return 0;
         })();
 
-        const selectedIndexes = (() => {
-            const { from: f, to: t } = ed.state.selection;
-            const indexes = new Set();
-            let i = 0;
-            ed.state.doc.forEach((node, offset) => {
-                if (node.type.name !== 'paragraph') return;
-                const nodeEnd = offset + node.nodeSize;
-                if (offset < t && nodeEnd > f) indexes.add(i);
-                i++;
-            });
-            return [...indexes];
-        })();
+        const selectedIndexes = paragraphs
+            .map(({ pos, end }, i) => (pos < selectionTo && end > from) ? i : -1)
+            .filter(i => i !== -1);
 
         emit('selectionChange', { paragraphIndex, selectedIndexes });
     },
@@ -349,10 +424,10 @@ const applyStyle = (field, value) => {
     if (!editor?.value) return;
     const { from, to } = editor.value.state.selection;
     const patches = [];
-    editor.value.state.doc.forEach((node, offset) => {
+    editor.value.state.doc.nodesBetween(0, editor.value.state.doc.content.size, (node, pos) => {
         if (node.type.name !== 'paragraph') return;
-        const nodeEnd = offset + node.nodeSize;
-        if (offset < to && nodeEnd > from) patches.push({ pos: offset, attrs: { ...node.attrs } });
+        const nodeEnd = pos + node.nodeSize;
+        if (pos < to && nodeEnd > from) patches.push({ pos, attrs: { ...node.attrs } });
     });
     const tr = editor.value.state.tr;
     patches.forEach(({ pos, attrs }) => {
@@ -364,8 +439,8 @@ const applyStyle = (field, value) => {
 const applyStyleAll = (field, value) => {
     if (!editor?.value) return;
     const patches = [];
-    editor.value.state.doc.forEach((node, offset) => {
-        if (node.type.name === 'paragraph') patches.push({ pos: offset, attrs: { ...node.attrs } });
+    editor.value.state.doc.nodesBetween(0, editor.value.state.doc.content.size, (node, pos) => {
+        if (node.type.name === 'paragraph') patches.push({ pos, attrs: { ...node.attrs } });
     });
     const tr = editor.value.state.tr;
     patches.forEach(({ pos, attrs }) => {
@@ -384,7 +459,7 @@ const getActiveAttrs = () => {
     }
 
     let result = {};
-    editor.value.state.doc.forEach((node, offset) => {
+    editor.value.state.doc.nodesBetween(0, editor.value.state.doc.content.size, (node, offset) => {
         if (node.type.name !== 'paragraph') return;
         if (offset <= from && offset + node.nodeSize > from) result = node.attrs;
     });
@@ -471,6 +546,27 @@ const toggleMarkStyle = (markType, attrs = {}) => {
     }
 };
 
+const toggleListType = () => {
+    if (!editor?.value) return;
+    const isBullet = editor.value.isActive('bulletList');
+    const isOrdered = editor.value.isActive('orderedList');
+
+    if (!isBullet && !isOrdered) {
+        editor.value.chain().focus().toggleBulletList().run();
+    } else if (isBullet) {
+        editor.value.chain().focus().toggleBulletList().toggleOrderedList().run();
+    } else {
+        editor.value.chain().focus().toggleOrderedList().run();
+    }
+};
+
+const getListType = () => {
+    if (!editor?.value) return 'none';
+    if (editor.value.isActive('bulletList')) return 'bullet';
+    if (editor.value.isActive('orderedList')) return 'ordered';
+    return 'none';
+};
+
 const CHAR_STYLE_TO_MARK = {
   color: 'color',
   fontWeight: 'fontWeight',
@@ -552,6 +648,8 @@ defineExpose({
     removeMarkStyle,
     toggleMarkStyle,
     setContentDirect,
+    toggleListType,
+    getListType,
     setCursorAtCoords(clientX, clientY) {
         if (!editor?.value) {
             frontendLog.debug('setCursorAtCoords', 'editor not ready');
@@ -908,5 +1006,31 @@ const logLinkedTextStyles = () => {
     pointer-events: none;
     z-index: 10;
     opacity: 0.5;
+}
+.ProseMirror ul,
+.ProseMirror ol,
+.linked-text-display ul,
+.linked-text-display ol {
+    list-style-position: outside;
+    padding-left: 0;
+    margin: 0;
+}
+.ProseMirror ul,
+.linked-text-display ul {
+    list-style: disc;
+}
+.ProseMirror ol,
+.linked-text-display ol {
+    list-style: decimal;
+}
+.ProseMirror li,
+.linked-text-display li {
+    margin: 0 0 0 1.5em;
+    padding: 0;
+}
+.ProseMirror li p,
+.linked-text-display li p {
+    margin: 0;
+    padding: 0;
 }
 </style>

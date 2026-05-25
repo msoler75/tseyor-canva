@@ -723,8 +723,7 @@ export const useEditorInteractions = ({
         return;
       }
 
-      const widthDelta = horizontalDelta + (deltaY * 0.35);
-      const nextWidth = Math.max(120, Math.round(drag.startW + widthDelta));
+      const nextWidth = Math.max(120, Math.round(drag.startW + horizontalDelta));
       const scale = nextWidth / Math.max(drag.startW, 1);
 
       layout.w = nextWidth;
@@ -734,8 +733,6 @@ export const useEditorInteractions = ({
           ...style,
           fontSize: Math.max(8, Math.round((style.fontSize ?? drag.startFontSize) * scale)),
         }));
-
-      recalculateTextHeight(drag.elementId);
 
       if (handle.includes('w')) layout.x = Math.round(drag.startX + (drag.startW - nextWidth));
       else layout.x = Math.round(drag.startX);
@@ -833,6 +830,17 @@ export const useEditorInteractions = ({
     const index = order.indexOf(current);
     applyParagraphStyleField('textAlign', order[(index + 1) % order.length]);
   };
+
+  const cycleList = () => {
+    const editorRef = state.selectedElementId ? richEditorRefs.value[state.selectedElementId] : null;
+    if (!editorRef?.toggleListType) return;
+    editorRef.toggleListType();
+  };
+
+  const currentListType = computed(() => {
+    const editorRef = state.selectedElementId ? richEditorRefs.value[state.selectedElementId] : null;
+    return editorRef?.getListType?.() ?? 'none';
+  });
 
   const currentAlignmentIcon = computed(() => {
     const icons = {
@@ -936,6 +944,8 @@ export const useEditorInteractions = ({
     endDrag,
     cycleAlignment,
     currentAlignmentIcon,
+    cycleList,
+    currentListType,
     changeLayer,
     handleCanvasPointerDown,
     handleGlobalPointerDown,

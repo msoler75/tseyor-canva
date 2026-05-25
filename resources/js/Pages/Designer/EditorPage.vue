@@ -4836,6 +4836,7 @@ const recalculateTextHeight = (id) => {
   const layout = state.elementLayout[id];
   if (!layout || !isTextElement(id)) return;
   if (isLinkedTextElement(id)) return;
+  if (elementMeasurements[id]?.height != null) return;
   const text = getElementText(id);
   const estimatedHeight = getEstimatedTextHeight(layout, text);
   if (estimatedHeight > 0) {
@@ -4900,6 +4901,8 @@ const {
   endDrag,
   cycleAlignment,
   currentAlignmentIcon,
+  cycleList,
+  currentListType,
   changeLayer,
   handleCanvasPointerDown,
   handleGlobalPointerDown,
@@ -6124,12 +6127,14 @@ watch(
           :active-element-label="activeElementLabel"
           :active-property-panel="activePropertyPanel"
           :current-alignment-icon="currentAlignmentIcon"
+          :list-type="currentListType"
           :has-text-selection="hasTextSelection"
             :selected-property-tabs="selectedPropertyTabs"
             :selected-text-style="selectedTextStyle"
             :toolbar-position="toolbarPosition"
             :mobile-mode="isMobileEditor"
           @cycle-alignment="cycleAlignment"
+          @cycle-list="cycleList"
           @property-tab-click="handlePropertyTabClick"
           @start-drag="startToolbarDrag"
           @close-bar="endSelection"

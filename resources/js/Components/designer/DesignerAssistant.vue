@@ -224,7 +224,8 @@ function syncCustomSizeState() {
   state.designSurface = null;
 }
 function finishAndOpenEditor() {
-  const selectedTemplate = availableTemplates.value.find((template) => template.id === state.selectedTemplateId) ?? null;
+  const templates = Array.isArray(availableTemplates.value) ? availableTemplates.value : [];
+  const selectedTemplate = templates.find((template) => template.id === state.selectedTemplateId) ?? null;
   emit('finish', {
     selectedTemplate,
     designerState: cloneState(state),
@@ -299,7 +300,8 @@ function chooseFormat(f) {
 onMounted(async () => {
   try {
     const response = await axios.get('/designer/design-templates');
-    remoteTemplates.value = response.data?.templates ?? [];
+    const data = response.data?.templates;
+    remoteTemplates.value = Array.isArray(data) ? data : (data?.data ?? []);
   } catch (error) {
     console.error('No se pudieron cargar las plantillas publicadas', error);
   }

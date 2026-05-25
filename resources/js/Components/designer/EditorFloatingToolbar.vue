@@ -6,6 +6,10 @@ const props = defineProps({
   activeElementLabel: String,
   activePropertyPanel: String,
   currentAlignmentIcon: String,
+  listType: {
+    type: String,
+    default: 'none',
+  },
   hasTextSelection: Boolean,
   mobileMode: {
     type: Boolean,
@@ -27,6 +31,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   'cycle-alignment',
+  'cycle-list',
   'property-tab-click',
   'start-drag',
   'close-bar'
@@ -191,6 +196,16 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
                 @click="emit('cycle-alignment')"
               >
                 <Icon :icon="currentAlignmentIcon" class="scale-150" />
+              </button>
+
+              <button
+                type="button"
+                class="tooltip tooltip-bottom hidden btn w-10 border-0 p-0 text-lg md:inline-flex"
+                data-tip="Lista"
+                :class="listType !== 'none' ? 'btn-accent' : 'btn-outline'"
+                @click="emit('cycle-list')"
+              >
+                <Icon :icon="listType === 'ordered' ? 'ph:list-numbers' : 'ph:list-bullets'" class="scale-150" />
               </button>
             </template>
 
