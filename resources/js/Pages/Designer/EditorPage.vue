@@ -52,6 +52,7 @@ const page = usePage();
 // Siempre reset y rehidratar al montar
 resetDesignerState();
 const state = hydrateDesignerStateFromPage();
+const saveEndpoint = page.props.designer?.endpoints?.save ?? '/designer/state';
 // stateRevision protege la persistencia frente a estados viejos;
 // templateRevision fuerza el remonte visual del editor rico al reaplicar plantillas.
 const bumpRevision = (value) => Number(value ?? 0) + 1;
@@ -3074,7 +3075,7 @@ const generateThumbnailAndThen = (cb) => {
         }
       }
     }, 0);
-  }, 1200);
+  }, 300);
 };
 
 const getUploadedImageIndexByAssetId = (assetId) => state.userUploadedImages.findIndex(
@@ -5181,6 +5182,7 @@ onMounted(() => {
   document.addEventListener('paste', handleDocumentPaste);
   document.addEventListener('dragover', handleCanvasFileDragOver);
   document.addEventListener('drop', handleCanvasFileDragLeave);
+  window.addEventListener('beforeunload', handleBeforeUnload);
   syncUploadedAssetsLibrary();
   syncPendingUploadsFromPersistedState();
   loadAdminTemplates();
@@ -5196,20 +5198,29 @@ onMounted(() => {
     scheduleThumbnailCapture();
     requestImmediateStateFlush();
   }
+
+  if (authUser.value && !state.currentDesignUuid) {
+    ensurePersistedDesign().catch(() => {});
+  }
 });
 
 
 // --- SIEMPRE GENERAR MINIATURA ANTES DE GUARDAR ESTADO ---
 // Debounce para evitar capturas excesivas
+let flushDesignerStateWithThumbnailTimer = null;
 const flushDesignerStateWithThumbnail = async () => {
-  if (pendingStateFlush) {
-    stateFlushRequestedDuringPending = true;
-    return;
+  if (flushDesignerStateWithThumbnailTimer) {
+    clearTimeout(flushDesignerStateWithThumbnailTimer);
   }
-  pendingStateFlush = true;
-  stateFlushRequestedDuringPending = false;
-  syncActivePageSnapshot();
-  generateThumbnailAndThen(async () => {
+  flushDesignerStateWithThumbnailTimer = setTimeout(async () => {
+    flushDesignerStateWithThumbnailTimer = null;
+    if (pendingStateFlush) {
+      stateFlushRequestedDuringPending = true;
+      return;
+    }
+    pendingStateFlush = true;
+    stateFlushRequestedDuringPending = false;
+    syncActivePageSnapshot();
     try {
       syncActivePageSnapshot();
       await flushDesignerStatePersistence();
@@ -5222,7 +5233,7 @@ const flushDesignerStateWithThumbnail = async () => {
         flushDesignerStateWithThumbnail();
       }
     }
-  });
+  }, 300);
 };
 
 // Watcher principal para cambios en el diseño
@@ -5239,7 +5250,28 @@ watch(
   { deep: true }
 );
 
+const handleBeforeUnload = () => {
+  syncActivePageSnapshot();
+  const snapshot = JSON.parse(JSON.stringify(state));
+  const payload = { state: snapshot };
+  const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+  const csrfToken = csrfMeta?.getAttribute('content') ?? '';
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', saveEndpoint, false);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.setRequestHeader('X-CSRF-TOKEN', csrfToken);
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+    xhr.send(JSON.stringify(payload));
+  } catch (_) {
+  }
+};
+
 onBeforeUnmount(() => {
+  syncActivePageSnapshot();
+  flushDesignerStatePersistence();
+  window.removeEventListener('beforeunload', handleBeforeUnload);
   editorViewportQuery?.removeEventListener?.('change', syncEditorViewport);
   editorViewportQuery = null;
   floatingPanelQuery?.removeEventListener?.('change', syncFloatingPanel);
@@ -5259,10 +5291,6 @@ onBeforeUnmount(() => {
   if (visiblePageFrame !== null) {
     cancelAnimationFrame(visiblePageFrame);
     visiblePageFrame = null;
-  }
-  if (thumbnailTimer) {
-    clearTimeout(thumbnailTimer);
-    thumbnailTimer = null;
   }
   elementObservers.forEach((observer) => observer.disconnect());
   elementObservers.clear();
@@ -5401,12 +5429,12 @@ const setRichEditorRef = (id, element) => {
   delete richEditorRefs.value[id];
 };
 
-// Nuevo handler para abrir el modal de exportación
+const guestExportModalOpen = ref(false);
+
 const handleExportNavigation = async (event) => {
   event?.preventDefault?.();
-  // Si es invitado, mostrar alerta y no abrir el exportador
   if (!authUser.value) {
-    window.alert('Para descargar o exportar tu diseño debes iniciar sesión. Puedes seguir editando como invitado.');
+    guestExportModalOpen.value = true;
     return;
   }
   exportDialogOpen.value = true;
@@ -6484,6 +6512,20 @@ watch(
           @close="closeAssistant"
           @finish="handleAssistantFinish"
         />
+      </div>
+    </dialog>
+    <!-- Modal para invitados al exportar -->
+    <dialog v-if="guestExportModalOpen" class="modal modal-open backdrop-blur-sm" style="z-index:10000;">
+      <div class="modal-box w-full max-w-md rounded-[30px] border border-base-300 bg-base-100 p-8 shadow-2xl">
+        <h2 class="text-center text-lg font-bold">Inicia sesión para exportar</h2>
+        <p class="mt-3 text-center text-sm text-base-content/70">
+          Para descargar o exportar tu diseño necesitas tener una cuenta.
+          Puedes seguir editando como invitado.
+        </p>
+        <div class="mt-6 flex justify-center gap-3">
+          <button type="button" class="btn btn-ghost" @click="guestExportModalOpen = false">Seguir editando</button>
+          <button type="button" class="btn btn-primary" @click="handleLogin">Iniciar sesión</button>
+        </div>
       </div>
     </dialog>
     </div>

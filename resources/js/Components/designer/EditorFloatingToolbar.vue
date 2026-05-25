@@ -95,6 +95,39 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
   tab.id === 'typography' ? '' : 'border-0',
   tab.class,
 ];
+
+const startFontSizeDrag = (event) => {
+  const startY = event.clientY;
+  const startValue = props.selectedTextStyle.fontSize ?? 16;
+  let moved = false;
+
+  const onMove = (e) => {
+    if (!moved && Math.abs(e.clientY - startY) > 3) {
+      moved = true;
+      e.preventDefault();
+    }
+    if (!moved) return;
+    const deltaY = startY - e.clientY;
+    const next = Math.round(Math.min(200, Math.max(4, startValue + deltaY)));
+    if (next !== props.selectedTextStyle.fontSize) {
+      props.selectedTextStyle.fontSize = next;
+    }
+  };
+
+  const onUp = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+    if (!moved) {
+      event.currentTarget?.focus();
+      event.currentTarget?.select?.();
+    }
+  };
+
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+  document.addEventListener('pointercancel', onUp);
+};
 </script>
 
 <template>
@@ -140,15 +173,26 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
             </button>
 
             <template v-if="hasTextSelection">
-              <div class="hidden md:flex tooltip tooltip-bottom order-first" data-tip="Tamaño de fuente">
+              <div class="hidden md:flex tooltip tooltip-bottom order-first join" data-tip="Tamaño de fuente">
+                <button
+                  type="button"
+                  class="btn join-item btn-outline border-gray-500 border-r-transparent px-2 font-bold rounded-l-xl"
+                  @click="selectedTextStyle.fontSize = Math.max(4, (selectedTextStyle.fontSize ?? 16) - 1)"
+                >−</button>
                 <input
                   v-model.number="selectedTextStyle.fontSize"
                   type="number"
-                  min="8"
+                  min="4"
                   max="200"
                   step="1"
-                  class="input input-bordered join-item w-16 border-gray-500 text-center [--input-color:var(--color-gray-500)]"
+                  class="input input-bordered join-item w-12  text-center [--input-color:var(--color-gray-500)] bg-transparent no-spinners"
+                  @pointerdown="startFontSizeDrag"
                 />
+                <button
+                  type="button"
+                  class="btn join-item btn-outline border-gray-500 px-2 font-bold rounded-r-xl"
+                  @click="selectedTextStyle.fontSize = Math.min(200, (selectedTextStyle.fontSize ?? 16) + 1)"
+                >+</button>
               </div>
 
               <button
@@ -226,3 +270,14 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
     </div>
   </div>
 </template>
+
+<style scoped>
+.no-spinners::-webkit-inner-spin-button,
+.no-spinners::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.no-spinners {
+    -moz-appearance: textfield;
+}
+</style>

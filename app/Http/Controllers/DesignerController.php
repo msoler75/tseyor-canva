@@ -106,7 +106,15 @@ class DesignerController extends Controller
 
         // Si NO hay usuario autenticado, guardar el diseño en sesión como temporal
         if (! $user) {
-            $state = $design->state ?? [];
+            $existingSessionState = $request->session()->get(self::SESSION_KEY);
+            if (is_array($existingSessionState) && $existingSessionState !== []) {
+                // Ya hay estado en sesión (el usuario hizo cambios que se guardaron).
+                // Usar ese estado en lugar de sobrescribir con el de la DB,
+                // para no perder las ediciones del usuario.
+                $state = $existingSessionState;
+            } else {
+                $state = $design->state ?? [];
+            }
             $state['currentDesignUuid'] = null; // No asociar UUID real
             $state['designTitle'] = $design->name;
             $state['designTitleManual'] = (bool) $design->name_manual;

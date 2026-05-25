@@ -405,7 +405,7 @@ function bootstrapPersistence(saveEndpoint) {
 function isPersistableDesignerStateSnapshot(snapshot) {
     const titleText = String(snapshot?.content?.title ?? '').trim();
 
-    return Boolean(
+    const result = Boolean(
         snapshot
         && typeof snapshot === 'object'
         && typeof snapshot.mode === 'string'
@@ -418,6 +418,23 @@ function isPersistableDesignerStateSnapshot(snapshot) {
         && (snapshot.customElements == null || typeof snapshot.customElements === 'object')
         && (snapshot.userUploadedImages == null || Array.isArray(snapshot.userUploadedImages))
     );
+    if (!result) {
+        console.warn('[persistState] isPersistableDesignerStateSnapshot FAILED', {
+            hasSnapshot: Boolean(snapshot && typeof snapshot === 'object'),
+            mode: typeof snapshot?.mode === 'string' ? snapshot.mode : typeof snapshot?.mode,
+            hasContent: Boolean(snapshot?.content && typeof snapshot.content === 'object'),
+            contentKeys: Object.keys(snapshot?.content ?? {}),
+            hasElementLayout: Boolean(snapshot?.elementLayout && typeof snapshot.elementLayout === 'object'),
+            elKeys: Object.keys(snapshot?.elementLayout ?? {}),
+            background: Boolean(snapshot?.elementLayout?.background),
+            titleExists: 'title' in (snapshot?.elementLayout ?? {}),
+            titleType: typeof snapshot?.elementLayout?.title,
+            titleInContent: snapshot?.content?.title,
+            titleText: JSON.stringify(titleText),
+            titleCondition: Boolean(snapshot?.elementLayout?.title || titleText === ''),
+        });
+    }
+    return result;
 }
 
 async function persistStateSnapshot(saveEndpoint, snapshot) {
@@ -430,6 +447,7 @@ async function persistStateSnapshot(saveEndpoint, snapshot) {
     }
 
     if (currentRequestIsAuthenticated && !snapshot.currentDesignUuid) {
+        console.warn('[persistState] No se puede guardar: falta currentDesignUuid para usuario autenticado');
         return;
     }
 
