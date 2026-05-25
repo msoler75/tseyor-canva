@@ -183,6 +183,14 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
 
               <button
                 type="button"
+                class="tooltip tooltip-bottom hidden btn w-10 border-0 text-lg underline md:inline-flex"
+                data-tip="Subrayado"
+                :class="selectedTextStyle.underline ? 'btn-accent' : 'btn-outline'"
+                @click="selectedTextStyle.underline = !selectedTextStyle.underline"
+              >U</button>
+
+              <button
+                type="button"
                 class="tooltip tooltip-bottom hidden btn w-10 border-0 text-lg md:inline-flex"
                 data-tip="Mayúsculas"
                 :class="selectedTextStyle.uppercase ? 'btn-accent' : 'btn-outline'"
