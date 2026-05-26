@@ -396,44 +396,64 @@ export function createLinkedTextBoxSystem() {
          const sortedKeys = Object.keys(grouped).map(Number).sort((a, b) => a - b);
          const htmlParts = [];
 
-         for (const pIdx of sortedKeys) {
-           const units = grouped[pIdx];
-           const para = paragraphs[pIdx];
-           if (!para) continue;
+          const isParagraphSplit = (pIdx, units) => {
+            const para = paragraphs[pIdx];
+            if (!para) return false;
+            if ((para.tag === 'ul' || para.tag === 'ol') && para.items) {
+              const liUnits = units.filter(u => u.type === 'li');
+              return liUnits.length !== para.items.length;
+            }
+            const textUnits = units.filter(u => u.type === 'word');
+            return para.words.length > 0 && textUnits.length < para.words.length;
+          };
 
-           const tag = para.tag || 'p';
-           const style = paragraphCssForIndex(para, pIdx, layout);
-           const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
+          const needsJustifyLastLine = (pIdx) => {
+            const paraStyle = layout?.paragraphStyles?.[pIdx];
+            const align = paraStyle?.textAlign || (!paraStyle ? layout?.textAlign : null);
+            return align === 'justify';
+          };
 
-           const isList = (para.tag === 'ul' || para.tag === 'ol') && para.items && para.items.length > 0;
+          for (const pIdx of sortedKeys) {
+            const units = grouped[pIdx];
+            const para = paragraphs[pIdx];
+            if (!para) continue;
 
-           if (isList) {
-             const liUnits = units.filter(u => u.type === 'li');
-             const allItemsPresent = liUnits.length === para.items.length;
+            const tag = para.tag || 'p';
+            let baseStyle = paragraphCssForIndex(para, pIdx, layout);
+            if (isParagraphSplit(pIdx, units) && needsJustifyLastLine(pIdx)) {
+              baseStyle = (baseStyle ? baseStyle + ';' : '') + 'text-align-last:justify';
+            }
+            const styleAttr = baseStyle ? ` style="${escapeAttribute(baseStyle)}"` : '';
 
-             if (allItemsPresent && para.innerHTML) {
-               htmlParts.push(`<${tag}${styleAttr}>${para.innerHTML}</${tag}>`);
-             } else if (liUnits.length > 0) {
-               const lis = liUnits.map(u => u.html).join('');
-               htmlParts.push(`<${tag}${styleAttr}>${lis}</${tag}>`);
-             } else {
-               htmlParts.push(`<${tag}${styleAttr}><br></${tag}>`);
-             }
-           } else {
-             const textUnits = units.filter(u => u.type === 'word');
-             const isComplete = !para.words.length || textUnits.length === para.words.length;
+            const isList = (para.tag === 'ul' || para.tag === 'ol') && para.items && para.items.length > 0;
 
-             let contents;
-             if (isComplete && para.innerHTML) {
-               contents = para.innerHTML;
-             } else if (textUnits.length > 0) {
-               contents = textUnits.map(u => escapeHtml(u.word)).join('') || '\u200B';
-             } else {
-               contents = '<br>';
-             }
-             htmlParts.push(`<${tag}${styleAttr}>${contents}</${tag}>`);
-           }
-         }
+            if (isList) {
+              const liUnits = units.filter(u => u.type === 'li');
+              const allItemsPresent = liUnits.length === para.items.length;
+
+              if (allItemsPresent && para.innerHTML) {
+                htmlParts.push(`<${tag}${styleAttr}>${para.innerHTML}</${tag}>`);
+              } else if (liUnits.length > 0) {
+                const lis = liUnits.map(u => u.html).join('');
+                htmlParts.push(`<${tag}${styleAttr}>${lis}</${tag}>`);
+              } else {
+                htmlParts.push(`<${tag}${styleAttr}><br></${tag}>`);
+              }
+            } else {
+              const textUnits = units.filter(u => u.type === 'word');
+              const isComplete = !para.words.length || textUnits.length === para.words.length;
+
+              let contents;
+              if (isComplete && para.innerHTML) {
+                contents = para.innerHTML;
+              } else if (textUnits.length > 0) {
+                contents = textUnits.map(u => escapeHtml(u.word)).join('') || '\u200B';
+              } else {
+                contents = '<br>';
+              }
+              htmlParts.push(`<${tag}${styleAttr}>${contents}</${tag}>`);
+            }
+          }
 
          return htmlParts.join('');
        };
