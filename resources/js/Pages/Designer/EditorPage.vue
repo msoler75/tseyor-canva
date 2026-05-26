@@ -5205,35 +5205,17 @@ onMounted(() => {
 });
 
 
-// --- SIEMPRE GENERAR MINIATURA ANTES DE GUARDAR ESTADO ---
-// Debounce para evitar capturas excesivas
-let flushDesignerStateWithThumbnailTimer = null;
-const flushDesignerStateWithThumbnail = async () => {
-  if (flushDesignerStateWithThumbnailTimer) {
-    clearTimeout(flushDesignerStateWithThumbnailTimer);
-  }
-  flushDesignerStateWithThumbnailTimer = setTimeout(async () => {
-    flushDesignerStateWithThumbnailTimer = null;
-    if (pendingStateFlush) {
-      stateFlushRequestedDuringPending = true;
-      return;
-    }
-    pendingStateFlush = true;
-    stateFlushRequestedDuringPending = false;
-    syncActivePageSnapshot();
+// --- GENERAR MINIATURA ANTES DE GUARDAR ---
+const flushDesignerStateWithThumbnail = () => {
+  syncActivePageSnapshot();
+  generateThumbnailAndThen(async () => {
     try {
       syncActivePageSnapshot();
       await flushDesignerStatePersistence();
     } catch (error) {
       console.error('No se pudo guardar el estado del diseño automáticamente', error);
-    } finally {
-      pendingStateFlush = false;
-      if (stateFlushRequestedDuringPending) {
-        stateFlushRequestedDuringPending = false;
-        flushDesignerStateWithThumbnail();
-      }
     }
-  }, 300);
+  });
 };
 
 // Watcher principal para cambios en el diseño
@@ -5676,7 +5658,7 @@ const loadAdminTemplates = async () => {
     const response = await axios.get('/designer/design-templates', {
       params: { includeDrafts: 1 },
     });
-    adminTemplates.value = response.data?.templates ?? [];
+    adminTemplates.value = response.data?.templates?.data ?? [];
   } catch (error) {
     console.error('No se pudieron cargar las plantillas para admin', error);
   }

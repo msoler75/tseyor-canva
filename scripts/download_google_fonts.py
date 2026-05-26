@@ -12,10 +12,13 @@ CSS_FILE = './public/fontsx/fonts.css'  # Solo debe estar en public/fontsx/fonts
 import sys
 def get_goog_webfont_dl_path():
     if sys.platform.startswith('win'):
-        npm_path = os.path.expandvars(r'%APPDATA%/npm/goog-webfont-dl.cmd')
-        if os.path.exists(npm_path):
-            return npm_path
-    # Fallback: buscar en PATH
+        candidates = [
+            os.path.expandvars(r'%APPDATA%/npm/goog-webfont-dl.cmd'),
+            r'C:\Program Files\nodejs\goog-webfont-dl.cmd',
+        ]
+        for p in candidates:
+            if os.path.exists(p):
+                return p
     return 'goog-webfont-dl'
 
 GOOG_WEBFONT_DL = get_goog_webfont_dl_path()

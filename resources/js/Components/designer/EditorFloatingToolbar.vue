@@ -173,10 +173,10 @@ const startFontSizeDrag = (event) => {
             </button>
 
             <template v-if="hasTextSelection">
-              <div class="hidden md:flex tooltip tooltip-bottom order-first join" data-tip="Tamaño de fuente">
+              <div class="hidden md:flex tooltip tooltip-bottom order-first items-center border border-gray-500 rounded-xl overflow-hidden" data-tip="Tamaño de fuente">
                 <button
                   type="button"
-                  class="btn join-item btn-outline border-gray-500 border-r-transparent px-2 font-bold rounded-l-xl"
+                  class="btn btn-md btn-ghost border-0 px-1.5 font-bold min-h-0 h-6 rounded-none"
                   @click="selectedTextStyle.fontSize = Math.max(4, (selectedTextStyle.fontSize ?? 16) - 1)"
                 >−</button>
                 <input
@@ -185,12 +185,12 @@ const startFontSizeDrag = (event) => {
                   min="4"
                   max="200"
                   step="1"
-                  class="input input-bordered join-item w-12  text-center [--input-color:var(--color-gray-500)] bg-transparent no-spinners"
+                  class="w-8 h-6 font-semibold text-center [--input-color:var(--color-gray-500)] bg-transparent border-0 px-0 no-spinners"
                   @pointerdown="startFontSizeDrag"
                 />
                 <button
                   type="button"
-                  class="btn join-item btn-outline border-gray-500 px-2 font-bold rounded-r-xl"
+                  class="btn btn-md btn-ghost border-0 px-1.5 font-bold min-h-0 h-6 rounded-none"
                   @click="selectedTextStyle.fontSize = Math.min(200, (selectedTextStyle.fontSize ?? 16) + 1)"
                 >+</button>
               </div>
