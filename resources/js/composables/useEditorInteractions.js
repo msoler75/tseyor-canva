@@ -501,7 +501,21 @@ export const useEditorInteractions = ({
       if (event.cancelable) event.preventDefault();
       const dragBounds = getSelectionBounds(activeSelectionIds?.value ?? []);
       if (dragBounds) {
-        alignmentGuides.updateGuides(dragBounds);
+        const { dx, dy } = alignmentGuides.snapToGuides(dragBounds);
+        if (dx !== 0 || dy !== 0) {
+          const snapShiftX = Math.round(dx);
+          const snapShiftY = Math.round(dy);
+          group.layout.x += snapShiftX;
+          group.layout.y += snapShiftY;
+          group.elementIds.forEach((id) => {
+            const memberLayout = state.elementLayout[id];
+            if (!memberLayout) return;
+            memberLayout.x += snapShiftX;
+            memberLayout.y += snapShiftY;
+          });
+        }
+        const snappedBounds = getSelectionBounds(activeSelectionIds?.value ?? []);
+        if (snappedBounds) alignmentGuides.updateGuides(snappedBounds);
       }
       return;
     }
@@ -586,6 +600,12 @@ export const useEditorInteractions = ({
             }));
           }
         });
+        alignmentGuides.updateGuides({
+          x: group.layout.x,
+          y: group.layout.y,
+          w: group.layout.w,
+          h: group.layout.h,
+        });
         return;
       }
 
@@ -663,6 +683,10 @@ export const useEditorInteractions = ({
           } else {
             layout.y = Math.round(drag.startY);
           }
+          const hSnap = alignmentGuides.snapBoundsForResize({ x: layout.x, y: layout.y, w: layout.w, h: layout.h }, handle);
+          if (handle.includes('n')) layout.y = Math.round(hSnap.y);
+          layout.h = Math.round(hSnap.h);
+          alignmentGuides.updateGuides({ x: layout.x, y: layout.y, w: layout.w, h: layout.h });
           return;
         }
 
@@ -676,6 +700,10 @@ export const useEditorInteractions = ({
             layout.x = Math.round(drag.startX);
           }
 
+          const wSnap = alignmentGuides.snapBoundsForResize({ x: layout.x, y: layout.y, w: layout.w, h: layout.h }, handle);
+          if (handle.includes('w')) layout.x = Math.round(wSnap.x);
+          layout.w = Math.round(wSnap.w);
+          alignmentGuides.updateGuides({ x: layout.x, y: layout.y, w: layout.w, h: layout.h });
           return;
         }
 
@@ -707,6 +735,12 @@ export const useEditorInteractions = ({
           layout.y = Math.round(drag.startY);
         }
 
+        const snapped = alignmentGuides.snapBoundsForResize({ x: layout.x, y: layout.y, w: layout.w, h: layout.h }, handle);
+        if (handle.includes('w')) layout.x = Math.round(snapped.x);
+        if (handle.includes('n')) layout.y = Math.round(snapped.y);
+        layout.w = Math.round(snapped.w);
+        layout.h = Math.round(snapped.h);
+        alignmentGuides.updateGuides({ x: layout.x, y: layout.y, w: layout.w, h: layout.h });
         return;
       }
 
@@ -720,6 +754,10 @@ export const useEditorInteractions = ({
           layout.x = Math.round(drag.startX);
         }
 
+        const tSnap = alignmentGuides.snapBoundsForResize({ x: layout.x, y: layout.y, w: layout.w, h: layout.h }, handle);
+        if (handle.includes('w')) layout.x = Math.round(tSnap.x);
+        layout.w = Math.round(tSnap.w);
+        alignmentGuides.updateGuides({ x: layout.x, y: layout.y, w: layout.w, h: layout.h });
         return;
       }
 
@@ -738,6 +776,10 @@ export const useEditorInteractions = ({
       else layout.x = Math.round(drag.startX);
 
       if (handle.includes('n')) layout.y = Math.round(drag.startY - ((layout.fontSize - drag.startFontSize) * 0.6));
+      const tCornerSnap = alignmentGuides.snapBoundsForResize({ x: layout.x, y: layout.y, w: layout.w, h: layout.h }, handle);
+      if (handle.includes('w')) layout.x = Math.round(tCornerSnap.x);
+      layout.w = Math.round(tCornerSnap.w);
+      alignmentGuides.updateGuides({ x: layout.x, y: layout.y, w: layout.w, h: layout.h });
       return;
     }
 
@@ -754,7 +796,17 @@ export const useEditorInteractions = ({
       if (event.cancelable) event.preventDefault();
       const dragBounds = getSelectionBounds(activeSelectionIds?.value ?? []);
       if (dragBounds) {
-        alignmentGuides.updateGuides(dragBounds);
+        const { dx, dy } = alignmentGuides.snapToGuides(dragBounds);
+        if (dx !== 0 || dy !== 0) {
+          drag.multiSnapshot.forEach(({ id: elId }) => {
+            const l = state.elementLayout[elId];
+            if (!l) return;
+            l.x += Math.round(dx);
+            l.y += Math.round(dy);
+          });
+        }
+        const snappedBounds = getSelectionBounds(activeSelectionIds?.value ?? []);
+        if (snappedBounds) alignmentGuides.updateGuides(snappedBounds);
       }
       return;
     }
@@ -767,7 +819,13 @@ export const useEditorInteractions = ({
     const ids = activeSelectionIds?.value?.length ? activeSelectionIds.value : [drag.elementId];
     const dragBounds = getSelectionBounds(ids);
     if (dragBounds) {
-      alignmentGuides.updateGuides(dragBounds);
+      const { dx, dy } = alignmentGuides.snapToGuides(dragBounds);
+      if (dx !== 0 || dy !== 0) {
+        layout.x += Math.round(dx);
+        layout.y += Math.round(dy);
+      }
+      const snappedBounds = getSelectionBounds(ids);
+      if (snappedBounds) alignmentGuides.updateGuides(snappedBounds);
     }
   };
 

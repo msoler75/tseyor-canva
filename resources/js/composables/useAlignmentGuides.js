@@ -1,6 +1,8 @@
 import { ref, computed } from 'vue';
+import { foldGuidePositionsForFormat, horizontalPrintFoldFormats } from '../data/designer';
 
 const SNAP_THRESHOLD = 10; // píxeles
+const SUB_PAGE_MARGIN_RATIO = 0.08; // ~2cm por subpágina
 
 export const useAlignmentGuides = ({
   state,
@@ -29,11 +31,88 @@ export const useAlignmentGuides = ({
     return bounds;
   };
 
-  const findAlignmentGuides = (dragBounds) => {
+  const getSubPageMarginGuides = (canvas, dragBounds, handle) => {
+    if (!horizontalPrintFoldFormats.includes(state?.format)) return [];
+
+    const foldPositions = foldGuidePositionsForFormat(state.format);
+    if (!foldPositions.length) return [];
+
+    const panels = [];
+    let prev = 0;
+    for (const pos of foldPositions) {
+      panels.push({ left: prev, right: pos });
+      prev = pos;
+    }
+    panels.push({ left: prev, right: 100 });
+
+    const candidates = [];
+
+    for (const panel of panels) {
+      const panelLeftPx = (panel.left / 100) * canvas.width;
+      const panelRightPx = (panel.right / 100) * canvas.width;
+      const panelWidthPx = panelRightPx - panelLeftPx;
+      const marginPx = Math.round(panelWidthPx * SUB_PAGE_MARGIN_RATIO);
+
+      candidates.push({
+        type: 'vertical',
+        x: panelLeftPx + marginPx,
+        start: 0,
+        end: canvas.height,
+      });
+      candidates.push({
+        type: 'vertical',
+        x: panelRightPx - marginPx,
+        start: 0,
+        end: canvas.height,
+      });
+    }
+
+    const vMarginPx = Math.round(canvas.height * SUB_PAGE_MARGIN_RATIO);
+    candidates.push({
+      type: 'horizontal',
+      y: vMarginPx,
+      start: 0,
+      end: canvas.width,
+    });
+    candidates.push({
+      type: 'horizontal',
+      y: canvas.height - vMarginPx,
+      start: 0,
+      end: canvas.width,
+    });
+
+    const dragLeft = dragBounds.x;
+    const dragRight = dragBounds.x + dragBounds.w;
+    const dragTop = dragBounds.y;
+    const dragBottom = dragBounds.y + dragBounds.h;
+    const dragHCenter = dragBounds.x + dragBounds.w / 2;
+    const dragVCenter = dragBounds.y + dragBounds.h / 2;
+
+    const canSnapLeft = !handle || handle === 'move' || handle === 'w' || handle.includes('w');
+    const canSnapRight = !handle || handle === 'move' || handle === 'e' || handle.includes('e');
+    const canSnapTop = !handle || handle === 'move' || handle === 'n' || handle.includes('n') || handle === 'n-width';
+    const canSnapBottom = !handle || handle === 'move' || handle === 's' || handle.includes('s') || handle === 's-width';
+    const canSnapCenter = !handle || handle === 'move';
+
+    return candidates.filter((g) => {
+      if (g.type === 'vertical') {
+        return (canSnapLeft && Math.abs(dragLeft - g.x) <= SNAP_THRESHOLD)
+          || (canSnapRight && Math.abs(dragRight - g.x) <= SNAP_THRESHOLD)
+          || (canSnapCenter && Math.abs(dragHCenter - g.x) <= SNAP_THRESHOLD);
+      }
+      return (canSnapTop && Math.abs(dragTop - g.y) <= SNAP_THRESHOLD)
+        || (canSnapBottom && Math.abs(dragBottom - g.y) <= SNAP_THRESHOLD)
+        || (canSnapCenter && Math.abs(dragVCenter - g.y) <= SNAP_THRESHOLD);
+    });
+  };
+
+  const findAlignmentGuides = (dragBounds, handle) => {
     const canvas = canvasBounds.value;
     if (!canvas.width || !canvas.height) return [];
 
     const found = [];
+
+    found.push(...getSubPageMarginGuides(canvas, dragBounds, handle));
     const dragLeft = dragBounds.x;
     const dragRight = dragBounds.x + dragBounds.w;
     const dragTop = dragBounds.y;
@@ -45,58 +124,41 @@ export const useAlignmentGuides = ({
     const canvasHCenter = canvas.width / 2;
     const canvasVCenter = canvas.height / 2;
 
-    // Alineación con centro horizontal del canvas
-    if (Math.abs(dragHCenter - canvasHCenter) <= SNAP_THRESHOLD) {
-      found.push({
-        type: 'vertical',
-        x: canvasHCenter,
-        start: 0,
-        end: canvas.height,
-      });
+    if (!handle || handle === 'move') {
+      if (Math.abs(dragHCenter - canvasHCenter) <= SNAP_THRESHOLD) {
+        found.push({
+          type: 'vertical',
+          x: canvasHCenter,
+          start: 0,
+          end: canvas.height,
+        });
+      }
+      if (Math.abs(dragVCenter - canvasVCenter) <= SNAP_THRESHOLD) {
+        found.push({
+          type: 'horizontal',
+          y: canvasVCenter,
+          start: 0,
+          end: canvas.width,
+        });
+      }
     }
 
-    // Alineación con centro vertical del canvas
-    if (Math.abs(dragVCenter - canvasVCenter) <= SNAP_THRESHOLD) {
-      found.push({
-        type: 'horizontal',
-        y: canvasVCenter,
-        start: 0,
-        end: canvas.width,
-      });
-    }
+    const canSnapLeft = !handle || handle === 'move' || handle === 'w' || handle.includes('w');
+    const canSnapRight = !handle || handle === 'move' || handle === 'e' || handle.includes('e');
+    const canSnapTop = !handle || handle === 'move' || handle === 'n' || handle.includes('n') || handle === 'n-width';
+    const canSnapBottom = !handle || handle === 'move' || handle === 's' || handle.includes('s') || handle === 's-width';
 
-    // Alineación con bordes del canvas
-    if (Math.abs(dragLeft) <= SNAP_THRESHOLD) {
-      found.push({
-        type: 'vertical',
-        x: 0,
-        start: 0,
-        end: canvas.height,
-      });
+    if (canSnapLeft && Math.abs(dragLeft) <= SNAP_THRESHOLD) {
+      found.push({ type: 'vertical', x: 0, start: 0, end: canvas.height });
     }
-    if (Math.abs(dragRight - canvas.width) <= SNAP_THRESHOLD) {
-      found.push({
-        type: 'vertical',
-        x: canvas.width,
-        start: 0,
-        end: canvas.height,
-      });
+    if (canSnapRight && Math.abs(dragRight - canvas.width) <= SNAP_THRESHOLD) {
+      found.push({ type: 'vertical', x: canvas.width, start: 0, end: canvas.height });
     }
-    if (Math.abs(dragTop) <= SNAP_THRESHOLD) {
-      found.push({
-        type: 'horizontal',
-        y: 0,
-        start: 0,
-        end: canvas.width,
-      });
+    if (canSnapTop && Math.abs(dragTop) <= SNAP_THRESHOLD) {
+      found.push({ type: 'horizontal', y: 0, start: 0, end: canvas.width });
     }
-    if (Math.abs(dragBottom - canvas.height) <= SNAP_THRESHOLD) {
-      found.push({
-        type: 'horizontal',
-        y: canvas.height,
-        start: 0,
-        end: canvas.width,
-      });
+    if (canSnapBottom && Math.abs(dragBottom - canvas.height) <= SNAP_THRESHOLD) {
+      found.push({ type: 'horizontal', y: canvas.height, start: 0, end: canvas.width });
     }
 
     // Alineación con otros elementos
@@ -109,8 +171,7 @@ export const useAlignmentGuides = ({
       const elemHCenter = elem.x + elem.w / 2;
       const elemVCenter = elem.y + elem.h / 2;
 
-      // Bordes izquierdos alineados
-      if (Math.abs(dragLeft - elemLeft) <= SNAP_THRESHOLD) {
+      if (canSnapLeft && Math.abs(dragLeft - elemLeft) <= SNAP_THRESHOLD) {
         found.push({
           type: 'vertical',
           x: elemLeft,
@@ -119,8 +180,7 @@ export const useAlignmentGuides = ({
         });
       }
 
-      // Bordes derechos alineados
-      if (Math.abs(dragRight - elemRight) <= SNAP_THRESHOLD) {
+      if (canSnapRight && Math.abs(dragRight - elemRight) <= SNAP_THRESHOLD) {
         found.push({
           type: 'vertical',
           x: elemRight,
@@ -129,8 +189,7 @@ export const useAlignmentGuides = ({
         });
       }
 
-      // Bordes superiores alineados
-      if (Math.abs(dragTop - elemTop) <= SNAP_THRESHOLD) {
+      if (canSnapTop && Math.abs(dragTop - elemTop) <= SNAP_THRESHOLD) {
         found.push({
           type: 'horizontal',
           y: elemTop,
@@ -139,8 +198,7 @@ export const useAlignmentGuides = ({
         });
       }
 
-      // Bordes inferiores alineados
-      if (Math.abs(dragBottom - elemBottom) <= SNAP_THRESHOLD) {
+      if (canSnapBottom && Math.abs(dragBottom - elemBottom) <= SNAP_THRESHOLD) {
         found.push({
           type: 'horizontal',
           y: elemBottom,
@@ -149,8 +207,7 @@ export const useAlignmentGuides = ({
         });
       }
 
-      // Centros horizontales alineados
-      if (Math.abs(dragHCenter - elemHCenter) <= SNAP_THRESHOLD) {
+      if ((!handle || handle === 'move') && Math.abs(dragHCenter - elemHCenter) <= SNAP_THRESHOLD) {
         found.push({
           type: 'vertical',
           x: elemHCenter,
@@ -159,8 +216,7 @@ export const useAlignmentGuides = ({
         });
       }
 
-      // Centros verticales alineados
-      if (Math.abs(dragVCenter - elemVCenter) <= SNAP_THRESHOLD) {
+      if ((!handle || handle === 'move') && Math.abs(dragVCenter - elemVCenter) <= SNAP_THRESHOLD) {
         found.push({
           type: 'horizontal',
           y: elemVCenter,
@@ -170,7 +226,6 @@ export const useAlignmentGuides = ({
       }
     });
 
-    // Eliminar duplicados
     const unique = [];
     const seen = new Set();
     found.forEach((g) => {
@@ -182,6 +237,79 @@ export const useAlignmentGuides = ({
     });
 
     return unique;
+  };
+
+  const snapToGuides = (dragBounds) => {
+    const guideLines = findAlignmentGuides(dragBounds, 'move');
+    let dx = 0;
+    let dy = 0;
+
+    for (const guide of guideLines) {
+      if (guide.type === 'vertical') {
+        const candidates = [
+          { edge: 'left', dist: guide.x - dragBounds.x },
+          { edge: 'right', dist: guide.x - (dragBounds.x + dragBounds.w) },
+          { edge: 'center', dist: guide.x - (dragBounds.x + dragBounds.w / 2) },
+        ];
+        candidates.sort((a, b) => Math.abs(a.dist) - Math.abs(b.dist));
+        if (Math.abs(candidates[0].dist) <= SNAP_THRESHOLD && Math.abs(candidates[0].dist) < Math.abs(dx)) {
+          dx = candidates[0].dist;
+        }
+      } else {
+        const candidates = [
+          { edge: 'top', dist: guide.y - dragBounds.y },
+          { edge: 'bottom', dist: guide.y - (dragBounds.y + dragBounds.h) },
+          { edge: 'center', dist: guide.y - (dragBounds.y + dragBounds.h / 2) },
+        ];
+        candidates.sort((a, b) => Math.abs(a.dist) - Math.abs(b.dist));
+        if (Math.abs(candidates[0].dist) <= SNAP_THRESHOLD && Math.abs(candidates[0].dist) < Math.abs(dy)) {
+          dy = candidates[0].dist;
+        }
+      }
+    }
+
+    return { dx, dy };
+  };
+
+  const snapBoundsForResize = (dragBounds, handle) => {
+    const guideLines = findAlignmentGuides(dragBounds, handle);
+    let left = dragBounds.x;
+    let right = dragBounds.x + dragBounds.w;
+    let top = dragBounds.y;
+    let bottom = dragBounds.y + dragBounds.h;
+
+    const canSnapLeft = handle === 'w' || handle.includes('w');
+    const canSnapRight = handle === 'e' || handle.includes('e');
+    const canSnapTop = handle === 'n' || handle.includes('n') || handle === 'n-width';
+    const canSnapBottom = handle === 's' || handle.includes('s') || handle === 's-width';
+
+    for (const guide of guideLines) {
+      if (guide.type === 'vertical') {
+        const dLeft = guide.x - left;
+        const dRight = guide.x - right;
+        const aLeft = Math.abs(dLeft);
+        const aRight = Math.abs(dRight);
+
+        if (canSnapLeft && aLeft <= SNAP_THRESHOLD) {
+          left = guide.x;
+        } else if (canSnapRight && aRight <= SNAP_THRESHOLD) {
+          right = guide.x;
+        }
+      } else {
+        const dTop = guide.y - top;
+        const dBottom = guide.y - bottom;
+        const aTop = Math.abs(dTop);
+        const aBottom = Math.abs(dBottom);
+
+        if (canSnapTop && aTop <= SNAP_THRESHOLD) {
+          top = guide.y;
+        } else if (canSnapBottom && aBottom <= SNAP_THRESHOLD) {
+          bottom = guide.y;
+        }
+      }
+    }
+
+    return { x: left, y: top, w: Math.max(1, right - left), h: Math.max(1, bottom - top) };
   };
 
   const updateGuides = (dragBounds) => {
@@ -196,6 +324,8 @@ export const useAlignmentGuides = ({
     guides,
     updateGuides,
     clearGuides,
+    snapToGuides,
+    snapBoundsForResize,
     SNAP_THRESHOLD,
   };
 };
