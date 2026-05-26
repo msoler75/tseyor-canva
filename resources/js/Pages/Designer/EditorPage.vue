@@ -2987,6 +2987,9 @@ const handleLinkedTextLinkEnd = ({ event, targetId }) => {
     const targetLayout = linkedTextLayoutFromAnyPage(targetId);
     if (sourceLayout && targetLayout) {
       const oldNextId = sourceLayout.linkedTextNext;
+      const oldPrevId = targetLayout.linkedTextPrev;
+      const reassignedGroupIds = new Set();
+
       if (oldNextId && oldNextId !== targetId) {
         const oldNextLayout = linkedTextLayoutFromAnyPage(oldNextId);
         if (oldNextLayout) {
@@ -2994,13 +2997,43 @@ const handleLinkedTextLinkEnd = ({ event, targetId }) => {
         }
       }
 
-      const oldPrevId = targetLayout.linkedTextPrev;
       if (oldPrevId && oldPrevId !== linkedTextLink.sourceId) {
         const oldPrevLayout = linkedTextLayoutFromAnyPage(oldPrevId);
         if (oldPrevLayout?.linkedTextNext === targetId) {
           linkedTextSetLayoutField(oldPrevId, 'linkedTextNext', null);
-          recalculateLinkedTextAllocations(getLinkedTextChainHead(oldPrevId));
+          const orphanHeadId = getLinkedTextChainHead(oldPrevId);
+          const orphanChain = getLinkedTextChain(orphanHeadId);
+          const orphanGroupId = `linked-group-${Date.now()}`;
+          orphanChain.forEach((item) => {
+            reassignedGroupIds.add(item.id);
+            linkedTextSetLayoutField(item.id, 'linkedTextGroupId', orphanGroupId);
+          });
+          orphanChain.forEach((item, index) => {
+            linkedTextSetLayoutField(item.id, 'linkedTextChainIndex', index);
+          });
+          recalculateLinkedTextAllocations(orphanHeadId);
         }
+      }
+
+      for (const candidateId of [oldNextId]) {
+        if (!candidateId || candidateId === targetId) continue;
+        if (candidateId === oldPrevId) continue;
+        if (reassignedGroupIds.has(candidateId)) continue;
+        const layout = linkedTextLayoutFromAnyPage(candidateId);
+        if (!layout || layout.linkedTextPrev !== null) continue;
+        const chain = getLinkedTextChain(candidateId);
+        const cutAt = chain.findIndex((item) => item.id === targetId);
+        const orphanSlice = cutAt >= 0 ? chain.slice(0, cutAt) : chain;
+        if (orphanSlice.length === 0) continue;
+        const gid = `linked-group-${Date.now()}`;
+        orphanSlice.forEach((item) => {
+          reassignedGroupIds.add(item.id);
+          linkedTextSetLayoutField(item.id, 'linkedTextGroupId', gid);
+        });
+        orphanSlice.forEach((item, index) => {
+          linkedTextSetLayoutField(item.id, 'linkedTextChainIndex', index);
+        });
+        recalculateLinkedTextAllocations(orphanSlice[0].id);
       }
 
       const sourceGroupId = sourceLayout.linkedTextGroupId;
@@ -3019,6 +3052,9 @@ const handleLinkedTextLinkEnd = ({ event, targetId }) => {
       });
 
       recalculateLinkedTextAllocations(linkedTextLink.sourceId);
+
+      syncActivePageSnapshot();
+      state.elementLayout = Object.assign({}, state.elementLayout);
     }
   }
 
@@ -3063,6 +3099,9 @@ const handleLinkedTextLinkBreak = (event) => {
 
   recalculateLinkedTextAllocations(sourceId);
   recalculateLinkedTextAllocations(nextId);
+
+  syncActivePageSnapshot();
+  state.elementLayout = Object.assign({}, state.elementLayout);
 
   frontendLog.info('linkBreak', `Enlace roto entre ${sourceId} y ${nextId}`);
 };
@@ -4413,6 +4452,8 @@ const updateElementMeasurement = (id, node) => {
           };
           if (!targetPage.elementLayout) targetPage.elementLayout = {};
           targetPage.elementLayout[cloneId] = cloneLayout;
+          syncActivePageSnapshot();
+          state.elementLayout = Object.assign({}, state.elementLayout);
         }
 
         const headId = getLinkedTextChainHead(sourceId);
@@ -4544,6 +4585,9 @@ const removeLinkedTextFromChain = (id) => {
         delete system.fragments[id];
       }
     }
+
+    syncActivePageSnapshot();
+    state.elementLayout = Object.assign({}, state.elementLayout);
   };
 
   const deleteSelectedElement = () => {
