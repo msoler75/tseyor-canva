@@ -21,6 +21,7 @@ const StyledTextMark = Mark.create({
             fontWeight: { default: null },
             fontStyle: { default: null },
             textDecoration: { default: null },
+            textTransform: { default: null },
             fontSize: { default: null },
             fontFamily: { default: null },
         };
@@ -34,6 +35,7 @@ const StyledTextMark = Mark.create({
         if (HTMLAttributes.fontWeight) style.push(`font-weight:${HTMLAttributes.fontWeight === 'bold' ? 700 : 500}`);
         if (HTMLAttributes.fontStyle) style.push(`font-style:${HTMLAttributes.fontStyle}`);
         if (HTMLAttributes.textDecoration) style.push(`text-decoration:${HTMLAttributes.textDecoration}`);
+        if (HTMLAttributes.textTransform) style.push(`text-transform:${HTMLAttributes.textTransform}`);
         if (HTMLAttributes.fontSize) style.push(`font-size:${HTMLAttributes.fontSize}px`);
         if (HTMLAttributes.fontFamily) style.push(`font-family:${HTMLAttributes.fontFamily}`);
         return ['span', { ...HTMLAttributes, style: style.join(';') }, 0];
@@ -283,36 +285,25 @@ const wrapperStyle = computed(() => {
 });
 
 const linkedTextEditorOffset = computed(() => (
-    0 *
     props.isLinkedText && props.editable
         ? Math.max(0, Number(props.editorTopOffset || 0))
         : 0
 ));
 
 const linkedTextEditorContentStyle = computed(() => ({
-    '--linked-text-editor-offset': `${0*linkedTextEditorOffset.value}px`,
-}));
-
-const linkedTextBaseLayerStyle = computed(() => ({
-    ...props.editorStyle,
-    // ...{transform: props.editable?`translateY(${props.editorTopOffset}px)`:''}
+    '--linked-text-editor-offset': `${linkedTextEditorOffset.value}px`,
 }));
 
 const linkedTextEditorInnerStyle = computed(() => ({
     ...props.editorStyle,
-    /*transform: linkedTextEditorOffset.value > 0
-        ? `translate3d(0, -${linkedTextEditorOffset.value}px, 0)`
-        : undefined,*/
 }));
 
 const syncEditorViewportOffset = async () => {
     if (!props.isLinkedText || !props.editable) return;
     await nextTick();
     if (!editorViewportRef.value) return;
-    // Keep scroll at zero; the visible slice is aligned by translating the full
-    // editor content. This keeps pointer/caret coordinates tied to the same DOM
-    // that the user sees and avoids the browser resetting scrollTop on mount.
-    editorViewportRef.value.scrollTop = 0;
+    // Scroll al inicio del contenido que corresponde a esta caja
+    editorViewportRef.value.scrollTop = linkedTextEditorOffset.value;
 };
 
 const editor = useEditor({
@@ -324,13 +315,14 @@ const editor = useEditor({
         StyledTextMark,
     ],
     editable: props.editable && !props.displayMode,
-    content: (props.isLinkedText && props.tailHtml ? props.tailHtml : props.fullTextHtml) || buildDoc(props.text, props.paragraphStyles),
+    content: props.fullTextHtml || buildDoc(props.text, props.paragraphStyles),
     editorProps: {
         attributes: {
             class: props.editorClass,
             spellcheck: 'false',
         },
-        handlePaste({ editor: ed, event }) {
+        handlePaste(view, event) {
+            const ed = editor.value;
             if (!props.isLinkedText || !ed) return false;
 
             const pastedText = event?.clipboardData?.getData('text/plain') || '';
@@ -338,7 +330,10 @@ const editor = useEditor({
             const hasRichFormatting = htmlContainsRichFormatting(pastedHtml);
 
             if (hasRichFormatting && typeof window !== 'undefined') {
-                const keepFormatting = window.confirm('Este texto tiene formato. ¿Quieres conservarlo al pegar?');
+                const keepFormatting = window.confirm(
+                    'Este texto tiene formato (negritas, listas, encabezados, etc.).\n\n' +
+                    '¿Quieres conservar el formato al pegarlo?'
+                );
                 if (!keepFormatting) {
                     event?.preventDefault?.();
                     ed.commands.insertContent(String(pastedText ?? '').replace(/\r\n/g, '\n'));
@@ -350,7 +345,6 @@ const editor = useEditor({
             const textBefore = ed.getText();
             const charsBefore = textBefore.length;
 
-            // El paste ocurre antes del onUpdate, así que usamos nextTick
             nextTick(() => {
                 const htmlAfter = ed.getHTML();
                 const textAfter = ed.getText();
@@ -371,9 +365,11 @@ const editor = useEditor({
                         htmlAfterPreview: htmlAfter.substring(0, 300),
                     }
                 );
+
+                syncEditorViewportOffset();
             });
 
-            return false; // Dejar que TipTap maneje el paste normalmente
+            return false;
         },
     },
     onUpdate({ editor: ed }) {
@@ -447,6 +443,23 @@ const applyStyleAll = (field, value) => {
         tr.setNodeMarkup(pos, undefined, { ...attrs, [field]: value });
     });
     editor.value.view.dispatch(tr);
+};
+
+const MIXED_FIELDS = ['fontFamily', 'fontSize', 'color', 'fontWeight', 'italic', 'underline', 'uppercase', 'textAlign', 'letterSpacing', 'lineHeight'];
+
+const getMixedState = () => {
+    if (!editor?.value) return {};
+    const { styles } = extractFromDoc(editor.value.state.doc);
+    if (!styles.length) return {};
+    const result = {};
+    for (const field of MIXED_FIELDS) {
+        const values = [...new Set(styles.map(s => {
+            const v = s[field];
+            return v === undefined || v === null ? '__NULL__' : v;
+        }))];
+        result[field] = values.length > 1 ? 'mixed' : styles[0][field] ?? null;
+    }
+    return result;
 };
 
 const getActiveAttrs = () => {
@@ -567,11 +580,18 @@ const getListType = () => {
     return 'none';
 };
 
+const getSelection = () => {
+    if (!editor?.value) return { from: 0, to: 0 };
+    const { from, to } = editor.value.state.selection;
+    return { from, to };
+};
+
 const CHAR_STYLE_TO_MARK = {
   color: 'color',
   fontWeight: 'fontWeight',
   italic: { mark: 'styledText', attr: 'fontStyle', value: 'italic' },
   underline: { mark: 'styledText', attr: 'textDecoration', value: 'underline' },
+  uppercase: { mark: 'styledText', attr: 'textTransform', value: 'uppercase' },
   fontSize: 'fontSize',
   fontFamily: 'fontFamily',
 };
@@ -584,10 +604,56 @@ const applyCharacterStyle = (field, value) => {
     if (!mapping) return;
     const mark = editor.value.schema.marks.styledText;
     if (!mark) return;
-    const attrs = typeof mapping === 'object'
-      ? { [mapping.attr]: mapping.value }
-      : { [mapping]: value };
-    const tr = editor.value.state.tr.addMark(from, to, mark.create(attrs));
+
+    const tr = editor.value.state.tr;
+
+    // Merge existing styledText marks on the selection range
+    const existingAttrs = {};
+    editor.value.state.doc.nodesBetween(from, to, (node) => {
+        if (node.marks) {
+            node.marks.forEach((m) => {
+                if (m.type.name === 'styledText') {
+                    Object.keys(m.attrs).forEach((k) => {
+                        if (m.attrs[k] !== null && m.attrs[k] !== undefined) {
+                            existingAttrs[k] = m.attrs[k];
+                        }
+                    });
+                }
+            });
+        }
+    });
+
+    // Remove all existing styledText marks in range first
+    tr.removeMark(from, to, mark);
+
+    // Build new attrs: merge existing + new, handling toggle fields
+    const newAttrKey = typeof mapping === 'object' ? mapping.attr : mapping;
+    const isToggleField = field === 'fontWeight' || field === 'italic' || field === 'underline' || field === 'uppercase';
+    const toggleValue = typeof mapping === 'object' ? mapping.value : value;
+
+    let finalAttrs;
+    if (isToggleField) {
+        const currentValue = existingAttrs[newAttrKey];
+        const isActive = currentValue === toggleValue;
+        if (isActive) {
+            // Remove the attribute (toggle off)
+            const { [newAttrKey]: _, ...rest } = existingAttrs;
+            finalAttrs = rest;
+        } else {
+            // Set the attribute (toggle on), keep others
+            finalAttrs = { ...existingAttrs, [newAttrKey]: toggleValue };
+        }
+    } else {
+        finalAttrs = { ...existingAttrs, [newAttrKey]: value };
+    }
+
+    // Only add mark if there are attrs
+    const hasAttrs = Object.values(finalAttrs).some(v => v !== null && v !== undefined);
+    if (hasAttrs) {
+        tr.addMark(from, to, mark.create(finalAttrs));
+    }
+
+    tr.scrollIntoView();
     editor.value.view.dispatch(tr);
 };
 
@@ -613,7 +679,7 @@ const syncEditorContentFromProps = ({ force = false } = {}) => {
     if (!editor?.value || (!force && props.displayMode)) return;
     if (!force && props.editable) return;
 
-    const nextContent = (props.isLinkedText && props.tailHtml ? props.tailHtml : props.fullTextHtml) || buildDoc(props.text, props.paragraphStyles);
+    const nextContent = props.fullTextHtml || buildDoc(props.text, props.paragraphStyles);
     const currentText = editor.value.getText() || '';
     const currentHtml = editor.value.getHTML() || '';
     const nextText = typeof nextContent === 'string'
@@ -639,6 +705,7 @@ defineExpose({
     applyStyleAll,
     applyCharacterStyle,
     getActiveAttrs,
+    getMixedState,
     focusAtEnd,
     focusAtPosition,
     getPlainText,
@@ -650,6 +717,7 @@ defineExpose({
     setContentDirect,
     toggleListType,
     getListType,
+    getSelection,
     setCursorAtCoords(clientX, clientY) {
         if (!editor?.value) {
             frontendLog.debug('setCursorAtCoords', 'editor not ready');
@@ -703,17 +771,7 @@ watch(() => props.displayMode, (val, oldVal) => {
 });
 
 watch(() => props.fullTextHtml, (html) => {
-    // While the user is typing, TipTap must remain the source of truth.
-    // The parent re-emits the same linked fullTextHtml after redistribution;
-    // calling setContent here replaces the document and moves selection to end.
     if (suppressWatch || !html || !editor?.value || props.displayMode || props.editable) return;
-    if (props.isLinkedText && props.tailHtml) return;
-    syncEditorContentFromProps();
-});
-
-watch(() => props.tailHtml, (html) => {
-    if (suppressWatch || !html || !editor?.value || props.displayMode || props.editable) return;
-    if (!props.isLinkedText) return;
     syncEditorContentFromProps();
 });
 
@@ -827,15 +885,7 @@ const logLinkedTextStyles = () => {
             :style="wrapperStyle"
         >
         <!-- Nueva estrategia: dos capas -->
-        <!-- Capa inferior: texto completo (sin límite inferior), opacidad 50% -->
-        <div
-            v-if="props.isLinkedText && props.showOverflow && props.tailHtml && props.isLastInChain"
-            class="linked-text-base-layer"
-            :style="linkedTextBaseLayerStyle"
-            v-html="props.tailHtml"
-        ></div>
-
-        <!-- Capa superior: texto visible (recortado) -->
+        <!-- Capa visible: texto recortado a la altura de la caja -->
         <div
             v-if="props.displayMode"
             class="linked-text-display"
@@ -934,20 +984,6 @@ const logLinkedTextStyles = () => {
 .linked-text-active .linked-text-display {
     overflow: hidden;
 }
-/* Nueva estrategia: capa base con texto completo */
-.linked-text-base-layer {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    pointer-events: auto;
-    z-index: 5;
-    color: gray !important;
-    opacity: 0.45 !important;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-wrap: break-word;
-}
 /* Cuando está activa, la capa visible recorta */
 .linked-text-active .linked-text-display {
     overflow: hidden;
@@ -981,7 +1017,8 @@ const logLinkedTextStyles = () => {
 .linked-text-editor-viewport {
     width: 100%;
     height: 100%;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
     position: relative;
     z-index: 20;
     box-sizing: border-box;
@@ -1012,7 +1049,7 @@ const logLinkedTextStyles = () => {
 .linked-text-display ul,
 .linked-text-display ol {
     list-style-position: outside;
-    padding-left: 0;
+    padding-left: 1.5em;
     margin: 0;
 }
 .ProseMirror ul,
@@ -1025,7 +1062,7 @@ const logLinkedTextStyles = () => {
 }
 .ProseMirror li,
 .linked-text-display li {
-    margin: 0 0 0 1.5em;
+    margin: 0;
     padding: 0;
 }
 .ProseMirror li p,

@@ -1279,29 +1279,39 @@ const recalculateLinkedTextAllocations = (headId) => {
   const groupId = linkedTextLayoutFromAnyPage(headId)?.linkedTextGroupId;
   if (!groupId) return;
 
-  // Reconstruir fullHtml con los estilos actuales del layout para que
-  // tailHtml / linked-text-base-layer siempre refleje el formato vigente
   const headLayout = linkedTextLayoutFromAnyPage(headId);
-  const rawText = headElement.text || '';
-  const plainLines = rawText.split('\n');
   const headStyles = Array.isArray(headLayout?.paragraphStyles) ? headLayout.paragraphStyles : [];
-  const fullHtml = plainLines.map((line, i) => {
-    const s = headStyles[i] || headStyles[headStyles.length - 1] || {};
-    const style = [
-      s.fontSize ? `font-size:${s.fontSize}px` : '',
-      s.color ? `color:${s.color}` : '',
-      s.fontFamily ? `font-family:${s.fontFamily}` : '',
-      s.fontWeight ? `font-weight:${s.fontWeight === 'bold' ? 700 : s.fontWeight === 'regular' ? 400 : s.fontWeight}` : '',
-      s.italic ? 'font-style:italic' : '',
-      s.underline ? 'text-decoration:underline' : '',
-      s.uppercase ? 'text-transform:uppercase' : '',
-      s.textAlign ? `text-align:${s.textAlign}` : '',
-      s.letterSpacing != null ? `letter-spacing:${s.letterSpacing}px` : '',
-      s.lineHeight != null ? `line-height:${s.lineHeight}` : '',
-    ].filter(Boolean).join(';');
-    const styleAttr = style ? ` style="${style}"` : '';
-    return `<p${styleAttr}>${line}</p>`;
-  }).join('');
+
+  // Preservar el HTML original (con formato inline, listas, encabezados)
+  // y solo aplicar overrides de paragraphStyles a nivel de bloque.
+  // Esto evita perder el formato al pegar texto enriquecido o al editar.
+  let fullHtml;
+  if (headElement.html && headElement.html.trim()) {
+    fullHtml = headElement.html;
+    if (headStyles.length) {
+      fullHtml = mergeParagraphStylesIntoHtml(fullHtml, headStyles);
+    }
+  } else {
+    const rawText = headElement.text || '';
+    const plainLines = rawText.split('\n');
+    fullHtml = plainLines.map((line, i) => {
+      const s = headStyles[i] || headStyles[headStyles.length - 1] || {};
+      const style = [
+        s.fontSize ? `font-size:${s.fontSize}px` : '',
+        s.color ? `color:${s.color}` : '',
+        s.fontFamily ? `font-family:${s.fontFamily}` : '',
+        s.fontWeight ? `font-weight:${s.fontWeight === 'bold' ? 700 : s.fontWeight === 'regular' ? 400 : s.fontWeight}` : '',
+        s.italic ? 'font-style:italic' : '',
+        s.underline ? 'text-decoration:underline' : '',
+        s.uppercase ? 'text-transform:uppercase' : '',
+        s.textAlign ? `text-align:${s.textAlign}` : '',
+        s.letterSpacing != null ? `letter-spacing:${s.letterSpacing}px` : '',
+        s.lineHeight != null ? `line-height:${s.lineHeight}` : '',
+      ].filter(Boolean).join(';');
+      const styleAttr = style ? ` style="${style}"` : '';
+      return `<p${styleAttr}>${line}</p>`;
+    }).join('');
+  }
 
   const chainLayouts = chain.map((item) => {
     const l = linkedTextLayoutFromAnyPage(item.id) || {};
@@ -1352,14 +1362,107 @@ const recalculateLinkedTextAllocations = (headId) => {
 
   linkedTextBoxSystem.redistribute(groupId, fullHtml, chainLayouts, containerStyle);
 
-  // Log despuÃ©s de redistribuir - registrar fragmentos
   const system = linkedTextBoxSystem.getOrCreateSystem(groupId);
   if (system.fragments) {
+    const richHtml = headElement.html && headElement.html.trim() ? headElement.html : '';
+    if (richHtml) {
+      const styled = mergeParagraphStylesIntoHtml(richHtml, headStyles);
+      // Reemplazar el HTML de cada fragmento con el HTML rico cuando
+      // el texto plano del fragmento coincida con el del HTML original.
+      // Esto preserva formato inline, listas y encabezados en cada caja.
+      assignRichHtmlToFragments(system.fragments, chain, richHtml, styled, headStyles);
+    }
+
     for (const [boxId, fragment] of Object.entries(system.fragments)) {
       frontendLog.logFragmentation(groupId, boxId, fragment);
     }
   }
 };
+
+function mergeParagraphStylesIntoHtml(html, paragraphStyles = []) {
+  if (!html || !html.trim()) return '';
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  const blockNodes = Array.from(container.querySelectorAll('p,div,li,h1,h2,h3,h4,h5,h6,blockquote,pre'));
+  blockNodes.forEach((node, i) => {
+    const s = paragraphStyles[i] || paragraphStyles[paragraphStyles.length - 1];
+    if (!s) return;
+    const existing = node.style;
+    const parts = [];
+    if (s.fontSize && !existing.fontSize) parts.push(`font-size:${s.fontSize}px`);
+    if (s.color && !existing.color) parts.push(`color:${s.color}`);
+    if (s.fontFamily && !existing.fontFamily) parts.push(`font-family:${s.fontFamily}`);
+    if (s.fontWeight && !existing.fontWeight) parts.push(`font-weight:${s.fontWeight === 'bold' ? 700 : s.fontWeight === 'regular' ? 400 : s.fontWeight}`);
+    if (s.italic && existing.fontStyle !== 'italic') parts.push('font-style:italic');
+    if (s.underline && !/underline/i.test(existing.textDecorationLine || existing.textDecoration || '')) parts.push('text-decoration:underline');
+    if (s.uppercase && existing.textTransform !== 'uppercase') parts.push('text-transform:uppercase');
+    if (s.textAlign && !existing.textAlign) parts.push(`text-align:${s.textAlign}`);
+    if (s.letterSpacing != null && !existing.letterSpacing) parts.push(`letter-spacing:${s.letterSpacing}px`);
+    if (s.lineHeight != null && !existing.lineHeight) parts.push(`line-height:${s.lineHeight}`);
+    if (parts.length) {
+      const existingStyle = node.getAttribute('style') || '';
+      node.setAttribute('style', existingStyle + ';' + parts.join(';'));
+    }
+  });
+  return container.innerHTML;
+}
+
+function assignRichHtmlToFragments(fragments, chain, richHtml, styledHtml, headStyles) {
+  const container = document.createElement('div');
+  container.innerHTML = styledHtml;
+  const blocks = Array.from(container.children);
+  if (!blocks.length) return;
+
+  function cleanText(t) {
+    return (t || '').replace(/[\u200B\u200C\u200D\uFEFF]/g, '').trim();
+  }
+
+  const blockData = blocks.map(el => ({
+    html: el.outerHTML,
+    text: cleanText(el.textContent),
+  }));
+  const fullText = blockData.map(b => b.text).join('');
+
+  let searchPos = 0;
+  for (const box of chain) {
+    const frag = fragments[box.id];
+    if (!frag) continue;
+
+    // Calcular texto plano del fragmento (los fragments no tienen campo 'text')
+    const fragHtml = frag.html || '';
+    const fragText = cleanText(fragHtml.replace(/<[^>]*>/g, ''));
+    if (!fragText) continue;
+
+    const idx = fullText.indexOf(fragText, searchPos);
+    if (idx === -1) continue;
+
+    // Encontrar qué bloques cubre este fragmento
+    let startBlock = -1, endBlock = -1;
+    let charPos = 0;
+    for (let i = 0; i < blockData.length; i++) {
+      const blockLen = blockData[i].text.length;
+      if (startBlock === -1 && charPos <= idx && idx < charPos + blockLen) startBlock = i;
+      if (startBlock !== -1) {
+        if (idx + fragText.length <= charPos + blockLen) {
+          endBlock = i;
+          break;
+        }
+      }
+      charPos += blockLen;
+    }
+    if (startBlock === -1 || endBlock === -1) continue;
+
+    // Verificar alineación exacta con bloques
+    const startInBlock = idx - blockData.slice(0, startBlock).reduce((s, b) => s + b.text.length, 0);
+    const endInBlock = (idx + fragText.length) - blockData.slice(0, endBlock).reduce((s, b) => s + b.text.length, 0);
+    if (startInBlock !== 0 || endInBlock !== blockData[endBlock].text.length) continue;
+
+    const richPart = blockData.slice(startBlock, endBlock + 1).map(b => b.html).join('');
+    frag.html = richPart;
+
+    searchPos = idx + fragText.length;
+  }
+}
 
   const getLinkedTextBoxText = (boxId) => {
     const layout = linkedTextLayoutFromAnyPage(boxId);
@@ -1407,8 +1510,9 @@ const recalculateLinkedTextAllocations = (headId) => {
       ? chain.slice(0, chainIndex).reduce((total, item) => total + Number(item.layout?.h || 0), 0)
       : 0;
 
+    const plainText = fragment.html ? fragment.html.replace(/<[^>]*>/g, '').replace(/[\u200B\u200C\u200D\uFEFF]/g, '') : '';
     return {
-      text: fragment.html ? fragment.html.replace(/<[^>]*>/g, '') : '',
+      text: plainText,
       displayHtml: fragment.html || '',
       overflowHtml,
       fullTextHtml: fragment.fullTextHtml || '',
@@ -1953,11 +2057,11 @@ const extractPlainTextFromHtml = (html = '') => {
   div.innerHTML = html;
   const parts = [];
   for (const child of div.childNodes) {
-      if (child.nodeType === Node.ELEMENT_NODE && /^[ph]\d?$|^div$|^li$|^blockquote$|^pre$/i.test(child.tagName)) {
+    if (child.nodeType === Node.ELEMENT_NODE && /^[ph]\d?$|^div$|^li$|^blockquote$|^pre$/i.test(child.tagName)) {
       parts.push(child.textContent);
     }
   }
-  return parts.join('\n');
+  return parts.join('\n').replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
 };
 
 const normalizeColor = (color) => {
@@ -2133,8 +2237,53 @@ const applyParagraphStyleField = (field, value) => {
     }
 
     if (state.customElements?.[styleSourceId]?.type === 'linkedText') {
+      if (editingElementId.value !== state.selectedElementId) {
+        const headId = getLinkedTextChainHead(styleSourceId);
+        const headElement = linkedTextElementFromAnyPage(headId);
+        if (headElement?.html) {
+          headElement.html = updateInlineStyleInHtml(headElement.html, field, value);
+        }
+      }
       recalculateLinkedTextAllocations(getLinkedTextChainHead(styleSourceId));
     }
+};
+const CSS_PROP_MAP = {
+  fontSize: 'font-size',
+  fontFamily: 'font-family',
+  fontWeight: 'font-weight',
+  color: 'color',
+  italic: 'font-style',
+  underline: 'text-decoration',
+  uppercase: 'text-transform',
+  textAlign: 'text-align',
+  letterSpacing: 'letter-spacing',
+  lineHeight: 'line-height',
+};
+const CSS_VALUE_MAP = {
+  fontWeight: (v) => v === 'bold' ? '700' : (v === 'regular' ? '400' : v),
+  italic: (v) => v ? 'italic' : null,
+  underline: (v) => v ? 'underline' : null,
+  uppercase: (v) => v ? 'uppercase' : null,
+  fontSize: (v) => v != null ? `${v}px` : null,
+  letterSpacing: (v) => v != null ? `${v}px` : null,
+};
+const updateInlineStyleInHtml = (html, field, value) => {
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  const blockNodes = container.querySelectorAll('p,div,li,h1,h2,h3,h4,h5,h6,blockquote,pre');
+  const cssProp = CSS_PROP_MAP[field];
+  if (!cssProp) return html;
+  const cssValue = CSS_VALUE_MAP[field] ? CSS_VALUE_MAP[field](value) : value;
+  blockNodes.forEach((node) => {
+    const existingStyle = node.getAttribute('style') || '';
+    let parts = existingStyle.split(';').map((part) => part.trim()).filter(Boolean);
+    parts = parts.filter((part) => !part.startsWith(cssProp + ':'));
+    if (cssValue !== null) {
+      parts.push(cssProp + ':' + cssValue);
+    }
+    node.setAttribute('style', parts.join(';'));
+  });
+  return container.innerHTML;
 };
 const selectedTextStyle = computed(() => {
     if (!state.selectedElementId) return {};
@@ -2157,7 +2306,9 @@ const selectedTextStyle = computed(() => {
     ...mergedAttrs,
   });
 
-  return new Proxy(attrs, {
+  const CHAR_FIELDS = new Set(['fontWeight', 'italic', 'underline', 'uppercase', 'fontSize', 'fontFamily', 'color']);
+
+    return new Proxy(attrs, {
         get(target, key) {
             return target[key];
         },
@@ -2165,12 +2316,58 @@ const selectedTextStyle = computed(() => {
             if (typeof key !== 'string') return true;
             if (paragraphStyleFields.has(key) && value !== undefined && value !== null && !(typeof value === 'number' && Number.isNaN(value))) {
                 if (target[key] !== value) {
+                    if (editingElementId.value === state.selectedElementId && CHAR_FIELDS.has(key)) {
+                        const editorRef = richEditorRefs.value[state.selectedElementId];
+                        if (editorRef?.applyCharacterStyle) {
+                            const { from, to } = editorRef.getSelection?.() ?? {};
+                            if (from !== undefined && to !== undefined && from !== to) {
+                                editorRef.applyCharacterStyle(key, value);
+                                return true;
+                            }
+                        }
+                    }
                     applyParagraphStyleField(key, value);
                 }
             }
             return true;
         },
     });
+});
+const MIXED_STATE_FIELDS = ['fontFamily', 'fontSize', 'color', 'fontWeight', 'italic', 'underline', 'uppercase', 'textAlign', 'letterSpacing', 'lineHeight'];
+
+const detectMixedState = (styles) => {
+    if (!styles || !styles.length) return {};
+    const result = {};
+    for (const field of MIXED_STATE_FIELDS) {
+        const values = [...new Set(styles.map(s => {
+            const v = s[field];
+            return v === undefined || v === null ? '__NULL__' : String(v);
+        }))];
+        result[field] = values.length > 1 ? 'mixed' : styles[0]?.[field] ?? null;
+    }
+    return result;
+};
+
+const textMixedState = computed(() => {
+    if (!state.selectedElementId) return {};
+    if (editingElementId.value === state.selectedElementId) return {};
+    const editorRef = richEditorRefs.value[state.selectedElementId];
+    if (editorRef?.getMixedState) {
+        const stateFromEditor = editorRef.getMixedState();
+        if (stateFromEditor && Object.keys(stateFromEditor).length) return stateFromEditor;
+    }
+    const el = state.customElements?.[state.selectedElementId];
+    let styles = [];
+    if (el?.type === 'linkedText') {
+        const headId = getLinkedTextChainHead(state.selectedElementId);
+        const headLayout = state.elementLayout?.[headId];
+        const headEl = state.customElements?.[headId];
+        styles = headLayout?.paragraphStyles || headEl?.paragraphStyles || [];
+    } else {
+        const layout = state.elementLayout?.[state.selectedElementId];
+        styles = layout?.paragraphStyles || el?.paragraphStyles || [];
+    }
+    return detectMixedState(styles);
 });
 const paragraphCount = computed(() => {
     if (!selectedElement.value || !state.selectedElementId) return 0;
@@ -2904,14 +3101,7 @@ const onRichEditorHtmlUpdate = (id, html) => {
   const element = linkedTextElementFromAnyPage(id);
   if (!element || element.type !== 'linkedText') return;
 
-  const layout = linkedTextLayoutFromAnyPage(id);
-  if (!layout?.linkedTextGroupId) {
-    syncLinkedTextCanonicalFromHtml(id, html);
-    return;
-  }
-
-  const fragment = linkedTextBoxSystem.getFragmentForBox(layout.linkedTextGroupId, id);
-  syncLinkedTextCanonicalFromHtml(id, `${fragment.prefixHtml || ''}${html || ''}`);
+  syncLinkedTextCanonicalFromHtml(id, html || '');
 };
 
 const addTemplateFieldElement = (fieldKey) => {
@@ -6141,6 +6331,7 @@ watch(
           :has-text-selection="hasTextSelection"
             :selected-property-tabs="selectedPropertyTabs"
             :selected-text-style="selectedTextStyle"
+            :text-mixed-state="textMixedState"
             :toolbar-position="toolbarPosition"
             :mobile-mode="isMobileEditor"
           @cycle-alignment="cycleAlignment"
@@ -6301,7 +6492,7 @@ watch(
                   ]"
                   :style="pageChromeStyle"
                 >
-                <div class="relative z-50 mb-3 flex w-full items-center justify-between text-sm font-semibold text-slate-500 dark:text-slate-300" @pointerdown.stop>
+                <div class="relative z-50 mb-3 flex w-full items-center justify-between text-sm font-semibold text-slate-500 dark:text-slate-300" :class="{ 'opacity-0 pointer-events-none': state.selectedElementId && state.selectedElementId !== 'background' }" @pointerdown.stop>
                   <span>{{ hasMultiplePages ? physicalPageLabel(pageIndex) : '' }}</span>
                   <div class="relative z-50 flex items-center gap-1">
                     <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover página hacia arriba">

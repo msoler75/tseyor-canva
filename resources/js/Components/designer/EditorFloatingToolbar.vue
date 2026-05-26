@@ -23,6 +23,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  textMixedState: {
+    type: Object,
+    default: () => ({}),
+  },
   toolbarPosition: {
     type: Object,
     required: true,
@@ -49,22 +53,28 @@ const toolbarOffsetStyle = computed(() => (
     : { transform: `translateX(${props.toolbarPosition.x}px)` }
 ));
 
-const getTabLabelStyle = (tab, selectedTextStyle) => {
-  if (tab.id === 'color' && tab.label === 'A' && selectedTextStyle?.color) {
-    return { color: selectedTextStyle.color };
+const getTabLabelStyle = (tab, selectedTextStyle, textMixedState) => {
+  if (tab.id === 'color' && tab.label === 'A') {
+    if (textMixedState?.color === 'mixed') {
+      return { background: 'linear-gradient(90deg, #ff0000, #00ff00, #0000ff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' };
+    }
+    if (selectedTextStyle?.color) {
+      return { color: selectedTextStyle.color };
+    }
   }
 
   if (tab.id === 'typography') {
     return {
-      fontFamily: selectedTextStyle.fontFamily || 'inherit',
+      fontFamily: textMixedState?.fontFamily === 'mixed' ? 'inherit' : (selectedTextStyle.fontFamily || 'inherit'),
     };
   }
 
   return {};
 };
 
-const getLabel = (tab, selectedTextStyle) => {
+const getLabel = (tab, selectedTextStyle, textMixedState) => {
   if (tab.id === 'typography') {
+    if (textMixedState?.fontFamily === 'mixed') return 'Varios';
     const name = selectedTextStyle?.fontFamily;
     return name ? name.split(',')[0].replace(/['"]/g, '') : 'Fuente';
   }
@@ -96,9 +106,17 @@ const getTabButtonClasses = (tab, activePropertyPanel) => [
   tab.class,
 ];
 
+const toggleStyleClass = (field, activeValue, mixedState) => {
+  if (mixedState === 'mixed') return 'btn-neutral border-gray-400/50 text-gray-400';
+  const isActive = activeValue === true || activeValue === 'bold';
+  return isActive ? 'btn-accent' : 'btn-outline';
+};
+
+const isMixed = (field) => props.textMixedState?.[field] === 'mixed';
+
 const startFontSizeDrag = (event) => {
   const startY = event.clientY;
-  const startValue = props.selectedTextStyle.fontSize ?? 16;
+  const startValue = isMixed('fontSize') ? 16 : (props.selectedTextStyle.fontSize ?? 16);
   let moved = false;
 
   const onMove = (e) => {
@@ -167,8 +185,8 @@ const startFontSizeDrag = (event) => {
                 v-if="tab.label"
                 class="text-base-100-accent text-[11px] leading-none md:text-sm"
                 :class="tab.labelClass"
-                :style="getTabLabelStyle(tab, selectedTextStyle)"
-              >{{ getLabel(tab, selectedTextStyle) }}</span>
+                :style="getTabLabelStyle(tab, selectedTextStyle, textMixedState)"
+              >{{ getLabel(tab, selectedTextStyle, textMixedState) }}</span>
               <Icon v-if="tab.icon" :icon="tab.icon" class="text-2xl" :class="tab.iconClass"/>
             </button>
 
@@ -180,12 +198,14 @@ const startFontSizeDrag = (event) => {
                   @click="selectedTextStyle.fontSize = Math.max(4, (selectedTextStyle.fontSize ?? 16) - 1)"
                 >−</button>
                 <input
-                  v-model.number="selectedTextStyle.fontSize"
+                  :value="isMixed('fontSize') ? '' : selectedTextStyle.fontSize"
                   type="number"
                   min="4"
                   max="200"
                   step="1"
+                  :placeholder="isMixed('fontSize') ? '—' : ''"
                   class="w-8 h-6 font-semibold text-center [--input-color:var(--color-gray-500)] bg-transparent border-0 px-0 no-spinners"
+                  @input="selectedTextStyle.fontSize = $event.target.value ? Number($event.target.value) : 16"
                   @pointerdown="startFontSizeDrag"
                 />
                 <button
@@ -196,59 +216,59 @@ const startFontSizeDrag = (event) => {
               </div>
 
               <button
-                type="button"
-                class="tooltip tooltip-bottom btn h-16 min-w-20 flex-col gap-0 border-0 px-2 text-lg md:h-auto md:min-w-0"
-                data-tip="Color"
-                :class="[getTabButtonClasses({ id: 'color'}, activePropertyPanel)]"
-                @click="$emit('property-tab-click', { id: 'color' })"
-              >
-                A
-                <div
-                  class="rounded-full w-6 h-2 border border-base-content/70"
-                  :style="{ backgroundColor: selectedTextStyle.color }"
-                ></div>
-              </button>
+                  type="button"
+                  class="tooltip tooltip-bottom btn h-16 min-w-20 flex-col gap-0 border-0 px-2 text-lg md:h-auto md:min-w-0"
+                  data-tip="Color"
+                  :class="[getTabButtonClasses({ id: 'color'}, activePropertyPanel)]"
+                  @click="$emit('property-tab-click', { id: 'color' })"
+                >
+                  A
+                  <div
+                    class="rounded-full w-6 h-2 border border-base-content/70"
+                    :style="isMixed('color') ? { background: 'linear-gradient(90deg, #ff0000, #00ff00, #0000ff)' } : { backgroundColor: selectedTextStyle.color }"
+                  ></div>
+                </button>
 
-              <button
-                type="button"
-                class="tooltip tooltip-bottom hidden btn border-0 text-xl font-bold md:inline-flex"
-                data-tip="Negrita"
-                :class="selectedTextStyle.fontWeight === 'bold' ? 'btn-accent' : 'btn-outline'"
-                @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'"
-              >B</button>
+                <button
+                  type="button"
+                  class="tooltip tooltip-bottom hidden btn border-0 text-xl font-bold md:inline-flex"
+                  data-tip="Negrita"
+                  :class="toggleStyleClass('fontWeight', selectedTextStyle.fontWeight, textMixedState?.fontWeight)"
+                  @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'"
+                >B</button>
 
-              <button
-                type="button"
-                class="tooltip tooltip-bottom hidden btn border-0 text-lg font-thin italic font-serif md:inline-flex"
-                data-tip="Cursiva"
-                :class="selectedTextStyle.italic ? 'btn-accent' : 'btn-outline'"
-                @click="selectedTextStyle.italic = !selectedTextStyle.italic"
-              >I</button>
+                <button
+                  type="button"
+                  class="tooltip tooltip-bottom hidden btn border-0 text-lg font-thin italic font-serif md:inline-flex"
+                  data-tip="Cursiva"
+                  :class="toggleStyleClass('italic', selectedTextStyle.italic, textMixedState?.italic)"
+                  @click="selectedTextStyle.italic = !selectedTextStyle.italic"
+                >I</button>
 
-              <button
-                type="button"
-                class="tooltip tooltip-bottom hidden btn w-10 border-0 text-lg underline md:inline-flex"
-                data-tip="Subrayado"
-                :class="selectedTextStyle.underline ? 'btn-accent' : 'btn-outline'"
-                @click="selectedTextStyle.underline = !selectedTextStyle.underline"
-              >U</button>
+                <button
+                  type="button"
+                  class="tooltip tooltip-bottom hidden btn w-10 border-0 text-lg underline md:inline-flex"
+                  data-tip="Subrayado"
+                  :class="toggleStyleClass('underline', selectedTextStyle.underline, textMixedState?.underline)"
+                  @click="selectedTextStyle.underline = !selectedTextStyle.underline"
+                >U</button>
 
-              <button
-                type="button"
-                class="tooltip tooltip-bottom hidden btn w-10 border-0 text-lg md:inline-flex"
-                data-tip="Mayúsculas"
-                :class="selectedTextStyle.uppercase ? 'btn-accent' : 'btn-outline'"
-                @click="selectedTextStyle.uppercase = !selectedTextStyle.uppercase"
-              >Aa</button>
+                <button
+                  type="button"
+                  class="tooltip tooltip-bottom hidden btn w-10 border-0 text-lg md:inline-flex"
+                  data-tip="Mayúsculas"
+                  :class="toggleStyleClass('uppercase', selectedTextStyle.uppercase, textMixedState?.uppercase)"
+                  @click="selectedTextStyle.uppercase = !selectedTextStyle.uppercase"
+                >Aa</button>
 
-              <button
-                type="button"
-                class="tooltip tooltip-bottom hidden btn w-10 border-0 p-0 text-lg md:inline-flex"
-                data-tip="Alineación"
-                @click="emit('cycle-alignment')"
-              >
-                <Icon :icon="currentAlignmentIcon" class="scale-150" />
-              </button>
+                <button
+                  type="button"
+                  class="tooltip tooltip-bottom hidden btn w-10 border-0 p-0 text-lg md:inline-flex"
+                  data-tip="Alineación"
+                  @click="emit('cycle-alignment')"
+                >
+                  <Icon :icon="isMixed('textAlign') ? 'ph:minus' : currentAlignmentIcon" class="scale-150" />
+                </button>
 
               <button
                 type="button"

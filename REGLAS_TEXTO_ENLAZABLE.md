@@ -135,7 +135,7 @@ El sistema de fragmentación:
 
 ---
 
-### 9. Unicidad de Fuente
+### 9. Unicidad de Fuente y Preservación de Formato
 
 El texto en modo display y modo edición debe verse **idéntico**:
 
@@ -147,6 +147,8 @@ El texto en modo display y modo edición debe verse **idéntico**:
 - Mismo `white-space` y `word-break`
 
 Para garantizar esto, los estilos CSS de `.ProseMirror` (edición) y `.linked-text-display` (display) deben ser **idénticos**.
+
+**Preservación del formato al pegar:** Cuando se pega texto enriquecido, los estilos inline del HTML pegado se **preservan** tanto en el editor como en el modo display. La función `mergeParagraphStylesIntoHtml` ahora **fusiona** los estilos del layout con los inline existentes, en lugar de reemplazarlos. Esto asegura que propiedades como font-size, font-family y color del texto pegado se mantengan visibles al salir del modo edición.
 
 ---
 

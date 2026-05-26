@@ -117,31 +117,44 @@ export function createLinkedTextBoxSystem() {
        }
      );
 
-     // Convertir parrafos a lista plana de unidades distribuibles.
-     // Los parrafos vacios no tienen palabras, asi que necesitan una unidad propia
-     // para ocupar altura real y poder empujar el contenido a la siguiente caja.
-     const allUnits = [];
-     for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
-       const para = paragraphs[pIdx];
-       if (!para.words.length) {
-         allUnits.push({
-           type: 'paragraph',
-           paragraphIndex: pIdx,
-           paragraph: para
-         });
-         continue;
-       }
+      // Convertir parrafos a lista plana de unidades distribuibles.
+      // - Parrafos vacios → unidad 'paragraph' (ocupan altura)
+      // - Texto normal → unidades 'word' (divisibles)
+      // - Listas (ul/ol) → unidades 'li' por cada <li> (atómicas, no se dividen)
+      const allUnits = [];
+      for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+        const para = paragraphs[pIdx];
+        const isList = (para.tag === 'ul' || para.tag === 'ol') && para.items && para.items.length > 0;
 
-       for (let wIdx = 0; wIdx < para.words.length; wIdx++) {
-         allUnits.push({
-           type: 'word',
-           word: para.words[wIdx],
-           paragraphIndex: pIdx,
-           paragraph: para
-         });
-       }
-     }
-     const totalUnits = allUnits.length;
+        if (isList) {
+          for (let iIdx = 0; iIdx < para.items.length; iIdx++) {
+            allUnits.push({
+              type: 'li',
+              paragraphIndex: pIdx,
+              paragraph: para,
+              itemIndex: iIdx,
+              html: para.items[iIdx].html,
+              words: para.items[iIdx].words,
+            });
+          }
+        } else if (!para.words.length) {
+          allUnits.push({
+            type: 'paragraph',
+            paragraphIndex: pIdx,
+            paragraph: para,
+          });
+        } else {
+          for (let wIdx = 0; wIdx < para.words.length; wIdx++) {
+            allUnits.push({
+              type: 'word',
+              word: para.words[wIdx],
+              paragraphIndex: pIdx,
+              paragraph: para,
+            });
+          }
+        }
+      }
+      const totalUnits = allUnits.length;
 
       // Crear UN solo div de medición (reutilizar)
       let measureDiv = document.getElementById('measure');
@@ -258,8 +271,8 @@ export function createLinkedTextBoxSystem() {
           ? styleObjectToCss(style)
           : styleObjectToCss(layout ?? {});
         return mergeCssText(
-          paragraph?.style ?? '',
           merged,
+          paragraph?.style ?? '',
         );
       };
 
@@ -364,83 +377,71 @@ export function createLinkedTextBoxSystem() {
        const escapeAttribute = (value) => escapeHtml(value);
 
        /**
-        * Construir HTML desde un slice de unidades (manteniendo estructura de parrafos).
-        * Incluye parrafos vacios como <br> para que ocupen una altura de linea real
-        * durante la medicion y en el modo display.
-        * @param {Array} unitSlice Array de objetos {type, word, paragraphIndex, paragraph}
-        * @returns {string} HTML con parrafos adecuados
+        * Construir HTML desde un slice de unidades (word + li).
+        * - Unidades word → texto escapado, unido
+        * - Unidades li → html original del <li> (preserva estructura)
+        * - Unidades paragraph (vacíos) → <tag><br></tag>
+        * - Párrafos completos → intenta usar innerHTML original
         */
        const buildHtmlFromUnitSlice = (unitSlice, layout = null) => {
          if (!unitSlice || unitSlice.length === 0) return '';
 
-         const paraIndices = new Set();
+         const grouped = {};
          for (const unit of unitSlice) {
-           paraIndices.add(unit.paragraphIndex);
+           const pIdx = unit.paragraphIndex;
+           if (!grouped[pIdx]) grouped[pIdx] = [];
+           grouped[pIdx].push(unit);
          }
 
-         if (paraIndices.size === 0) return '';
+         const sortedKeys = Object.keys(grouped).map(Number).sort((a, b) => a - b);
+         const htmlParts = [];
 
-         const minParaIdx = Math.min(...paraIndices);
-         const maxParaIdx = Math.max(...paraIndices);
+         for (const pIdx of sortedKeys) {
+           const units = grouped[pIdx];
+           const para = paragraphs[pIdx];
+           if (!para) continue;
 
-         if (paragraphs && minParaIdx <= maxParaIdx && maxParaIdx < paragraphs.length) {
-           const htmlParts = [];
-           let unitIdx = 0;
+           const tag = para.tag || 'p';
+           const style = paragraphCssForIndex(para, pIdx, layout);
+           const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
 
-           for (let idx = minParaIdx; idx <= maxParaIdx; idx++) {
-             const para = paragraphs[idx];
-             const tag = para.tag || 'p';
-             const style = paragraphCssForIndex(para, idx, layout);
-             const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
+           const isList = (para.tag === 'ul' || para.tag === 'ol') && para.items && para.items.length > 0;
 
-             const units = [];
-             while (unitIdx < unitSlice.length && unitSlice[unitIdx].paragraphIndex === idx) {
-               units.push(unitSlice[unitIdx]);
-               unitIdx++;
+           if (isList) {
+             const liUnits = units.filter(u => u.type === 'li');
+             const allItemsPresent = liUnits.length === para.items.length;
+
+             if (allItemsPresent && para.innerHTML) {
+               htmlParts.push(`<${tag}${styleAttr}>${para.innerHTML}</${tag}>`);
+             } else if (liUnits.length > 0) {
+               const lis = liUnits.map(u => u.html).join('');
+               htmlParts.push(`<${tag}${styleAttr}>${lis}</${tag}>`);
+             } else {
+               htmlParts.push(`<${tag}${styleAttr}><br></${tag}>`);
              }
+           } else {
+             const textUnits = units.filter(u => u.type === 'word');
+             const isComplete = !para.words.length || textUnits.length === para.words.length;
 
-             const text = units
-               .filter((unit) => unit.type === 'word')
-               .map((unit) => escapeHtml(unit.word))
-               .join('');
-              const contents = text || '\u200B';
+             let contents;
+             if (isComplete && para.innerHTML) {
+               contents = para.innerHTML;
+             } else if (textUnits.length > 0) {
+               contents = textUnits.map(u => escapeHtml(u.word)).join('') || '\u200B';
+             } else {
+               contents = '<br>';
+             }
              htmlParts.push(`<${tag}${styleAttr}>${contents}</${tag}>`);
            }
-
-           return htmlParts.join('');
          }
 
-         const grouped = [];
-         let currentGroup = null;
-         for (const unit of unitSlice) {
-           if (!currentGroup || currentGroup.paragraphIndex !== unit.paragraphIndex) {
-             currentGroup = {
-               paragraphIndex: unit.paragraphIndex,
-               paragraph: unit.paragraph,
-               words: unit.type === 'word' ? [unit.word] : []
-             };
-             grouped.push(currentGroup);
-           } else if (unit.type === 'word') {
-             currentGroup.words.push(unit.word);
-           }
-         }
-
-         return grouped.map(group => {
-           const para = group.paragraph;
-           const tag = para.tag || 'p';
-           const style = paragraphCssForIndex(para, group.paragraphIndex, layout);
-           const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
-           const text = group.words.map((word) => escapeHtml(word)).join('');
-            const contents = text || '\u200B';
-           return `<${tag}${styleAttr}>${contents}</${tag}>`;
-         }).join('');
+         return htmlParts.join('');
        };
 
-
+       /**
+        * Construir HTML completo con marcador en un unitIndex (word-level).
+        */
        const buildHtmlWithMarkerAtUnitIndex = (markerUnitIndex, layout = null) => {
-         // Marker invisible placed inside the *full* HTML at the exact unit where
-         // the target box starts. Measuring its top against the full document top
-         // gives the real pixel distance to shift the complete TipTap editor.
          const markerHtml = '<span data-linked-text-flow-marker="true" style="display:inline-block;width:0;height:1em;line-height:1;vertical-align:top;overflow:hidden"></span>';
          const htmlParts = [];
          let globalUnitIndex = 0;
@@ -451,24 +452,40 @@ export function createLinkedTextBoxSystem() {
            const tag = para.tag || 'p';
            const style = paragraphCssForIndex(para, idx, layout);
            const styleAttr = style ? ` style="${escapeAttribute(style)}"` : '';
-           const units = allUnits.filter((unit) => unit.paragraphIndex === idx);
+
+           const isList = (para.tag === 'ul' || para.tag === 'ol') && para.items && para.items.length > 0;
            let contents = '';
 
-           if (!units.length) {
+           if (isList) {
+             for (let liIdx = 0; liIdx < para.items.length; liIdx++) {
+               if (!markerPlaced && markerUnitIndex === globalUnitIndex) {
+                 contents += markerHtml;
+                 markerPlaced = true;
+               }
+               contents += para.items[liIdx].html;
+               globalUnitIndex++;
+             }
+             if (!para.items.length) {
+               if (!markerPlaced && markerUnitIndex <= globalUnitIndex) {
+                 contents += markerHtml;
+                 markerPlaced = true;
+               }
+               globalUnitIndex++;
+             }
+           } else if (!para.words.length) {
              if (!markerPlaced && markerUnitIndex <= globalUnitIndex) {
                contents += markerHtml;
                markerPlaced = true;
              }
              contents += '<br>';
+             globalUnitIndex++;
            } else {
-             for (const unit of units) {
+             for (let wIdx = 0; wIdx < para.words.length; wIdx++) {
                if (!markerPlaced && markerUnitIndex === globalUnitIndex) {
                  contents += markerHtml;
                  markerPlaced = true;
                }
-               if (unit.type === 'word') {
-                 contents += escapeHtml(unit.word);
-               }
+               contents += escapeHtml(para.words[wIdx]);
                globalUnitIndex++;
              }
            }
@@ -488,17 +505,16 @@ export function createLinkedTextBoxSystem() {
          return htmlParts.join('');
        };
 
+       /**
+        * Medir el offset del editor (altura del prefijo antes de esta caja).
+        * Usa unitIndex (word-level) para colocar el marcador.
+        */
        const measureEditorTopOffset = (measureNode, splitUnitIndex, fallbackHtml, layout = null) => {
          if (!measureNode || splitUnitIndex <= 0) return 0;
 
-         // Fallback/base: rendered height of the exact prefix that belongs before
-         // this box. This is already a real DOM pixel measurement, not a line count.
          measureNode.innerHTML = fallbackHtml;
          const prefixHeight = measureNode.offsetHeight || 0;
 
-         // More exact marker pass: measure the top of the start marker inside the
-         // full document. Some inline marker edge cases can report the previous
-         // line, so keep the larger real measurement.
          measureNode.innerHTML = buildHtmlWithMarkerAtUnitIndex(splitUnitIndex, layout);
          const marker = measureNode.querySelector('[data-linked-text-flow-marker="true"]');
          if (marker) {
@@ -512,14 +528,14 @@ export function createLinkedTextBoxSystem() {
        // Procesar cada caja en la cadena secuencialmente
       let unitIdx = 0; // indice de la proxima unidad a colocar
       chainLayouts.forEach((layout, boxIndex) => {
-        // Si ya no quedan palabras, la caja actual y las siguientes quedan vacías
+        // Si ya no quedan unidades, la caja actual y las siguientes quedan vacías
         if (unitIdx >= totalUnits) {
           system.fragments[layout.id] = {
             html: '',
             overflowHtml: '',
-            fullTextHtml: '',
+            fullTextHtml: buildHtmlFromUnitSlice(allUnits, layout),
             tailHtml: '',
-            prefixHtml: '',
+            prefixHtml: buildHtmlFromUnitSlice(allUnits, layout),
             editorTopOffset: 0,
             editorTextOffset: 0,
             fitsInBox: true
@@ -533,11 +549,10 @@ export function createLinkedTextBoxSystem() {
         // Configurar el div de medición para esta caja (clonar o fallback)
         const measureNode = setupMeasureDiv(layout);
         if (!measureNode) {
-          // Si no hay nodo, no podemos medir
           system.fragments[layout.id] = {
             html: '',
             overflowHtml: buildHtmlFromUnitSlice(allUnits.slice(unitIdx), layout),
-            fullTextHtml: '',
+            fullTextHtml: buildHtmlFromUnitSlice(allUnits, layout),
             tailHtml: buildHtmlFromUnitSlice(inputSlice, layout),
             prefixHtml: buildHtmlFromUnitSlice(allUnits.slice(0, unitIdx), layout),
             editorTopOffset: 0,
@@ -564,15 +579,13 @@ export function createLinkedTextBoxSystem() {
           const mid = Math.floor((left + right) / 2);
           const testSlice = allUnits.slice(unitIdx, unitIdx + mid);
           const html = buildHtmlFromUnitSlice(testSlice, layout);
-          measureNode.innerHTML = html;  // Usar el NODO retornado por setupMeasureDiv
+          measureNode.innerHTML = html;
           const height = measureNode.offsetHeight;
 
           if (height <= maxHeight) {
-            // Cabe: intentar con más palabras
             bestFit = mid;
             left = mid + 1;
           } else {
-            // No cabe: intentar con menos unidades
             right = mid - 1;
           }
         }
@@ -583,12 +596,16 @@ export function createLinkedTextBoxSystem() {
 
         // Eliminar tokens de espacio al final de la porción visible y al inicio del overflow
         const visibleSlice = [...rawVisibleSlice];
-        while (visibleSlice.length > 0 && /^\s+$/.test(visibleSlice[visibleSlice.length - 1]?.word || '')) {
+        while (visibleSlice.length > 0
+          && visibleSlice[visibleSlice.length - 1]?.type === 'word'
+          && /^\s+$/.test(visibleSlice[visibleSlice.length - 1]?.word || '')) {
           visibleSlice.pop();
         }
         const overflowSlice = [...rawOverflowSlice];
         let leadingSpaces = 0;
-        while (overflowSlice.length > 0 && /^\s+$/.test(overflowSlice[0]?.word || '')) {
+        while (overflowSlice.length > 0
+          && overflowSlice[0]?.type === 'word'
+          && /^\s+$/.test(overflowSlice[0]?.word || '')) {
           overflowSlice.shift();
           leadingSpaces++;
         }
@@ -596,31 +613,26 @@ export function createLinkedTextBoxSystem() {
         const visibleHtml = buildHtmlFromUnitSlice(visibleSlice, layout);
 
         // REGLA: Si la caja tiene enlace siguiente, NUNCA tiene overflowHtml
-        // (el texto que no cabe pasa a la siguiente caja, no es "overflow" de esta)
-        const isLastInChain = !layout.linkedTextNext; // true si NO tiene enlace siguiente (es la última)
-        const overflowHtml = isLastInChain ? buildHtmlFromUnitSlice(overflowSlice, layout) : ''; // Solo la última caja puede tener overflow
+        const isLastInChain = !layout.linkedTextNext;
+        const overflowHtml = isLastInChain ? buildHtmlFromUnitSlice(overflowSlice, layout) : '';
 
-        const fullTextHtml = buildHtmlFromUnitSlice(allUnits, layout); // Documento completo de toda la secuencia (para capa inferior)
-        const tailHtml = buildHtmlFromUnitSlice(inputSlice, layout); // Texto desde esta caja hasta el final (inputSlice = allUnits.slice(unitIdx))
-        // fitsInBox: true solo si es la última caja Y no hay más palabras después
+        const fullTextHtml = buildHtmlFromUnitSlice(allUnits, layout);
+        const tailHtml = buildHtmlFromUnitSlice(inputSlice, layout);
         const fitsInBox = isLastInChain && (unitIdx + fitUnits) >= totalUnits;
 
-        // Asignar fragmento a esta caja
         system.fragments[layout.id] = {
           html: visibleHtml,
           overflowHtml: overflowHtml,
-          fullTextHtml: fullTextHtml, // Texto completo para capa inferior (sin límite de altura)
-          tailHtml: tailHtml,         // Texto desde el inicio de esta caja hasta el final del documento
-          prefixHtml: prefixHtml,     // Texto desde el inicio del documento hasta antes de esta caja
+          fullTextHtml: fullTextHtml,
+          tailHtml: tailHtml,
+          prefixHtml: prefixHtml,
           editorTopOffset,
           editorTextOffset,
           fitsInBox: fitsInBox
         };
 
-        // Actualizar índice para la siguiente caja, saltando espacios descartados en frontera
         unitIdx += fitUnits + leadingSpaces;
 
-        // Log para esta caja (opcional)
         frontendLog.info('boxFragment',
           `Caja ${boxIndex + 1}: ${fitUnits}/${totalUnits - (unitIdx - fitUnits)} unidades caben`,
           {
@@ -654,27 +666,46 @@ export function createLinkedTextBoxSystem() {
           if (text && text.trim()) {
             paragraphs.push({
               style: '',
+              tag: 'p',
               words: tokenizeText(text),
+              innerHTML: text,
             });
           }
         } else if (node.nodeType === Node.ELEMENT_NODE) {
           const style = node.getAttribute('style') || '';
           const tag = node.tagName.toLowerCase();
           const text = node.textContent;
+          const innerHtml = node.innerHTML || '';
 
-          // Incluir párrafos vacíos (presionar ENTER crea párrafos vacíos)
-          // Los párrafos vacíos empujan el contenido hacia la siguiente caja
-          if (!text || !text.trim()) {
+          if ((tag === 'ul' || tag === 'ol') && node.children.length > 0) {
+            const items = [];
+            const liNodes = node.querySelectorAll(':scope > li');
+            for (const li of liNodes) {
+              items.push({
+                html: li.outerHTML,
+                words: tokenizeText(li.textContent),
+              });
+            }
+            paragraphs.push({
+              style,
+              tag,
+              words: tokenizeText(text),
+              innerHTML: innerHtml,
+              items,
+            });
+          } else if (!text || !text.trim()) {
             paragraphs.push({
               style,
               words: [],
               tag,
+              innerHTML: innerHtml || '',
             });
           } else {
             paragraphs.push({
               style,
               words: tokenizeText(text),
               tag,
+              innerHTML: innerHtml || '',
             });
           }
         }
@@ -715,17 +746,18 @@ export function createLinkedTextBoxSystem() {
     * Construir HTML desde array de párrafos
     * Las palabras ya incluyen signos y espacios como tokens independientes
     */
-   function buildHtmlFromParagraphs(paragraphs) {
-     if (!paragraphs || paragraphs.length === 0) return '';
-     return paragraphs.map(para => {
-       const tag = para.tag || 'p';
-       const style = para.style || '';
-       const styleAttr = style ? ` style="${style}"` : '';
-       // Unir sin espacios extra (los espacios ya son tokens)
-       const text = para.words ? para.words.join('') : '';
-       return `<${tag}${styleAttr}>${text}</${tag}>`;
-     }).join('');
-   }
+    function buildHtmlFromParagraphs(paragraphs) {
+      if (!paragraphs || paragraphs.length === 0) return '';
+      return paragraphs.map(para => {
+        const tag = para.tag || 'p';
+        const style = para.style || '';
+        const styleAttr = style ? ` style="${style}"` : '';
+        // Usar innerHTML original si está disponible (preserva formato inline),
+        // de lo contrario unir tokens de texto
+        const content = para.innerHTML ? para.innerHTML : (para.words ? para.words.join('') : '');
+        return `<${tag}${styleAttr}>${content}</${tag}>`;
+      }).join('');
+    }
 
 
   function applyContainerStyles(el, containerStyle) {

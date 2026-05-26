@@ -399,8 +399,8 @@ const isLinkedTextChainActive = (boxId) => {
                 : (linkedTextLink?.active && linkedTextLink.hoverTargetId === item.id
                     ? 'z-40 ring-2 ring-emerald-400/70 bg-emerald-400/15'
                     : 'z-10'))),
-            (item.type === 'linkedText' || item.type === 'text') && !item.text?.trim() && editingElementId !== item.id ? 'text-empty-box' : '']"
-            :style="[elementBoxStyle(item.id), (item.type === 'linkedText' || item.type === 'text') && !item.text?.trim() && editingElementId !== item.id ? { outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: '-1px' } : {}, item.type === 'linkedText' && editingElementId === item.id ? { overflow: 'hidden' } : {}]"
+            (item.type === 'linkedText' || item.type === 'text') && !item.text?.trim() && editingElementId !== item.id ? 'z-20' : '']"
+            :style="[elementBoxStyle(item.id), (item.type === 'linkedText' || item.type === 'text') && !item.text?.trim() && editingElementId !== item.id ? { outline: '2px dashed rgba(14,165,233,0.5)', outlineOffset: '0px' } : {}, item.type === 'linkedText' && editingElementId === item.id ? { overflow: 'hidden' } : {}]"
           @click="emit('elementClick', { event: $event, id: item.id })"
           @pointerdown="emit('elementPointerDown', { event: $event, id: item.id })"
           @mouseenter="item.fieldKey && emit('fieldHover', item.fieldKey)"

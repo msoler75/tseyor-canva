@@ -520,3 +520,44 @@ En cajas de texto enlazable, si el portapapeles contiene HTML con formato, se mu
 - **Pegar sin formato**: se intercepta el paste y se inserta texto plano normalizado (\r\n -> \n).
 
 Objetivo: preservar formato en la medida de lo posible, con control explícito del usuario cuando hay contenido rico.
+
+## 12. Preservación de estilos inline en `mergeParagraphStylesIntoHtml`
+
+### Problema original
+
+La función `mergeParagraphStylesIntoHtml` (EditorPage.vue:1382) **reemplazaba** completamente el atributo `style` de cada bloque HTML con los valores del `paragraphStyles` del layout. Esto causaba que el formato inline del texto pegado (font-size, font-family, color, etc.) se perdiera al salir del modo edición, ya que:
+
+1. El usuario pega texto con formato rico (ej: fuente Arial 24px)
+2. Durante la edición, TipTap muestra el formato correcto
+3. Al salir, `assignRichHtmlToFragments` aplica `mergeParagraphStylesIntoHtml` que **sobrescribe** los estilos inline
+4. El modo display muestra el texto con los estilos del layout, perdiendo el formato pegado
+
+### Fix aplicado
+
+`mergeParagraphStylesIntoHtml` ahora **fusiona** los estilos del layout con los existentes:
+
+- Solo aplica una propiedad del layout si **no está ya definida** en el estilo inline del bloque
+- Las propiedades existentes del HTML pegado tienen prioridad
+- Las propiedades faltantes se completan con los valores del layout
+
+```javascript
+// Antes (reemplazaba todo):
+node.setAttribute('style', parts.join(';'));
+
+// Después (fusiona, preserva existente):
+if (parts.length) {
+    const existingStyle = node.getAttribute('style') || '';
+    node.setAttribute('style', existingStyle + ';' + parts.join(';'));
+}
+```
+
+### Efecto visual
+
+| Escenario | Antes del fix | Después del fix |
+|---|---|---|
+| Pegar Arial 24px | Al salir, texto se veía con Poppins 18px (layout) | Texto se ve con Arial 24px (como se pegó) |
+| Pegar texto con color rojo | Color se perdía, mostraba color del layout | Color rojo se preserva |
+
+## 13. Eliminación de la capa base (`linked-text-base-layer`)
+
+Se eliminó la capa visual base que mostraba el `tailHtml` como texto gris semitransparente debajo del editor. Anteriormente se usaba una arquitectura de dos capas (base + display) para visualizar el overflow. Ahora la funcionalidad de `tailHtml` se mantiene como dato/prop para usos internos, pero la representación visual de la capa base fue removida por innecesaria.
