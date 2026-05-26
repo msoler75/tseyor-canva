@@ -5422,27 +5422,35 @@ watch(
   { deep: true }
 );
 
-const handleBeforeUnload = () => {
+const handleBeforeUnload = (event) => {
   syncActivePageSnapshot();
   const snapshot = JSON.parse(JSON.stringify(state));
   const payload = { state: snapshot };
   const csrfMeta = document.querySelector('meta[name="csrf-token"]');
   const csrfToken = csrfMeta?.getAttribute('content') ?? '';
   try {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', saveEndpoint, false);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.setRequestHeader('Accept', 'application/json');
-    xhr.setRequestHeader('X-CSRF-TOKEN', csrfToken);
-    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-    xhr.send(JSON.stringify(payload));
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    navigator.sendBeacon(saveEndpoint, blob);
   } catch (_) {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', saveEndpoint, false);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.setRequestHeader('X-CSRF-TOKEN', csrfToken);
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+      xhr.send(JSON.stringify(payload));
+    } catch (_2) {
+    }
   }
 };
 
-onBeforeUnmount(() => {
+onBeforeUnmount(async () => {
   syncActivePageSnapshot();
-  flushDesignerStatePersistence();
+  try {
+    await flushDesignerStatePersistence();
+  } catch (_) {
+  }
   window.removeEventListener('beforeunload', handleBeforeUnload);
   editorViewportQuery?.removeEventListener?.('change', syncEditorViewport);
   editorViewportQuery = null;

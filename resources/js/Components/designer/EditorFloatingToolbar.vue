@@ -151,7 +151,7 @@ const startFontSizeDrag = (event) => {
 <template>
   <div
     data-editor-keep-selection="true"
-    class="pointer-events-none fixed inset-x-2 bottom-2 z-[70] flex justify-center md:absolute md:inset-x-auto md:bottom-auto md:z-50"
+    class="pointer-events-none fixed inset-x-2 bottom-2 z-[300] flex justify-center md:absolute md:inset-x-auto md:bottom-auto md:z-[300]"
     :style="toolbarShellStyle"
   >
     <div :style="toolbarOffsetStyle" class="pointer-events-none max-w-full">
