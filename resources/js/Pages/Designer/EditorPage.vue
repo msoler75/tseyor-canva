@@ -4356,6 +4356,7 @@ const updateElementMeasurement = (id, node) => {
       } else if (isBrochure) {
         // Panel derecho → panel izquierdo de la SIGUIENTE página física
         targetPage = state.pages[currentPageIndex + 1];
+        if (!targetPage) targetPage = state.pages[0]; // última página → volver a la primera (brochure final)
         cloneX = (sourceLayout.x ?? 0) - halfWidth;
       } else {
         // Documento normal → siguiente página
