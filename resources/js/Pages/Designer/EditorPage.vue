@@ -483,7 +483,13 @@ const deleteDocumentPage = async (pageId) => {
   refreshDocumentPageList();
   documentRevision.value += 1;
   await nextTick();
-  flushDesignerStateWithThumbnail();
+  syncActivePageSnapshot();
+  try {
+    await flushDesignerStatePersistence();
+  } catch (error) {
+    console.error('No se pudo guardar el estado después de eliminar página', error);
+  }
+  generateThumbnailAndThen(() => {});
 };
 ensureDocumentPages(true);
 refreshDocumentPageList();
@@ -1148,6 +1154,10 @@ const rotateCanvasPoint = (x, y, cx, cy, angleDeg = 0) => {
   };
 };
 
+const triggerCrossPageSave = () => {
+  state.elementLayout = Object.assign({}, state.elementLayout);
+};
+
 const linkedTextSetLayoutField = (id, field, value) => {
   if (state.elementLayout?.[id]) {
     state.elementLayout[id][field] = value;
@@ -1156,6 +1166,7 @@ const linkedTextSetLayoutField = (id, field, value) => {
   for (const page of state.pages) {
     if (page.elementLayout?.[id]) {
       page.elementLayout[id][field] = value;
+      triggerCrossPageSave();
       return;
     }
   }
@@ -1169,6 +1180,7 @@ const linkedTextSetElementField = (id, field, value) => {
   for (const page of state.pages) {
     if (page.customElements?.[id]) {
       page.customElements[id][field] = value;
+      triggerCrossPageSave();
       return;
     }
   }
@@ -1538,19 +1550,20 @@ const editorElements = computed(() => {
     const linkedTextBoxData = element.type === 'linkedText' ? getLinkedTextBoxText(id) : null;
     const linkedTextStyleSourceId = element.type === 'linkedText' ? getLinkedTextStyleSourceId(id) : id;
     const linkedTextStyleSourceLayout = linkedTextLayoutFromAnyPage(linkedTextStyleSourceId) ?? null;
+    const linkedHeadId = element.type === 'linkedText' ? getLinkedTextChainHead(id) : null;
 
-    // Regla 3: Si está en edición, el texto debe ser el COMPLETO (del head), no el fragmento
     let elementText;
     if (element.type === 'text') {
       elementText = linkedFieldText(element.fieldKey, element.text ?? '');
     } else if (element.type === 'linkedText') {
       if (isBeingEdited) {
-        // En edición: usar el texto completo del head
-        const headId = getLinkedTextChainHead(id);
-        const headElement = state.customElements[headId];
-        elementText = headElement?.text ?? '';
+        if (linkedHeadId === id) {
+          const headElement = linkedTextElementFromAnyPage(linkedHeadId);
+          elementText = headElement?.text ?? '';
+        } else {
+          elementText = linkedTextBoxData?.tailHtml?.replace(/<[^>]*>/g, '') ?? '';
+        }
       } else {
-        // En display: usar el fragmento
         elementText = linkedTextBoxData?.text ?? '';
       }
     } else {
@@ -1569,11 +1582,11 @@ const editorElements = computed(() => {
         : null,
       linkedTextDisplayHtml: element.type === 'linkedText' ? (linkedTextBoxData?.displayHtml ?? '') : '',
       linkedTextOverflowHtml: element.type === 'linkedText' ? (linkedTextBoxData?.overflowHtml ?? '') : '',
-      linkedTextFullTextHtml: element.type === 'linkedText' ? (linkedTextBoxData?.fullTextHtml ?? '') : '',
+      linkedTextFullTextHtml: element.type === 'linkedText' ? (isBeingEdited && linkedHeadId !== id ? (linkedTextBoxData?.tailHtml ?? '') : (linkedTextBoxData?.fullTextHtml ?? '')) : '',
       linkedTextTailHtml: element.type === 'linkedText' ? (linkedTextBoxData?.tailHtml ?? '') : '',
       linkedTextInitialHtml: element.type === 'linkedText' && isBeingEdited ? (linkedTextBoxData?.tailHtml ?? '') : '',
-      linkedTextEditorTopOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTopOffset ?? 0) : 0,
-      linkedTextEditorTextOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTextOffset ?? 0) : 0,
+      linkedTextEditorTopOffset: element.type === 'linkedText' ? (isBeingEdited && linkedHeadId !== id ? 0 : (linkedTextBoxData?.editorTopOffset ?? 0)) : 0,
+      linkedTextEditorTextOffset: element.type === 'linkedText' ? (isBeingEdited && linkedHeadId !== id ? 0 : (linkedTextBoxData?.editorTextOffset ?? 0)) : 0,
       linkedTextIsLastInChain: element.type === 'linkedText' ? (linkedTextBoxData?.isLastInChain ?? false) : false,
       src: element.type === 'image' ? element.src : null,
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
@@ -1654,15 +1667,19 @@ const editorElementsForPage = (pageState) => {
     const linkedTextBoxData = element.type === 'linkedText' ? getLinkedTextBoxText(id) : null;
     const linkedTextStyleSourceId = element.type === 'linkedText' ? getLinkedTextStyleSourceId(id) : id;
     const linkedTextStyleSourceLayout = linkedTextLayoutFromAnyPage(linkedTextStyleSourceId) ?? layout[linkedTextStyleSourceId] ?? null;
+    const linkedHeadId = element.type === 'linkedText' ? getLinkedTextChainHead(id) : null;
 
     let elementText;
     if (element.type === 'text') {
       elementText = linkedPageFieldText(content, element.fieldKey, element.text ?? '');
     } else if (element.type === 'linkedText') {
       if (isBeingEdited) {
-        const headId = getLinkedTextChainHead(id);
-        const headElement = linkedTextElementFromAnyPage(headId);
-        elementText = headElement?.text ?? '';
+        if (linkedHeadId === id) {
+          const headElement = linkedTextElementFromAnyPage(linkedHeadId);
+          elementText = headElement?.text ?? '';
+        } else {
+          elementText = linkedTextBoxData?.tailHtml?.replace(/<[^>]*>/g, '') ?? '';
+        }
       } else {
         elementText = linkedTextBoxData?.text ?? '';
       }
@@ -1682,11 +1699,11 @@ const editorElementsForPage = (pageState) => {
         : null,
       linkedTextDisplayHtml: element.type === 'linkedText' ? (linkedTextBoxData?.displayHtml ?? '') : '',
       linkedTextOverflowHtml: element.type === 'linkedText' ? (linkedTextBoxData?.overflowHtml ?? '') : '',
-      linkedTextFullTextHtml: element.type === 'linkedText' ? (linkedTextBoxData?.fullTextHtml ?? '') : '',
+      linkedTextFullTextHtml: element.type === 'linkedText' ? (isBeingEdited && linkedHeadId !== id ? (linkedTextBoxData?.tailHtml ?? '') : (linkedTextBoxData?.fullTextHtml ?? '')) : '',
       linkedTextTailHtml: element.type === 'linkedText' ? (linkedTextBoxData?.tailHtml ?? '') : '',
       linkedTextInitialHtml: element.type === 'linkedText' && isBeingEdited ? (linkedTextBoxData?.tailHtml ?? '') : '',
-      linkedTextEditorTopOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTopOffset ?? 0) : 0,
-      linkedTextEditorTextOffset: element.type === 'linkedText' ? (linkedTextBoxData?.editorTextOffset ?? 0) : 0,
+      linkedTextEditorTopOffset: element.type === 'linkedText' ? (isBeingEdited && linkedHeadId !== id ? 0 : (linkedTextBoxData?.editorTopOffset ?? 0)) : 0,
+      linkedTextEditorTextOffset: element.type === 'linkedText' ? (isBeingEdited && linkedHeadId !== id ? 0 : (linkedTextBoxData?.editorTextOffset ?? 0)) : 0,
       linkedTextIsLastInChain: element.type === 'linkedText' ? (linkedTextBoxData?.isLastInChain ?? false) : false,
       src: element.type === 'image' ? element.src : null,
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
@@ -2153,7 +2170,14 @@ const syncLinkedTextCanonicalFromHtml = (id, html = '') => {
   const headElement = linkedTextElementFromAnyPage(headId);
   if (!headElement || headElement.type !== 'linkedText') return;
 
-  const canonicalHtml = String(html ?? '');
+  let canonicalHtml = String(html ?? '');
+
+  if (headId !== id) {
+    const linkedTextBoxData = getLinkedTextBoxText(id);
+    const prefix = linkedTextBoxData?.prefixHtml ?? '';
+    canonicalHtml = prefix + canonicalHtml;
+  }
+
   linkedTextSetElementField(headId, 'html', canonicalHtml);
   linkedTextSetElementField(headId, 'text', extractPlainTextFromHtml(canonicalHtml));
 

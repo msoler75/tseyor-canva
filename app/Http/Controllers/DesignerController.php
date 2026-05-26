@@ -612,21 +612,10 @@ class DesignerController extends Controller
             $state['stateRevision'] = $this->nextRevision($existingRevision, $incomingRevision);
             $state['currentDesignUuid'] = $design->uuid;
 
-            $existingState = $design->state ?? [];
-            $existingPages = is_array($existingState['pages'] ?? null) ? $existingState['pages'] : [];
-            $incomingPages = is_array($state['pages'] ?? null) ? $state['pages'] : [];
-            $existingById = [];
-            foreach ($existingPages as $ep) {
-                if (isset($ep['id'])) {
-                    $existingById[$ep['id']] = $ep;
-                }
+            if (! isset($state['pages']) || ! is_array($state['pages'])) {
+                $existingState = $design->state ?? [];
+                $state['pages'] = $existingState['pages'] ?? [];
             }
-            foreach ($incomingPages as $ip) {
-                if (isset($ip['id'])) {
-                    $existingById[$ip['id']] = $ip;
-                }
-            }
-            $state['pages'] = array_values($existingById);
 
             $design->fill([
                 'name' => trim((string) ($state['designTitle'] ?? '')) ?: 'Diseño sin título',
