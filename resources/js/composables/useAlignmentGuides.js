@@ -241,34 +241,49 @@ export const useAlignmentGuides = ({
 
   const snapToGuides = (dragBounds) => {
     const guideLines = findAlignmentGuides(dragBounds, 'move');
-    let dx = 0;
-    let dy = 0;
+    let bestDx = 0, bestDy = 0;
+    let bestVScore = 0, bestHScore = 0;
+    let bestVDist = Infinity, bestHDist = Infinity;
 
     for (const guide of guideLines) {
       if (guide.type === 'vertical') {
+        const gX = guide.x;
         const candidates = [
-          { edge: 'left', dist: guide.x - dragBounds.x },
-          { edge: 'right', dist: guide.x - (dragBounds.x + dragBounds.w) },
-          { edge: 'center', dist: guide.x - (dragBounds.x + dragBounds.w / 2) },
+          { edge: 'left', dist: gX - dragBounds.x },
+          { edge: 'right', dist: gX - (dragBounds.x + dragBounds.w) },
+          { edge: 'center', dist: gX - (dragBounds.x + dragBounds.w / 2) },
         ];
-        candidates.sort((a, b) => Math.abs(a.dist) - Math.abs(b.dist));
-        if (Math.abs(candidates[0].dist) <= SNAP_THRESHOLD && Math.abs(candidates[0].dist) < Math.abs(dx)) {
-          dx = candidates[0].dist;
+        const within = candidates.filter(c => Math.abs(c.dist) <= SNAP_THRESHOLD);
+        const score = within.length;
+        if (!score) continue;
+        const closest = within.reduce((a, b) => Math.abs(a.dist) < Math.abs(b.dist) ? a : b);
+        const absDist = Math.abs(closest.dist);
+        if (score > bestVScore || (score === bestVScore && absDist < bestVDist)) {
+          bestVScore = score;
+          bestVDist = absDist;
+          bestDx = closest.dist;
         }
       } else {
+        const gY = guide.y;
         const candidates = [
-          { edge: 'top', dist: guide.y - dragBounds.y },
-          { edge: 'bottom', dist: guide.y - (dragBounds.y + dragBounds.h) },
-          { edge: 'center', dist: guide.y - (dragBounds.y + dragBounds.h / 2) },
+          { edge: 'top', dist: gY - dragBounds.y },
+          { edge: 'bottom', dist: gY - (dragBounds.y + dragBounds.h) },
+          { edge: 'center', dist: gY - (dragBounds.y + dragBounds.h / 2) },
         ];
-        candidates.sort((a, b) => Math.abs(a.dist) - Math.abs(b.dist));
-        if (Math.abs(candidates[0].dist) <= SNAP_THRESHOLD && Math.abs(candidates[0].dist) < Math.abs(dy)) {
-          dy = candidates[0].dist;
+        const within = candidates.filter(c => Math.abs(c.dist) <= SNAP_THRESHOLD);
+        const score = within.length;
+        if (!score) continue;
+        const closest = within.reduce((a, b) => Math.abs(a.dist) < Math.abs(b.dist) ? a : b);
+        const absDist = Math.abs(closest.dist);
+        if (score > bestHScore || (score === bestHScore && absDist < bestHDist)) {
+          bestHScore = score;
+          bestHDist = absDist;
+          bestDy = closest.dist;
         }
       }
     }
 
-    return { dx, dy };
+    return { dx: bestDx, dy: bestDy };
   };
 
   const snapBoundsForResize = (dragBounds, handle) => {
