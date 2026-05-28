@@ -1047,6 +1047,44 @@ const {
   visuallyFocusedPageId,
 });
 
+if (import.meta.env.DEV) {
+  window.__TEST__ = {
+    undo: () => performUndo(),
+    redo: () => performRedo(),
+    pushSnapshot: (opts) => pushHistorySnapshot(opts),
+    getRawState: () => state,
+    getSnapshot: () => {
+      const st = state;
+      return JSON.parse(JSON.stringify({
+        content: st.content,
+        elementLayout: st.elementLayout,
+        customElements: st.customElements,
+        pages: st.pages,
+        format: st.format,
+        size: st.size,
+        designSurface: st.designSurface,
+        objective: st.objective,
+        outputType: st.outputType,
+        designTitle: st.designTitle,
+        designTitleManual: st.designTitleManual,
+        selectedElementId: st.selectedElementId,
+        workingDocumentPageId: workingDocumentPageId?.value ?? null,
+        activePageId: activePageId?.value ?? null,
+      }));
+    },
+    canUndo: () => canUndo.value,
+    canRedo: () => canRedo.value,
+    // Helper: push initial baseline, mutate without watcher interference, then capture
+    saveAndMutate: (code) => {
+      pushHistorySnapshot({ force: true });
+      mutateWithoutHistory(() => {
+        const fn = new Function('state', code);
+        fn(state);
+      });
+    },
+  };
+}
+
 const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
 const isTemplateBaseEditor = computed(() => Boolean(
   backendTemplateBaseMode.value
