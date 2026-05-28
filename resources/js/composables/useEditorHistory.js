@@ -51,6 +51,12 @@ export const useEditorHistory = ({
   clearSelection,
   baseElementLabels,
   contentFieldLabels,
+  syncActivePageSnapshot,
+  refreshDocumentPageList,
+  ensureDocumentPages,
+  workingDocumentPageId,
+  activePageId,
+  visuallyFocusedPageId,
 }) => {
   const historyStack = ref([]);
   const historyMeta = ref([]);
@@ -59,11 +65,24 @@ export const useEditorHistory = ({
   const historyMuted = ref(false);
   let historyTimer = null;
 
-  const buildHistorySnapshot = () => ({
-    content: cloneSnapshotValue(state.content ?? {}),
-    elementLayout: cloneSnapshotValue(state.elementLayout ?? {}),
-    customElements: cloneSnapshotValue(state.customElements ?? {}),
-  });
+  const buildHistorySnapshot = () => {
+    syncActivePageSnapshot?.();
+    return {
+      content: cloneSnapshotValue(state.content ?? {}),
+      elementLayout: cloneSnapshotValue(state.elementLayout ?? {}),
+      customElements: cloneSnapshotValue(state.customElements ?? {}),
+      pages: cloneSnapshotValue(state.pages ?? []),
+      workingDocumentPageId: workingDocumentPageId?.value ?? null,
+      selectedElementId: state.selectedElementId ?? null,
+      format: state.format ?? null,
+      size: state.size ?? null,
+      designSurface: cloneSnapshotValue(state.designSurface ?? null),
+      objective: state.objective ?? null,
+      outputType: state.outputType ?? null,
+      designTitle: state.designTitle ?? null,
+      designTitleManual: state.designTitleManual ?? false,
+    };
+  };
 
   const getHistoryElementLabel = (snapshot, elementId) => {
     if (baseElementLabels[elementId]) {
@@ -209,19 +228,6 @@ export const useEditorHistory = ({
     historyIndex.value = historyStack.value.length - 1;
   };
 
-  const scheduleHistorySnapshot = () => {
-    if (historyApplying.value || historyMuted.value) return;
-
-    if (historyTimer) {
-      clearTimeout(historyTimer);
-    }
-
-    historyTimer = setTimeout(() => {
-      pushHistorySnapshot({ allowCoalesce: true });
-      historyTimer = null;
-    }, 180);
-  };
-
   const applyHistorySnapshot = (snapshot) => {
     if (historyTimer) {
       clearTimeout(historyTimer);
@@ -232,9 +238,39 @@ export const useEditorHistory = ({
     linkedTextBoxSystem.resetAllSystems();
     historyApplying.value = true;
 
-    state.content = cloneSnapshotValue(snapshot.content ?? {});
-    state.elementLayout = cloneSnapshotValue(snapshot.elementLayout ?? {});
-    state.customElements = Object.fromEntries(Object.entries(cloneSnapshotValue(snapshot.customElements ?? {})));
+    state.pages = cloneSnapshotValue(snapshot.pages ?? []);
+
+    const restoredPageId = snapshot.workingDocumentPageId;
+    const restoredPageExists = restoredPageId && state.pages.some((p) => p.id === restoredPageId);
+    const pagesValid = state.pages.length > 0 && restoredPageExists;
+
+    if (!pagesValid) {
+      ensureDocumentPages?.(true);
+    } else {
+      state.content = cloneSnapshotValue(snapshot.content ?? {});
+      state.elementLayout = cloneSnapshotValue(snapshot.elementLayout ?? {});
+      state.customElements = Object.fromEntries(Object.entries(cloneSnapshotValue(snapshot.customElements ?? {})));
+
+      if (restoredPageId !== workingDocumentPageId?.value) {
+        if (activePageId) activePageId.value = restoredPageId;
+        if (workingDocumentPageId) workingDocumentPageId.value = restoredPageId;
+        if (visuallyFocusedPageId) visuallyFocusedPageId.value = restoredPageId;
+      }
+
+      if (snapshot.format !== undefined) state.format = snapshot.format;
+      if (snapshot.size !== undefined) state.size = snapshot.size;
+      if (snapshot.designSurface !== undefined) state.designSurface = cloneSnapshotValue(snapshot.designSurface);
+      if (snapshot.objective !== undefined) state.objective = snapshot.objective;
+      if (snapshot.outputType !== undefined) state.outputType = snapshot.outputType;
+      if (snapshot.designTitle !== undefined) state.designTitle = snapshot.designTitle;
+      if (snapshot.designTitleManual !== undefined) state.designTitleManual = snapshot.designTitleManual;
+    }
+
+    refreshDocumentPageList?.();
+
+    if (snapshot.selectedElementId) {
+      state.selectedElementId = snapshot.selectedElementId;
+    }
 
     const selectedId = state.selectedElementId;
     if (selectedId && selectedId !== 'background' && !state.elementLayout[selectedId]) {
@@ -329,7 +365,6 @@ export const useEditorHistory = ({
     undoActionLabel,
     redoActionLabel,
     pushHistorySnapshot,
-    scheduleHistorySnapshot,
     performUndo,
     performRedo,
     replaceImageAssetSource,

@@ -140,6 +140,7 @@ const workingDocumentPageId = ref(activePageId.value);
 const visuallyFocusedPageId = ref(null);
 let visiblePageFrame = null;
 let isSwitchingDocumentPage = false;
+const isDragging = ref(false);
 if (Object.prototype.hasOwnProperty.call(state, 'activePageId')) {
   Reflect.deleteProperty(state, 'activePageId');
 }
@@ -268,6 +269,7 @@ const switchToPage = async (pageId, { resetSelection = false } = {}) => {
     // no-op
   }
   syncActivePageSnapshot();
+  pushHistorySnapshot({ force: true });
   const target = state.pages.find((page) => page.id === pageId);
   if (!target) return;
   isSwitchingDocumentPage = true;
@@ -396,6 +398,7 @@ const addDocumentPage = async ({ afterPageId = activePageId.value, duplicate = f
     // no-op
   }
   syncActivePageSnapshot();
+  pushHistorySnapshot({ force: true });
   const source = duplicate
     ? clonePlain(state.pages.find((page) => page.id === afterPageId) ?? clonePageFromState())
     : createBlankPage();
@@ -434,6 +437,7 @@ const moveDocumentPage = async (pageId, direction) => {
   }
 
   syncActivePageSnapshot();
+  pushHistorySnapshot({ force: true });
   const [pageToMove] = state.pages.splice(currentIndex, 1);
   state.pages.splice(nextIndex, 0, pageToMove);
   refreshDocumentPageList();
@@ -456,6 +460,7 @@ const deleteDocumentPage = async (pageId) => {
   if (state.pages.some((page) => page.id === workingDocumentPageId.value)) {
     syncActivePageSnapshot();
   }
+  pushHistorySnapshot({ force: true });
 
   const deleteStart = isBrochureDocument() ? Math.floor(pageIndex / 2) * 2 : pageIndex;
   const deleteCount = isBrochureDocument() ? Math.min(2, state.pages.length - deleteStart) : 1;
@@ -1023,7 +1028,6 @@ const {
   undoActionLabel,
   redoActionLabel,
   pushHistorySnapshot,
-  scheduleHistorySnapshot,
   performUndo,
   performRedo,
   replaceImageAssetSource,
@@ -1035,6 +1039,12 @@ const {
   clearSelection: () => clearSelection(),
   baseElementLabels,
   contentFieldLabels,
+  syncActivePageSnapshot,
+  refreshDocumentPageList,
+  ensureDocumentPages,
+  workingDocumentPageId,
+  activePageId,
+  visuallyFocusedPageId,
 });
 
 const metaLine = computed(() => [state.content.date, state.content.time].filter(Boolean).join(' · '));
@@ -5532,13 +5542,28 @@ watch(
   () => [state.content, state.elementLayout, state.customElements],
   () => {
     if (isSwitchingDocumentPage) return;
+    if (isDragging.value) return;
     if (exportDialogOpen.value) {
       return;
     }
-    scheduleHistorySnapshot();
+    pushHistorySnapshot({ allowCoalesce: true });
     flushDesignerStateWithThumbnail();
   },
   { deep: true }
+);
+
+// Capturar drag start/end para pushHistorySnapshot sin watcher intermedio
+watch(
+  () => drag.active,
+  (active, wasActive) => {
+    if (active && !wasActive) {
+      isDragging.value = true;
+      pushHistorySnapshot({ force: true });
+    } else if (!active && wasActive) {
+      isDragging.value = false;
+      pushHistorySnapshot({ force: true });
+    }
+  }
 );
 
 const handleBeforeUnload = (event) => {
