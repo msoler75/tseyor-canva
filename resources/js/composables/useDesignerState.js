@@ -541,7 +541,6 @@ export function setDesignerThumbnailDataUrl(dataUrl, hash) {
 function syncContentAndElementLayout(content, elementLayout) {
     for (const key of ['title','subtitle','meta','contact','extra']) {
         const derivedText = resolveTextValue(key, content);
-        const layoutText = typeof elementLayout[key]?.text === 'string' ? elementLayout[key].text.trim() : '';
 
         if (derivedText !== '') {
             content[key] = derivedText;
@@ -549,15 +548,6 @@ function syncContentAndElementLayout(content, elementLayout) {
                 elementLayout[key] = {};
             }
             elementLayout[key].text = derivedText;
-            continue;
-        }
-
-        if (layoutText !== '') {
-            content[key] = layoutText;
-            if (!elementLayout[key]) {
-                elementLayout[key] = {};
-            }
-            elementLayout[key].text = layoutText;
             continue;
         }
 

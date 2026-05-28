@@ -284,6 +284,17 @@ const wrapperStyle = computed(() => {
     return style;
 });
 
+const displayStyle = computed(() => {
+    const style = { ...props.editorStyle };
+    if (props.boxDimensions?.fontSize) {
+        style.fontSize = `${props.boxDimensions.fontSize}px`;
+    }
+    if (props.boxDimensions?.lineHeight) {
+        style.lineHeight = String(props.boxDimensions.lineHeight);
+    }
+    return style;
+});
+
 const linkedTextEditorOffset = computed(() => (
     props.isLinkedText && props.editable
         ? Math.max(0, Number(props.editorTopOffset || 0))
@@ -890,7 +901,7 @@ const logLinkedTextStyles = () => {
             v-if="props.displayMode"
             class="linked-text-display"
             :class="{ 'linked-text-clipped': props.isLinkedText && !props.linkedTextActive }"
-            :style="props.editorStyle"
+            :style="displayStyle"
             v-html="props.displayHtml"
         ></div>
         <div

@@ -2038,6 +2038,10 @@ const buildParagraphStyle = (layout, fallback = {}) => ({
     lineHeight: fallback.lineHeight ?? layout.lineHeight ?? 1.3,
 });
 const ensureParagraphStyles = (layout, text = '') => {
+    if (historyApplying.value) {
+      return Array.isArray(layout.paragraphStyles) ? layout.paragraphStyles : [];
+    }
+
     const paragraphs = getParagraphs(text);
 
     if (!Array.isArray(layout.paragraphStyles)) {
@@ -2185,6 +2189,15 @@ const syncLinkedTextCanonicalFromHtml = (id, html = '') => {
   if (headLayout) {
     const parsedStyles = parseLinkedParagraphStylesFromHtml(canonicalHtml, headLayout);
     linkedTextSetLayoutField(headId, 'paragraphStyles', parsedStyles);
+
+    const firstStyle = parsedStyles[0];
+    if (firstStyle?._explicit) {
+      for (const field of ['fontSize', 'fontFamily', 'fontWeight', 'italic', 'underline', 'uppercase', 'textAlign', 'letterSpacing', 'lineHeight', 'color']) {
+        if (firstStyle._explicit[field] && field in firstStyle) {
+          linkedTextSetLayoutField(headId, field, firstStyle[field]);
+        }
+      }
+    }
   }
 
   recalculateLinkedTextAllocations(headId);
@@ -2208,6 +2221,7 @@ const getParagraphStyleForElement = (id, index = 0, text = null) => {
 };
 const applyParagraphStyleField = (field, value) => {
     if (!selectedElement.value || !state.selectedElementId) return;
+    if (historyApplying.value) return;
 
     const styleSourceId = getLinkedTextStyleSourceId(state.selectedElementId);
     const layout = state.elementLayout[styleSourceId];
@@ -2270,6 +2284,8 @@ const applyParagraphStyleField = (field, value) => {
       }
       recalculateLinkedTextAllocations(getLinkedTextChainHead(styleSourceId));
     }
+
+    pushHistorySnapshot({ force: true });
 };
 const CSS_PROP_MAP = {
   fontSize: 'font-size',
@@ -4447,16 +4463,23 @@ const updateElementMeasurement = (id, node) => {
         };
 
         sourceLayout.linkedTextGroupId = linkedTextGroupId;
-        sourceLayout.linkedTextNext = cloneId;
+
+        if (oldNextId) {
+          const headId = getLinkedTextChainHead(sourceId);
+          const chain = getLinkedTextChain(headId);
+          const tailId = chain[chain.length - 1].id;
+          const tailLayout = linkedTextLayoutFromAnyPage(tailId);
+
+          tailLayout.linkedTextNext = cloneId;
+          cloneLayout.linkedTextPrev = tailId;
+          cloneLayout.linkedTextNext = null;
+        } else {
+          sourceLayout.linkedTextNext = cloneId;
+          cloneLayout.linkedTextPrev = sourceId;
+          cloneLayout.linkedTextNext = null;
+        }
 
         cloneLayout.linkedTextGroupId = linkedTextGroupId;
-        cloneLayout.linkedTextPrev = sourceId;
-        cloneLayout.linkedTextNext = oldNextId;
-
-        if (oldNextId && linkedTextLayoutFromAnyPage(oldNextId)) {
-          linkedTextSetLayoutField(oldNextId, 'linkedTextPrev', cloneId);
-          linkedTextSetLayoutField(oldNextId, 'linkedTextGroupId', linkedTextGroupId);
-        }
 
         if (placeOnCurrentPage) {
           state.customElements[cloneId] = {
@@ -4510,16 +4533,23 @@ const updateElementMeasurement = (id, node) => {
 
     if (sourceElement.type === 'linkedText') {
       sourceLayout.linkedTextGroupId = linkedTextGroupId;
-      sourceLayout.linkedTextNext = cloneId;
+
+      if (oldNextId) {
+        const headId = getLinkedTextChainHead(sourceId);
+        const chain = getLinkedTextChain(headId);
+        const tailId = chain[chain.length - 1].id;
+        const tailLayout = linkedTextLayoutFromAnyPage(tailId);
+
+        tailLayout.linkedTextNext = cloneId;
+        cloneLayout.linkedTextPrev = tailId;
+        cloneLayout.linkedTextNext = null;
+      } else {
+        sourceLayout.linkedTextNext = cloneId;
+        cloneLayout.linkedTextPrev = sourceId;
+        cloneLayout.linkedTextNext = null;
+      }
 
       cloneLayout.linkedTextGroupId = linkedTextGroupId;
-      cloneLayout.linkedTextPrev = sourceId;
-      cloneLayout.linkedTextNext = oldNextId;
-
-      if (oldNextId && linkedTextLayoutFromAnyPage(oldNextId)) {
-        linkedTextSetLayoutField(oldNextId, 'linkedTextPrev', cloneId);
-        linkedTextSetLayoutField(oldNextId, 'linkedTextGroupId', linkedTextGroupId);
-      }
 
       state.customElements[cloneId] = {
         id: cloneId,
@@ -4595,6 +4625,15 @@ const removeLinkedTextFromChain = (id) => {
       if (headElement?.type === 'linkedText' && nextElement?.type === 'linkedText') {
         linkedTextSetElementField(nextId, 'html', headElement.html || headElement.text || '');
         linkedTextSetElementField(nextId, 'text', headElement.text || '');
+        const nextLayout = linkedTextLayoutFromAnyPage(nextId);
+        if (nextLayout) {
+          for (const field of ['fontSize', 'fontFamily', 'fontWeight', 'italic', 'underline', 'uppercase', 'textAlign', 'letterSpacing', 'lineHeight', 'color']) {
+            const val = layout[field];
+            if (val != null && nextLayout[field] == null) {
+              linkedTextSetLayoutField(nextId, field, val);
+            }
+          }
+        }
         recalculateLinkedTextAllocations(nextId);
       }
     } else if (prevId) {
@@ -4625,6 +4664,8 @@ const removeLinkedTextFromChain = (id) => {
     if (editingElementId.value === id) {
       commitTextEdit();
     }
+
+    pushHistorySnapshot({ force: true });
 
     removeLinkedTextFromChain(id);
 
@@ -4890,6 +4931,7 @@ const cloneElementsByIds = (ids) => {
   };
 
   const deleteElementsByIds = (ids) => {
+    pushHistorySnapshot({ force: true });
     ids.forEach((id) => {
       if (editingElementId.value === id) {
         commitTextEdit();
@@ -5063,6 +5105,9 @@ const onRichEditorTextUpdate = (id, newText) => {
     } else {
       state.content[id] = newText;
     }
+    if (state.elementLayout[id]) {
+      state.elementLayout[id].text = newText;
+    }
     recalculateTextHeight(id);
     return;
   }
@@ -5075,6 +5120,9 @@ const onRichEditorTextUpdate = (id, newText) => {
       state.content.time = parts[1] || '';
     } else {
       state.content[linkedFieldKey] = newText;
+    }
+    if (state.elementLayout[id]) {
+      state.elementLayout[id].text = newText;
     }
     recalculateTextHeight(id);
   }
@@ -5394,6 +5442,8 @@ const commitTextEdit = ({ recalculateHeight = true, reason = 'commit-text-edit' 
     editingElementId.value = null;
     editingBoxHeight.value = null;
     activeLinkedTextBox.value = null;
+
+    pushHistorySnapshot({ force: true });
 };
 
 const cancelTextEdit = () => {
@@ -5612,6 +5662,20 @@ watch(
     });
   }
 );
+
+watch(historyApplying, (newVal, oldVal) => {
+  if (oldVal === true && newVal === false) {
+    syncActivePageSnapshot();
+    const handledGroups = new Set();
+    Object.keys(state.elementLayout).forEach((key) => {
+      const layout = state.elementLayout[key];
+      if (layout?.linkedTextGroupId && !handledGroups.has(layout.linkedTextGroupId)) {
+        handledGroups.add(layout.linkedTextGroupId);
+        recalculateLinkedTextAllocations(getLinkedTextChainHead(key));
+      }
+    });
+  }
+});
 
 const closeOptionsPanel = () => {
   optionsPanelOpen.value = false;

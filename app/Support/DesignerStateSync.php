@@ -27,15 +27,6 @@ class DesignerStateSync
                 continue;
             }
 
-            if ($layoutText !== '') {
-                $content[$key] = $layoutText;
-                if (! isset($elementLayout[$key]) || ! is_array($elementLayout[$key])) {
-                    $elementLayout[$key] = [];
-                }
-                $elementLayout[$key]['text'] = $layoutText;
-                continue;
-            }
-
             $content[$key] = $content[$key] ?? '';
             if (isset($elementLayout[$key]) && is_array($elementLayout[$key])) {
                 unset($elementLayout[$key]['text']);

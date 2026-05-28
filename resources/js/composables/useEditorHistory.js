@@ -223,6 +223,11 @@ export const useEditorHistory = ({
   };
 
   const applyHistorySnapshot = (snapshot) => {
+    if (historyTimer) {
+      clearTimeout(historyTimer);
+      historyTimer = null;
+    }
+
     const linkedTextBoxSystem = useLinkedTextBoxSystem();
     linkedTextBoxSystem.resetAllSystems();
     historyApplying.value = true;
