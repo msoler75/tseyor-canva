@@ -3,6 +3,7 @@ import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
 import { toCanvasExport, toJpegExport, toPngExport } from '../../utils/useHtml2Image';
 import { useDesignerState } from '../../composables/useDesignerState';
 import { brochurePagePairForPhysicalPage, brochurePrintPairForPhysicalPage, isBrochureFormat, isHorizontalFormat, objectiveOptions, resolveObjectiveSizeOptions } from '../../data/designer';
+import { useLinkedTextBoxSystem } from '../../composables/useLinkedTextBoxSystem';
 import RichTextEditor from './RichTextEditor.vue';
 import {
     BASE_TEXT_ELEMENT_IDS,
@@ -31,8 +32,14 @@ function handleKeydown(e) {
     emit('close');
   }
 }
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('keydown', handleKeydown);
+  computeLinkedTextFragments();
+  await nextTick();
+  if (document.fonts?.ready) {
+    await document.fonts.ready;
+    computeLinkedTextFragments();
+  }
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown);
@@ -58,6 +65,8 @@ const exportError = ref('');
 const exportSuccess = ref('');
 
 const exportPreviewRef = ref(null);
+const linkedTextFragments = ref({});
+const linkedTextHtml = ref({});
 const previewImageUrl = ref('');
 const documentPages = computed(() => (Array.isArray(state.pages) && state.pages.length
     ? state.pages
@@ -116,7 +125,17 @@ const baseCanvasDimensions = computed(() => {
 
 const targetDimensions = computed(() => resolveTargetDimensions(selectedSizeDetail.value, selectedDpi.value));
 const canvasBackgroundStyle = computed(() => buildCanvasBackgroundStyle(state.elementLayout.background));
-const editorElements = computed(() => buildEditorElements(state));
+const editorElements = computed(() => {
+    const base = buildEditorElements(state);
+    const fragments = linkedTextFragments.value;
+    if (!fragments) return base;
+    return base.map(item => {
+        if (item.type === 'linkedText' && fragments[item.id]) {
+            return { ...item, text: fragments[item.id] };
+        }
+        return item;
+    });
+});
 
 const sanitizeFileName = (value) => {
     const normalized = (value || 'diseno').trim().toLowerCase();
@@ -365,7 +384,161 @@ function exportElementContentStyle(id) {
 }
 function elementBoxStyle(id) {
     const layout = state.elementLayout[id] ?? {};
-    return buildElementBoxStyle(layout, { isText: isTextElement(id), isLinkedText: isLinkedTextElement(id) });
+    const style = buildElementBoxStyle(layout, { isText: isTextElement(id), isLinkedText: isLinkedTextElement(id) });
+    if (isLinkedTextElement(id)) {
+        style.overflow = 'hidden';
+    }
+    return style;
+}
+
+function resolveFieldText(fieldKey, fallback = '') {
+    if (!fieldKey) return fallback;
+    const metaText = [state.content?.date, state.content?.time].filter(Boolean).join(' ? ');
+    const contactText = [state.content?.location, state.content?.platform, state.content?.contact].filter(Boolean).join(' ? ');
+    const extraText = [state.content?.teacher, state.content?.price, state.content?.extra].filter(Boolean).join(' ? ');
+    if (fieldKey === 'meta') return metaText || fallback;
+    if (fieldKey === 'contact') return contactText || fallback;
+    if (fieldKey === 'extra') return extraText || fallback;
+    return state.content?.[fieldKey] ?? fallback;
+}
+
+function buildParagraphHtml(text, paragraphStyles = []) {
+    if (!text) return '';
+    const lines = String(text).replace(/\r\n/g, '\n').split('\n');
+    return lines.map((line, i) => {
+        const s = paragraphStyles[i] ?? paragraphStyles[paragraphStyles.length - 1] ?? {};
+        const style = [
+            s.fontSize ? `font-size:${s.fontSize}px` : '',
+            s.color ? `color:${s.color}` : '',
+            s.fontFamily ? `font-family:${s.fontFamily}` : '',
+            s.fontWeight ? `font-weight:${s.fontWeight === 'bold' ? 700 : s.fontWeight === 'regular' ? 400 : s.fontWeight}` : '',
+            s.italic ? 'font-style:italic' : '',
+            s.underline ? 'text-decoration:underline' : '',
+            s.uppercase ? 'text-transform:uppercase' : '',
+            s.textAlign ? `text-align:${s.textAlign}` : '',
+            s.letterSpacing != null ? `letter-spacing:${s.letterSpacing}px` : '',
+            s.lineHeight != null ? `line-height:${s.lineHeight}` : '',
+        ].filter(Boolean).join(';');
+        const styleAttr = style ? ` style="${style}"` : '';
+        return `<p${styleAttr}>${line || '\u00A0'}</p>`;
+    }).join('');
+}
+
+function computeLinkedTextFragments() {
+    const fragments = {};
+    const htmlFragments = {};
+    const linkedTextSystem = useLinkedTextBoxSystem();
+
+    const allElements = {};
+    const allLayouts = {};
+
+    const pages = state.pages ?? [];
+    for (const page of pages) {
+        if (page.customElements) Object.assign(allElements, page.customElements);
+        if (page.elementLayout) Object.assign(allLayouts, page.elementLayout);
+    }
+
+    Object.assign(allElements, state.customElements ?? {});
+    Object.assign(allLayouts, state.elementLayout ?? {});
+
+    const groups = {};
+    for (const [id, el] of Object.entries(allElements)) {
+        if (el?.type !== 'linkedText') continue;
+        const groupId = allLayouts[id]?.linkedTextGroupId;
+        if (!groupId) {
+            fragments[id] = resolveFieldText(el.fieldKey, el.text ?? '');
+            continue;
+        }
+        if (!groups[groupId]) groups[groupId] = [];
+        groups[groupId].push(id);
+    }
+
+    for (const [groupId, ids] of Object.entries(groups)) {
+        ids.sort((a, b) => (allLayouts[a]?.linkedTextChainIndex ?? 0) - (allLayouts[b]?.linkedTextChainIndex ?? 0));
+
+        const headId = ids[0];
+        const headEl = allElements[headId];
+        if (!headEl) continue;
+
+        const fullText = resolveFieldText(headEl.fieldKey, headEl.text ?? '');
+        if (!fullText) {
+            ids.forEach(id => { fragments[id] = resolveFieldText(allElements[id]?.fieldKey, allElements[id]?.text ?? ''); });
+            continue;
+        }
+
+        const hl = allLayouts[headId] ?? {};
+        const headStyles = Array.isArray(hl.paragraphStyles) ? hl.paragraphStyles : [];
+
+        let fullHtml;
+        if (headEl.html && headEl.html.trim()) {
+            fullHtml = headEl.html;
+            if (headStyles.length) {
+                const container = document.createElement('div');
+                container.innerHTML = fullHtml;
+                const blockNodes = Array.from(container.querySelectorAll('p,div,li,h1,h2,h3,h4,h5,h6,blockquote,pre'));
+                blockNodes.forEach((node, i) => {
+                    const s = headStyles[i] || headStyles[headStyles.length - 1];
+                    if (!s) return;
+                    const existing = node.style;
+                    const parts = [];
+                    if (s.fontSize && !existing.fontSize) parts.push(`font-size:${s.fontSize}px`);
+                    if (s.color && !existing.color) parts.push(`color:${s.color}`);
+                    if (s.fontFamily && !existing.fontFamily) parts.push(`font-family:${s.fontFamily}`);
+                    if (s.fontWeight && !existing.fontWeight) parts.push(`font-weight:${s.fontWeight === 'bold' ? 700 : s.fontWeight === 'regular' ? 400 : s.fontWeight}`);
+                    if (s.italic && existing.fontStyle !== 'italic') parts.push('font-style:italic');
+                    if (s.underline && !/underline/i.test(existing.textDecorationLine || existing.textDecoration || '')) parts.push('text-decoration:underline');
+                    if (s.uppercase && existing.textTransform !== 'uppercase') parts.push('text-transform:uppercase');
+                    if (s.textAlign && !existing.textAlign) parts.push(`text-align:${s.textAlign}`);
+                    if (s.letterSpacing != null && !existing.letterSpacing) parts.push(`letter-spacing:${s.letterSpacing}px`);
+                    if (s.lineHeight != null && !existing.lineHeight) parts.push(`line-height:${s.lineHeight}`);
+                    if (parts.length) {
+                        const existingStyle = node.getAttribute('style') || '';
+                        node.setAttribute('style', existingStyle + ';' + parts.join(';'));
+                    }
+                });
+                fullHtml = container.innerHTML;
+            }
+        } else {
+            fullHtml = buildParagraphHtml(fullText, headStyles);
+        }
+
+        const containerStyle = {
+            fontSize: hl.fontSize || 18,
+            fontFamily: hl.fontFamily || 'Poppins, sans-serif',
+            lineHeight: hl.lineHeight || 1.4,
+            letterSpacing: hl.letterSpacing || 0,
+        };
+
+        const chainLayouts = ids.map(id => {
+            const l = allLayouts[id] ?? {};
+            return {
+                id,
+                w: l.w ?? 300,
+                h: l.h ?? 120,
+                fontSize: containerStyle.fontSize,
+                fontFamily: containerStyle.fontFamily,
+                lineHeight: containerStyle.lineHeight,
+                letterSpacing: containerStyle.letterSpacing,
+            };
+        });
+
+        const tempGroupId = '_export_' + groupId;
+        linkedTextSystem.getOrCreateSystem(tempGroupId);
+        linkedTextSystem.redistribute(tempGroupId, fullHtml, chainLayouts, containerStyle);
+
+        ids.forEach(id => {
+            const frag = linkedTextSystem.getFragmentForBox(tempGroupId, id);
+            if (frag && frag.html) {
+                fragments[id] = frag.html.replace(/<[^>]*>/g, '');
+                htmlFragments[id] = frag.html;
+            } else {
+                fragments[id] = resolveFieldText(allElements[id]?.fieldKey, allElements[id]?.text ?? '');
+            }
+        });
+    }
+
+    linkedTextFragments.value = fragments;
+    linkedTextHtml.value = htmlFragments;
 }
 function richEditorContainerStyle(id) {
     return buildRichEditorContainerStyle(state.elementLayout[id] ?? {});
@@ -472,12 +645,17 @@ const withRenderedPage = async (page, callback) => {
         await document.fonts.ready;
     }
 
+    computeLinkedTextFragments();
+    await nextTick();
+
     try {
         return await callback();
     } finally {
         state.content = previous.content;
         state.elementLayout = previous.elementLayout;
         state.customElements = previous.customElements;
+        linkedTextFragments.value = {};
+        linkedTextHtml.value = {};
         await nextTick();
         isRenderingPageSnapshot = false;
     }
@@ -488,43 +666,38 @@ const renderCurrentPreviewNode = async (format) => {
     }
 
     const node = exportPreviewRef.value;
-    const { width, height } = targetDimensions.value;
+    const { width: targetWidth, height: targetHeight } = targetDimensions.value;
     const baseWidth = baseCanvasDimensions.value.width;
     const baseHeight = baseCanvasDimensions.value.height;
+    const isJpg = format === 'jpg';
+
     const prevWidth = node.style.width;
     const prevHeight = node.style.height;
     const prevTransform = node.style.transform;
-    const prevTransformOrigin = node.style.transformOrigin;
-    const scaleX = width / baseWidth;
-    const scaleY = height / baseHeight;
 
     node.style.width = baseWidth + 'px';
     node.style.height = baseHeight + 'px';
-    node.style.transformOrigin = 'top left';
-    node.style.transform = `scale(${scaleX}, ${scaleY})`;
+    node.style.transform = 'none';
 
     try {
-        const backgroundColor = state.elementLayout.background?.fillMode === 'solid'
-            ? (state.elementLayout.background?.backgroundColor || '#fff')
-            : null;
+        const renderOptions = {
+            width: baseWidth,
+            height: baseHeight,
+            canvasWidth: targetWidth,
+            canvasHeight: targetHeight,
+            pixelRatio: 1,
+        };
 
-        return format === 'jpg'
+        return isJpg
             ? await toJpegExport(node, {
-                width,
-                height,
+                ...renderOptions,
                 quality: clamp(Number(jpgQuality.value), 0.6, 1),
-                backgroundColor,
             })
-            : await toPngExport(node, {
-                width,
-                height,
-                backgroundColor,
-            });
+            : await toPngExport(node, renderOptions);
     } finally {
         node.style.width = prevWidth;
         node.style.height = prevHeight;
         node.style.transform = prevTransform;
-        node.style.transformOrigin = prevTransformOrigin;
     }
 };
 
@@ -537,29 +710,15 @@ const loadImageFromDataUrl = (dataUrl) => new Promise((resolve, reject) => {
 
 const buildBrochurePanelMap = (sourceImages) => {
     const panelMap = new Map();
-    const physicalPageCount = sourceImages.length;
-
-    sourceImages.forEach((image, physicalPageIndex) => {
-        const [leftBrochurePage, rightBrochurePage] = brochurePagePairForPhysicalPage(physicalPageIndex, physicalPageCount);
-        const panelWidth = image.naturalWidth / 2;
-        const panelHeight = image.naturalHeight;
-
-        panelMap.set(leftBrochurePage, {
+    sourceImages.forEach((image, index) => {
+        panelMap.set(index + 1, {
             image,
             sx: 0,
             sy: 0,
-            sw: panelWidth,
-            sh: panelHeight,
-        });
-        panelMap.set(rightBrochurePage, {
-            image,
-            sx: panelWidth,
-            sy: 0,
-            sw: panelWidth,
-            sh: panelHeight,
+            sw: image.naturalWidth,
+            sh: image.naturalHeight,
         });
     });
-
     return panelMap;
 };
 
@@ -591,7 +750,7 @@ const renderBrochurePrintPages = async (format) => {
     const panelMap = buildBrochurePanelMap(sourceImages);
 
     return pages.map((_, pageIndex) => {
-        const [leftBrochurePage, rightBrochurePage] = brochurePrintPairForPhysicalPage(pageIndex, pages.length);
+        const [leftBrochurePage, rightBrochurePage] = brochurePrintPairForPhysicalPage(pageIndex, Math.max(1, pages.length / 2));
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -754,7 +913,40 @@ async function renderGeneratedImagePreview() {
       await document.fonts.ready;
     }
     const previewFormat = selectedExportFormat.value === 'jpg' ? 'jpg' : 'png';
-    const dataUrl = await withRenderedPage(documentPages.value[0], () => renderCurrentPreviewNode(previewFormat));
+    let dataUrl;
+    if (isBrochureExport.value) {
+      const pages = documentPages.value;
+      const count = pages.length;
+      if (count > 2) {
+        const leftIdx = count - 1;
+        const rightIdx = 0;
+        const [leftSrc, rightSrc] = await Promise.all([
+          withRenderedPage(pages[leftIdx], () => renderCurrentPreviewNode(previewFormat)),
+          withRenderedPage(pages[rightIdx], () => renderCurrentPreviewNode(previewFormat)),
+        ]);
+        if (runId !== previewRenderSeq) return;
+        const [leftImg, rightImg] = await Promise.all([
+          loadImageFromDataUrl(leftSrc),
+          loadImageFromDataUrl(rightSrc),
+        ]);
+        if (runId !== previewRenderSeq) return;
+        const { width, height } = targetDimensions.value;
+        const panelW = Math.floor(width / 2);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(leftImg, 0, 0, leftImg.naturalWidth, leftImg.naturalHeight, 0, 0, panelW, height);
+        ctx.drawImage(rightImg, 0, 0, rightImg.naturalWidth, rightImg.naturalHeight, panelW, 0, panelW, height);
+        dataUrl = canvas.toDataURL('image/png');
+      } else {
+        const rendered = await renderBrochurePrintPages(previewFormat);
+        if (runId !== previewRenderSeq) return;
+        dataUrl = rendered[0];
+      }
+    } else {
+      dataUrl = await withRenderedPage(documentPages.value[0], () => renderCurrentPreviewNode(previewFormat));
+    }
     if (runId !== previewRenderSeq) return;
     previewImageUrl.value = dataUrl;
   } catch (error) {
@@ -1007,7 +1199,7 @@ watch(() => state.outputType, () => {
               <div v-for="item in editorElements" :key="item.id" :style="elementBoxStyle(item.id)">
                 <template v-if="item.type === 'text' || item.type === 'linkedText'">
                   <div :style="elementContentStyle(item.id)">
-                    <RichTextEditor :paragraph-styles="state.elementLayout[item.id]?.paragraphStyles ?? []" :text="item.text ?? ''" :editable="false" :editor-style="richEditorContainerStyle(item.id)" :color-override="neonColorOverride(item.id)" :transparent-fill="!!state.elementLayout[item.id]?.hollowText" />
+                    <RichTextEditor :paragraph-styles="state.elementLayout[item.id]?.paragraphStyles ?? []" :text="item.text ?? ''" :editable="false" :editor-style="richEditorContainerStyle(item.id)" :color-override="neonColorOverride(item.id)" :transparent-fill="!!state.elementLayout[item.id]?.hollowText" :is-linked-text="item.type === 'linkedText'" :display-mode="!!linkedTextHtml[item.id]" :display-html="linkedTextHtml[item.id] || ''" />
                   </div>
                 </template>
                 <template v-else-if="item.type === 'image'">

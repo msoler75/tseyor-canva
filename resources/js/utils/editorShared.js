@@ -181,7 +181,7 @@ export function buildEditorElements(state) {
     type: element.type,
     label: element.label ?? 'Elemento',
     fieldKey: element.fieldKey ?? null,
-    text: element.type === 'text' ? fieldText(element.fieldKey, element.text ?? '') : '',
+    text: element.type === 'text' || element.type === 'linkedText' ? fieldText(element.fieldKey, element.text ?? '') : '',
     src: element.type === 'image' ? element.src : null,
     shapeKind: element.type === 'shape' ? element.shapeKind : null,
   }));

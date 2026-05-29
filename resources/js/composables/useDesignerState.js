@@ -161,11 +161,13 @@ function buildInitialState(sessionState) {
     }
 
     const mergedElementLayout = mergeElementLayout(base.elementLayout, sessionState.elementLayout ?? {});
-    const sessionLayoutKeys = new Set(Object.keys(sessionState.elementLayout ?? {}));
-    for (const key of Object.keys(mergedElementLayout)) {
-        if (key === 'background') continue;
-        if (key in base.elementLayout && !sessionLayoutKeys.has(key)) {
-            delete mergedElementLayout[key];
+    if (sessionState.elementLayout) {
+        const sessionLayoutKeys = new Set(Object.keys(sessionState.elementLayout));
+        for (const key of Object.keys(mergedElementLayout)) {
+            if (key === 'background') continue;
+            if (key in base.elementLayout && !sessionLayoutKeys.has(key)) {
+                delete mergedElementLayout[key];
+            }
         }
     }
     const normalizedContent = {
@@ -218,7 +220,9 @@ function normalizeDocumentPages(pages, fallbackPage, format = null) {
             const defaultLayout = format === 'brochure' && index > 0
                 ? blankPageElementLayout()
                 : initialDesignerState.elementLayout;
-            const sessionLayout = page.elementLayout
+            const sessionLayout = (index === 0 && page.elementLayout
+                ? { ...(fallbackPage.elementLayout ?? {}), ...page.elementLayout }
+                : page.elementLayout)
                 ?? (format === 'brochure' && index > 0 ? {} : (fallbackPage.elementLayout ?? {}));
             const elementLayout = mergeElementLayout(
                 defaultLayout,

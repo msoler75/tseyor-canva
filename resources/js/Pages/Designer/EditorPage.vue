@@ -5809,6 +5809,7 @@ const guestExportModalOpen = ref(false);
 
 const handleExportNavigation = async (event) => {
   event?.preventDefault?.();
+  syncActivePageSnapshot();
   if (!authUser.value) {
     guestExportModalOpen.value = true;
     return;
@@ -6696,7 +6697,7 @@ watch(
                   ]"
                   :style="pageChromeStyle"
                 >
-                <div class="relative z-50 mb-3 flex w-full items-center justify-between text-sm font-semibold text-slate-500 dark:text-slate-300" :class="{ 'opacity-0 pointer-events-none': state.selectedElementId && state.selectedElementId !== 'background' }" @pointerdown.stop>
+                <div class="relative z-[90] mb-3 flex w-full items-center justify-between text-sm font-semibold text-slate-500 dark:text-slate-300" :class="{ 'opacity-0 pointer-events-none': state.selectedElementId && state.selectedElementId !== 'background' }" @pointerdown.stop>
                   <span>{{ hasMultiplePages ? physicalPageLabel(pageIndex) : '' }}</span>
                   <div class="relative z-50 flex items-center gap-1">
                     <span v-if="hasMultiplePages" class="tooltip tooltip-bottom order-first" data-tip="Mover página hacia arriba">
