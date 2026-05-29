@@ -10,6 +10,8 @@ defineProps({
     type: Boolean,
     default: true,
   },
+  showSelectAllButton: Boolean,
+  selectAllActive: Boolean,
   overlayControlTargetId: String,
   isGroupSelection: Boolean,
   hasMultiSelection: Boolean,
@@ -27,6 +29,7 @@ const emit = defineEmits([
   'editSelectedTextElement',
   'cloneCurrentSelection',
   'deleteCurrentSelection',
+  'selectAll',
   'startRotate',
   'resetRotation',
   'startResize',
@@ -74,6 +77,17 @@ const emit = defineEmits([
             @click.stop="emit('cloneCurrentSelection')"
           >
             <Icon icon="ph:copy-bold" class="text-base" />
+          </button>
+          <button
+            v-if="showSelectAllButton"
+            data-editor-control="true"
+            type="button"
+            class="btn btn-ghost btn-sm"
+            :title="selectAllActive ? 'Deseleccionar todo' : 'Seleccionar todo el texto'"
+            @pointerdown.stop="emit('markEditorControlInteraction')"
+            @click.stop="emit('selectAll')"
+          >
+            <Icon :icon="selectAllActive ? 'ph:selection-all-fill' : 'ph:selection-all'" class="text-base" />
           </button>
           <button
             data-editor-control="true"

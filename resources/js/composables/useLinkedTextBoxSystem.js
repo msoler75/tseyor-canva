@@ -91,9 +91,11 @@ export function createLinkedTextBoxSystem() {
       if (!chainLayouts || chainLayouts.length === 0) return;
       if (!fullHtml || fullHtml.trim() === '') {
         // Texto vacío: todas las cajas vacías
+        console.log('[DISTRIBUTE] fast path EMPTY for group', groupId, 'ids:', chainLayouts.map(l => l.id));
         chainLayouts.forEach(layout => {
           system.fragments[layout.id] = { html: '', overflowHtml: '', fullTextHtml: '', tailHtml: '', prefixHtml: '', editorTopOffset: 0, editorTextOffset: 0, fitsInBox: true };
         });
+        console.log('[DISTRIBUTE] fast path DONE, fragment keys:', Object.keys(system.fragments));
         return;
       }
 

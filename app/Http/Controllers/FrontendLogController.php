@@ -29,16 +29,18 @@ class FrontendLogController extends Controller
             }
         } else {
             $validated = $request->validate([
-                'level' => 'required|string|in:debug,info,warning,error',
-                'category' => 'required|string|max:100',
-                'message' => 'required|string|max:2000',
+                'level' => 'sometimes|string|in:debug,info,warning,error',
+                'category' => 'sometimes|string|max:100',
+                'message' => 'sometimes|string|max:2000',
                 'data' => 'nullable|array',
                 'data.*' => 'nullable|string|max:5000',
                 'timestamp' => 'nullable|string|max:50',
                 'url' => 'nullable|string|max:500',
             ]);
 
-            $this->writeLog($validated, $request);
+            if (isset($validated['level'])) {
+                $this->writeLog($validated, $request);
+            }
         }
 
         return response()->json(['success' => true]);

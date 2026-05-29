@@ -687,6 +687,8 @@ const richEditorRefs = ref({});
 const editingElementId = ref(null);
 const editingBoxHeight = ref(null);
 const activeLinkedTextBox = ref(null);
+const linkedTextSelectAllHeadId = ref(null);
+const linkedTextLastText = {};
 const selectedParagraphIndex = ref(0);
 const paragraphSelection = reactive({ start: 0, end: 0, active: false });
 const activePropertyPanel = ref(null);
@@ -1280,12 +1282,11 @@ const linkedTextOverlayPoint = (boxId, anchor = 'source') => {
   const fin = (value, fallback) => Number.isFinite(value) ? value : fallback;
   const bw = 24;
   const bh = 24;
-  const offset = anchor === 'source' ? 4 : 0;
   const localX = anchor === 'source'
-    ? fin(layout.x, 0) + fin(layout.w, 300) - offset - bw / 2
+    ? fin(layout.x, 0) + fin(layout.w, 300) - 4 - bw / 2  // right-1 = 4px from right edge
     : fin(layout.x, 0);
   const localY = anchor === 'source'
-    ? fin(layout.y, 0) + fin(layout.h, 120) - offset - bh / 2
+    ? fin(layout.y, 0) + fin(layout.h, 120) + 16 - bh / 2  // -bottom-4 = 16px below bottom edge
     : fin(layout.y, 0);
   const cx = fin(layout.x, 0) + fin(layout.w, 300) / 2;
   const cy = fin(layout.y, 0) + fin(layout.h, 120) / 2;
@@ -1348,29 +1349,36 @@ const recalculateLinkedTextAllocations = (headId) => {
   let fullHtml;
   if (headElement.html && headElement.html.trim()) {
     fullHtml = headElement.html;
+    console.log('[RECALC] branch=html, headElement.html len=', fullHtml.length);
     if (headStyles.length) {
       fullHtml = mergeParagraphStylesIntoHtml(fullHtml, headStyles);
     }
   } else {
     const rawText = headElement.text || '';
-    const plainLines = rawText.split('\n');
-    fullHtml = plainLines.map((line, i) => {
-      const s = headStyles[i] || headStyles[headStyles.length - 1] || {};
-      const style = [
-        s.fontSize ? `font-size:${s.fontSize}px` : '',
-        s.color ? `color:${s.color}` : '',
-        s.fontFamily ? `font-family:${s.fontFamily}` : '',
-        s.fontWeight ? `font-weight:${s.fontWeight === 'bold' ? 700 : s.fontWeight === 'regular' ? 400 : s.fontWeight}` : '',
-        s.italic ? 'font-style:italic' : '',
-        s.underline ? 'text-decoration:underline' : '',
-        s.uppercase ? 'text-transform:uppercase' : '',
-        s.textAlign ? `text-align:${s.textAlign}` : '',
-        s.letterSpacing != null ? `letter-spacing:${s.letterSpacing}px` : '',
-        s.lineHeight != null ? `line-height:${s.lineHeight}` : '',
-      ].filter(Boolean).join(';');
-      const styleAttr = style ? ` style="${style}"` : '';
-      return `<p${styleAttr}>${line}</p>`;
-    }).join('');
+    console.log('[RECALC] branch=text, rawText len=', rawText.length, 'trimmed=|', rawText.trim(), '|', 'headElement.text=|', headElement.text, '|');
+    if (!rawText.trim()) {
+      fullHtml = '';
+      console.log('[RECALC] fullHtml SET TO EMPTY STRING');
+    } else {
+      const plainLines = rawText.split('\n');
+      fullHtml = plainLines.map((line, i) => {
+        const s = headStyles[i] || headStyles[headStyles.length - 1] || {};
+        const style = [
+          s.fontSize ? `font-size:${s.fontSize}px` : '',
+          s.color ? `color:${s.color}` : '',
+          s.fontFamily ? `font-family:${s.fontFamily}` : '',
+          s.fontWeight ? `font-weight:${s.fontWeight === 'bold' ? 700 : s.fontWeight === 'regular' ? 400 : s.fontWeight}` : '',
+          s.italic ? 'font-style:italic' : '',
+          s.underline ? 'text-decoration:underline' : '',
+          s.uppercase ? 'text-transform:uppercase' : '',
+          s.textAlign ? `text-align:${s.textAlign}` : '',
+          s.letterSpacing != null ? `letter-spacing:${s.letterSpacing}px` : '',
+          s.lineHeight != null ? `line-height:${s.lineHeight}` : '',
+        ].filter(Boolean).join(';');
+        const styleAttr = style ? ` style="${style}"` : '';
+        return `<p${styleAttr}>${line}</p>`;
+      }).join('');
+    }
   }
 
   const chainLayouts = chain.map((item) => {
@@ -1424,6 +1432,7 @@ const recalculateLinkedTextAllocations = (headId) => {
 
   const system = linkedTextBoxSystem.getOrCreateSystem(groupId);
   if (system.fragments) {
+    console.log('[RECALC] AFTER redistribute, fragment keys:', Object.keys(system.fragments), 'C1 html:', system.fragments['C1']?.html?.substring?.(0, 30) || '(empty)', 'C2 html:', system.fragments['C2']?.html?.substring?.(0, 30) || '(empty)');
     const richHtml = headElement.html && headElement.html.trim() ? headElement.html : '';
     if (richHtml) {
       const styled = mergeParagraphStylesIntoHtml(richHtml, headStyles);
@@ -2220,7 +2229,11 @@ const parseLinkedParagraphStylesFromHtml = (html = '', layout = {}) => {
 const syncLinkedTextCanonicalFromHtml = (id, html = '') => {
   const headId = getLinkedTextChainHead(id);
   const headElement = linkedTextElementFromAnyPage(headId);
-  if (!headElement || headElement.type !== 'linkedText') return;
+  if (!headElement || headElement.type !== 'linkedText') {
+    console.log('[SYNC-HTML] EARLY RETURN: headElement invalid for id=', id, 'headId=', headId);
+    return;
+  }
+  console.log('[SYNC-HTML] id=', id, 'headId=', headId, 'html len=', html?.length, 'headElement.text before=|', headElement.text?.substring(0, 30), '|');
 
   let canonicalHtml = String(html ?? '');
 
@@ -2316,6 +2329,9 @@ const applyParagraphStyleField = (field, value) => {
         if (paragraphSelection.active && CHAR_STYLE_FIELDS.has(field)) {
             editorRef.applyCharacterStyle(field, value);
         } else {
+            if (linkedTextSelectAllHeadId.value && CHAR_STYLE_FIELDS.has(field) && editorRef.removeMarkStyle) {
+                editorRef.removeMarkStyle('styledText');
+            }
             editorRef.applyStyle(field, value);
         }
     } else if (editorRef) {
@@ -2323,14 +2339,28 @@ const applyParagraphStyleField = (field, value) => {
     }
 
     if (state.customElements?.[styleSourceId]?.type === 'linkedText') {
-      if (editingElementId.value !== state.selectedElementId) {
+      if (linkedTextSelectAllHeadId.value && CHAR_STYLE_FIELDS.has(field)) {
+        const headId = getLinkedTextChainHead(styleSourceId);
+        const headElement = linkedTextElementFromAnyPage(headId);
+        if (headElement?.html) {
+          const cssProp = CSS_PROP_MAP[field];
+          if (cssProp) {
+            headElement.html = stripSpanStyle(headElement.html, cssProp);
+          }
+          headElement.html = updateInlineStyleInHtml(headElement.html, field, value);
+          headElement.text = extractPlainTextFromHtml(headElement.html);
+        }
+        recalculateLinkedTextAllocations(headId);
+      } else if (editingElementId.value !== state.selectedElementId) {
         const headId = getLinkedTextChainHead(styleSourceId);
         const headElement = linkedTextElementFromAnyPage(headId);
         if (headElement?.html) {
           headElement.html = updateInlineStyleInHtml(headElement.html, field, value);
         }
       }
-      recalculateLinkedTextAllocations(getLinkedTextChainHead(styleSourceId));
+      if (!linkedTextSelectAllHeadId.value || !CHAR_STYLE_FIELDS.has(field)) {
+        recalculateLinkedTextAllocations(getLinkedTextChainHead(styleSourceId));
+      }
     }
 
     pushHistorySnapshot({ force: true });
@@ -2373,6 +2403,23 @@ const updateInlineStyleInHtml = (html, field, value) => {
   });
   return container.innerHTML;
 };
+function stripSpanStyle(html, cssProp) {
+  if (!html || !cssProp) return html || '';
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  container.querySelectorAll('span').forEach((el) => {
+    const style = el.getAttribute('style');
+    if (!style) return;
+    const parts = style.split(';').map((p) => p.trim()).filter(Boolean);
+    const filtered = parts.filter((p) => !p.startsWith(cssProp + ':'));
+    if (!filtered.length) {
+      el.removeAttribute('style');
+    } else {
+      el.setAttribute('style', filtered.join(';'));
+    }
+  });
+  return container.innerHTML;
+};
 const selectedTextStyle = computed(() => {
     if (!state.selectedElementId) return {};
 
@@ -2409,8 +2456,12 @@ const selectedTextStyle = computed(() => {
                         if (editorRef?.applyCharacterStyle) {
                             const { from, to } = editorRef.getSelection?.() ?? {};
                             if (from !== undefined && to !== undefined && from !== to) {
-                                editorRef.applyCharacterStyle(key, value);
-                                return true;
+                                // Durante select-all, NO tomar el shortcut de marks
+                                // Necesitamos que applyParagraphStyleField propague a toda la cadena
+                                if (!linkedTextSelectAllHeadId.value) {
+                                    editorRef.applyCharacterStyle(key, value);
+                                    return true;
+                                }
                             }
                         }
                     }
@@ -3227,6 +3278,9 @@ const redistributeLinkedText = (startId) => {
 const onRichEditorHtmlUpdate = (id, html) => {
   const element = linkedTextElementFromAnyPage(id);
   if (!element || element.type !== 'linkedText') return;
+
+  // Cuando select-all está activo, el text update handler ya redistribuyó
+  if (linkedTextSelectAllHeadId.value) return;
 
   syncLinkedTextCanonicalFromHtml(id, html || '');
 };
@@ -5143,7 +5197,57 @@ const onRichEditorSelectionChange = (id, { paragraphIndex, selectedIndexes }) =>
     }
 };
 
+const onRichEditorSelectAllInChain = (headId) => {
+  if (!headId) return;
+
+  const chain = [];
+  const visited = new Set();
+  const layouts = state?.elementLayout ?? {};
+
+  let currentId = headId;
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const layout = layouts[currentId];
+    if (!layout) break;
+    chain.unshift(currentId);
+    currentId = layout.linkedTextPrev;
+  }
+
+  currentId = layouts[headId]?.linkedTextNext;
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const layout = layouts[currentId];
+    if (!layout) break;
+    chain.push(currentId);
+    currentId = layout.linkedTextNext;
+  }
+
+  chain.forEach(boxId => {
+    console.log('[CHAIN] calling selectAll on', boxId, 'isEditing=', editingElementId.value === boxId);
+    richEditorRefs.value[boxId]?.selectAll?.();
+  });
+
+  linkedTextSelectAllHeadId.value = headId;
+  console.log('[CHAIN] flag SET to', headId);
+};
+
+const onSelectAllClick = () => {
+  if (linkedTextSelectAllHeadId.value) {
+    linkedTextSelectAllHeadId.value = null;
+    const id = editingElementId.value;
+    if (id) richEditorRefs.value[id]?.focusAtPosition?.(0);
+    return;
+  }
+  const id = editingElementId.value;
+  if (!id) return;
+  const richEditorRef = richEditorRefs.value[id];
+  if (!richEditorRef) return;
+  richEditorRef.selectAll?.();
+  onRichEditorSelectAllInChain(id);
+};
+
 const onRichEditorTextUpdate = (id, newText) => {
+  console.log('[TEXT-UPDATE:CATCHALL] id=', id, 'newText=|', newText?.substring(0, 50), '|', 'flag=', linkedTextSelectAllHeadId.value);
   const baseTextKeys = ['title', 'subtitle', 'meta', 'contact', 'extra'];
   if (baseTextKeys.includes(id)) {
     if (id === 'meta') {
@@ -5179,6 +5283,45 @@ const onRichEditorTextUpdate = (id, newText) => {
   if (!element) return;
 
   if (element.type === 'linkedText') {
+    const prevText = linkedTextLastText[id];
+    linkedTextLastText[id] = newText;
+    if (linkedTextSelectAllHeadId.value) {
+      console.log('[TEXT-UPDATE] linkedText interceptor ENTERED for id=', id, 'flag=', linkedTextSelectAllHeadId.value);
+      const layout = state.elementLayout[id];
+      if (layout?.linkedTextGroupId) {
+        const headId = getLinkedTextChainHead(id);
+        const headElement = linkedTextElementFromAnyPage(headId);
+        const editorHtml = richEditorRefs.value[id]?.getHtml?.();
+        if (headElement && editorHtml != null) {
+          const plainText = editorHtml.replace(/<[^>]*>/g, '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+          const isEmpty = !editorHtml.trim() || !plainText;
+
+          if (isEmpty) {
+            headElement.html = '';
+            headElement.text = '';
+            const groupId = layout.linkedTextGroupId;
+            const chainLayouts = [];
+            let currentId = headId;
+            while (currentId) {
+              const l = linkedTextLayoutFromAnyPage(currentId);
+              if (!l) break;
+              chainLayouts.push({ id: currentId, w: l.w || 300, h: l.h || 120 });
+              currentId = l.linkedTextNext;
+            }
+            console.log('[TEXT-UPDATE] redistributing EMPTY to ids:', chainLayouts.map(l => l.id));
+            linkedTextBoxSystem.redistribute(groupId, '', chainLayouts, {});
+          } else {
+            if (prevText !== undefined && prevText === newText) {
+              console.log('[TEXT-UPDATE] style-only change, keeping flag');
+              // applyParagraphStyleField handles chain propagation
+            } else {
+              console.log('[TEXT-UPDATE] text content changed, clearing flag to let normal path handle');
+              linkedTextSelectAllHeadId.value = null;
+            }
+          }
+        }
+      }
+    }
     return;
   }
 
@@ -5234,7 +5377,20 @@ const handleClipboardKeydown = async (event) => {
 const onRichEditorStylesUpdate = (id, newStyles) => {
     const element = linkedTextElementFromAnyPage(id);
     if (element?.type === 'linkedText') {
-      if (editingElementId.value !== id) return;
+      if (linkedTextSelectAllHeadId.value) {
+        console.log('[STYLES-UPDATE] id=', id, 'flag=', linkedTextSelectAllHeadId.value);
+        const layout = state.elementLayout[id];
+        if (layout?.linkedTextGroupId) {
+          const headId = getLinkedTextChainHead(id);
+          linkedTextSetLayoutField(headId, 'paragraphStyles', newStyles);
+          const headElement = linkedTextElementFromAnyPage(headId);
+          const hasContent = headElement?.html?.trim?.() || headElement?.text?.trim?.();
+          console.log('[STYLES-UPDATE] hasContent=', !!hasContent, 'headElement.text=|', headElement?.text, '| headElement.html=|', headElement?.html?.substring?.(0, 30) || '(empty)', '|');
+          if (hasContent) {
+            recalculateLinkedTextAllocations(headId);
+          }
+        }
+      }
       return;
     }
 
@@ -5455,6 +5611,7 @@ const beginTextEdit = async (id, focusToEnd = false, clickEvent = null) => {
 };
 
 const commitTextEdit = ({ recalculateHeight = true, reason = 'commit-text-edit' } = {}) => {
+    linkedTextSelectAllHeadId.value = null;
     if (!editingElementId.value) return;
 
     const id = editingElementId.value;
@@ -5495,6 +5652,7 @@ const commitTextEdit = ({ recalculateHeight = true, reason = 'commit-text-edit' 
 };
 
 const cancelTextEdit = () => {
+    linkedTextSelectAllHeadId.value = null;
     const id = editingElementId.value;
     if (state.customElements?.[id]?.type === 'linkedText') {
       const layout = state.elementLayout[id];
@@ -5715,6 +5873,7 @@ watch(
       });
       return;
     }
+    console.log('[LAYOUT-WATCH] FIRED, keys:', Object.keys(state.elementLayout));
     const handledGroups = new Set();
     Object.keys(state.elementLayout).forEach((key) => {
       const layout = state.elementLayout[key];
@@ -6665,6 +6824,11 @@ watch(
               class="pointer-events-none absolute top-0 left-0 z-[300] overflow-visible text-emerald-400"
               :style="linkedTextOverlayStyle"
             >
+              <defs>
+                <marker id="link-arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+                  <polygon points="0 0, 10 4, 0 8" fill="currentColor" />
+                </marker>
+              </defs>
               <line
                 v-for="(line, idx) in linkedTextGlobalLinkLines"
                 :key="`linked-text-global-line-${idx}`"
@@ -6675,6 +6839,7 @@ watch(
                 stroke="currentColor"
                 stroke-width="2"
                 stroke-dasharray="5,5"
+                marker-end="url(#link-arrowhead)"
               />
             </svg>
             <div class="mx-auto flex w-full flex-col items-center gap-8">
@@ -6792,6 +6957,7 @@ watch(
                     :linked-text-link="linkedTextLink"
                     :chain-active-element-id="editingElementId || state.selectedElementId"
                     :active-linked-text-box="activeLinkedTextBox"
+                    :linked-text-select-all-head-id="linkedTextSelectAllHeadId"
                     :hovered-field-key="hoveredFieldKey"
                     @canvas-pointer-down="handlePageCanvasPointerDownWithPinch(documentPage.id, $event)"
                     @canvas-click="handlePageCanvasClick(documentPage.id, $event)"
@@ -6807,6 +6973,7 @@ watch(
                     @rich-editor-styles-update="onRichEditorStylesUpdate($event.id, $event.value)"
                     @rich-editor-html-update="onRichEditorHtmlUpdate($event.id, $event.value)"
                     @rich-editor-selection-change="onRichEditorSelectionChange($event.id, $event.value)"
+                    @rich-editor-select-all-in-chain="onRichEditorSelectAllInChain($event)"
                     @rich-editor-blur="onRichEditorBlur($event.id, $event.event)"
                     @cancel-text-edit="cancelTextEdit"
                     @commit-text-edit="commitTextEdit"
@@ -6820,6 +6987,8 @@ watch(
                         :show-group-button="multiSelectionIds.length > 1"
                         :show-edit-text-button="selectedElementType === 'text'"
                         :show-clone-button="canCloneCurrentSelection"
+                        :show-select-all-button="!!editingElementId && (selectedElementType === 'linkedText' || state.customElements?.[editingElementId]?.type === 'linkedText')"
+                        :select-all-active="!!linkedTextSelectAllHeadId"
                         :overlay-control-target-id="overlayControlTargetId"
                         :is-group-selection="isGroupSelection"
                         :has-multi-selection="hasMultiSelection"
@@ -6834,6 +7003,7 @@ watch(
                         @edit-selected-text-element="editSelectedTextElement"
                         @clone-current-selection="cloneCurrentSelection"
                         @delete-current-selection="deleteCurrentSelection"
+                        @select-all="onSelectAllClick"
                         @start-rotate="startRotate($event.event, $event.id)"
                         @reset-rotation="resetRotation"
                         @start-resize="startResize($event.event, $event.id, $event.handle)"

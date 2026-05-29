@@ -45,9 +45,10 @@ const props = defineProps({
   showPermanentLinkLines: Boolean,
   canvasRefSetter: Function,
   richEditorRefSetter: Function,
-   linkedTextLink: Object,
-   activeLinkedTextBox: String,
-   chainActiveElementId: String,
+    linkedTextLink: Object,
+    activeLinkedTextBox: String,
+    chainActiveElementId: String,
+    linkedTextSelectAllHeadId: String,
 });
 
 const emit = defineEmits([
@@ -69,6 +70,7 @@ const emit = defineEmits([
   'canvasFileDrop',
   'linkedTextLinkStart',
   'fieldHover',
+  'richEditorSelectAllInChain',
 ]);
 
 const assignRichEditorRef = (id, element) => {
@@ -118,12 +120,13 @@ const getLinkSourcePosition = computed(() => {
   if (!sourceOnThisPage.value) return null;
   const layout = props.state?.elementLayout?.[props.linkedTextLink.sourceId];
   if (!layout) return null;
-  // Botón en bottom-1 right-1 (24x24px). Tailwind bottom-1 = 4px, right-1 = 4px
-  // Centro del botón: (x + w - 4px - 12px, y + h - 4px - 12px)
+  // Botón: -bottom-4 right-1 (h-6 w-6 = 24x24px). Tailwind: -bottom-4 = bottom: -16px, right-1 = right: 4px
+  // Centro del botón: (x + w - 4px - 12px, y + h + 16px - 12px)
   const bw = 24, bh = 24;
-  const offset = 4; // Tailwind bottom-1 right-1 = 4px
-  const btnCenterX = layout.x + (layout.w ?? 300) - offset - bw/2;
-  const btnCenterY = layout.y + (layout.h ?? 120) - offset - bh/2;
+  const offsetX = 4; // right-1 = 4px
+  const offsetY = 16; // -bottom-4 = bottom: -16px (button hangs 16px below element bottom)
+  const btnCenterX = layout.x + (layout.w ?? 300) - offsetX - bw/2;
+  const btnCenterY = layout.y + (layout.h ?? 120) + offsetY - bh/2;
   // Aplicar rotación alrededor del centro de la caja
   const cx = layout.x + (layout.w ?? 300) / 2;
   const cy = layout.y + (layout.h ?? 120) / 2;
@@ -319,6 +322,35 @@ const isLinkedTextChainActive = (boxId) => {
 
   return false;
 };
+
+const forceSelectAllSet = computed(() => {
+  if (!props.linkedTextSelectAllHeadId) return new Set();
+  const chain = [];
+  const visited = new Set();
+  const headId = props.linkedTextSelectAllHeadId;
+
+  let currentId = headId;
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const l = layoutFor(currentId);
+    if (!l) break;
+    chain.unshift(currentId);
+    currentId = l.linkedTextPrev;
+  }
+
+  currentId = layoutFor(headId)?.linkedTextNext;
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const l = layoutFor(currentId);
+    if (!l) break;
+    chain.push(currentId);
+    currentId = l.linkedTextNext;
+  }
+
+  const set = new Set(chain);
+  if (props.editingElementId) set.delete(props.editingElementId);
+  return set;
+});
 </script>
 
 <template>
@@ -431,6 +463,7 @@ const isLinkedTextChainActive = (boxId) => {
                 :linked-text-next="item.type === 'linkedText' ? (layoutFor(item.id)?.linkedTextNext ?? null) : null"
                 :box-dimensions="item.type === 'linkedText' ? { w: layoutFor(item.id)?.w, h: layoutFor(item.id)?.h, fontSize: layoutFor(item.id)?.fontSize, lineHeight: layoutFor(item.id)?.lineHeight } : null"
                 :display-mode="item.type === 'linkedText' && editingElementId !== item.id && isLinkedTextInChainBeingEdited(item.id)"
+                :force-select-all="item.type === 'linkedText' ? forceSelectAllSet.has(item.id) : false"
                 :initial-html="item.type === 'linkedText' ? (item.linkedTextInitialHtml ?? '') : ''"
                 :display-html="item.type === 'linkedText' ? (item.linkedTextDisplayHtml ?? '') : ''"
                 :overflow-html="item.type === 'linkedText' ? (item.linkedTextOverflowHtml ?? '') : ''"
@@ -445,6 +478,7 @@ const isLinkedTextChainActive = (boxId) => {
                 @update:html="emit('richEditorHtmlUpdate', { id: item.id, value: $event })"
                 @selection-change="emit('richEditorSelectionChange', { id: item.id, value: $event })"
                 @blur="emit('richEditorBlur', { id: item.id, event: $event })"
+                @select-all-in-chain="emit('richEditorSelectAllInChain', item.id)"
                 @keydown.escape.stop="emit('cancelTextEdit')"
                 @keydown.ctrl.enter.stop="emit('commitTextEdit')"
                 @keydown.meta.enter.stop="emit('commitTextEdit')"
@@ -533,6 +567,11 @@ const isLinkedTextChainActive = (boxId) => {
           class="pointer-events-none absolute inset-0 z-50 overflow-visible"
           style="width: 100%; height: 100%;"
         >
+          <defs>
+            <marker id="drag-arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+              <polygon points="0 0, 10 4, 0 8" fill="currentColor" />
+            </marker>
+          </defs>
           <line
             v-if="getLinkSourcePosition && getLinkTargetPosition"
             :x1="getLinkSourcePosition.x"
@@ -542,6 +581,7 @@ const isLinkedTextChainActive = (boxId) => {
             stroke="currentColor"
             stroke-width="2"
             stroke-dasharray="5,5"
+            marker-end="url(#drag-arrowhead)"
           />
         </svg>
 

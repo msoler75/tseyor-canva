@@ -164,8 +164,9 @@ const props = defineProps({
     editorTopOffset: { type: Number, default: 0 }, /* este atributo ya no se usa */
     editorTextOffset: { type: Number, default: 0 },
     isLastInChain: { type: Boolean, default: false },
+    forceSelectAll: { type: Boolean, default: false },
 });
-const emit = defineEmits(['update:text', 'update:paragraphStyles', 'update:html', 'selectionChange', 'blur']);
+const emit = defineEmits(['update:text', 'update:paragraphStyles', 'update:html', 'selectionChange', 'blur', 'selectAllInChain']);
 
 
 const buildParagraphAttrs = (s) => ({
@@ -332,6 +333,14 @@ const editor = useEditor({
             class: props.editorClass,
             spellcheck: 'false',
         },
+        handleKeyDown(view, event) {
+            if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'a') {
+                if (!props.isLinkedText) return false;
+                nextTick(() => emit('selectAllInChain'));
+                return false;
+            }
+            return false;
+        },
         handlePaste(view, event) {
             const ed = editor.value;
             if (!props.isLinkedText || !ed) return false;
@@ -399,6 +408,11 @@ const editor = useEditor({
         suppressWatch = false;
     },
     onSelectionUpdate({ editor: ed }) {
+        console.log('[SEL-UPDATE] id=', props.id, 'editable=', props.editable, 'displayMode=', props.displayMode);
+        if (!props.editable || props.displayMode) {
+            console.log('[SEL-UPDATE] BLOCKED for id=', props.id);
+            return;
+        }
         const { from, to: selectionTo } = ed.state.selection;
 
         const paragraphs = [];
@@ -706,12 +720,18 @@ const syncEditorContentFromProps = ({ force = false } = {}) => {
     }
 };
 
+const selectAll = () => {
+    if (!editor?.value) return;
+    editor.value.commands.selectAll();
+};
+
 const getHtml = () => {
     if (!editor?.value) return '';
     return editor.value.getHTML();
 };
 
 defineExpose({
+    selectAll,
     applyStyle,
     applyStyleAll,
     applyCharacterStyle,
@@ -891,7 +911,8 @@ const logLinkedTextStyles = () => {
                 'neon-active': !!props.colorOverride,
                 'hollow-active': props.transparentFill,
                 'linked-text-display-mode': props.displayMode,
-                'linked-text-active': props.isLinkedText && props.linkedTextActive
+                'linked-text-active': props.isLinkedText && props.linkedTextActive,
+                'force-select-all': props.forceSelectAll
             }"
             :style="wrapperStyle"
         >
@@ -1080,5 +1101,14 @@ const logLinkedTextStyles = () => {
 .linked-text-display li p {
     margin: 0;
     padding: 0;
+}
+.force-select-all .ProseMirror p,
+.force-select-all .linked-text-display p {
+    background: rgba(45, 170, 219, 0.15);
+    border-radius: 2px;
+}
+.force-select-all .ProseMirror p:empty,
+.force-select-all .linked-text-display p:empty {
+    background: none;
 }
 </style>

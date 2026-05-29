@@ -488,6 +488,14 @@ class DesignerController extends Controller
 
     public function saveState(Request $request): JsonResponse
     {
+        if (! $request->has('state') || ! is_array($request->input('state'))) {
+            Log::warning('[saveState] Request sin state válido', [
+                'all' => $request->except('thumbnailDataUrl'),
+            ]);
+
+            return response()->json(['saved' => false, 'reason' => 'invalid_state'], 422);
+        }
+
         $validated = $request->validate([
             ...DesignerStateRules::rules(),
             'state.currentDesignUuid' => ['nullable', 'string', 'max:36'],
