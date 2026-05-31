@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tseyor.com/schemas/scene-graph-v1.json",
+  "title": "SceneGraph v1",
+  "description": "Schema for AI-generated scene graph from image analysis. Represents the structure of a detected design: canvas, background, layers (text/image/shape), warnings, and usage metadata.",
+  "type": "object",
+  "required": ["canvas", "layers"],
+  "additionalProperties": false,
+  "properties": {
+    "canvas": {
+      "description": "Canvas dimensions and detected orientation",
+      "type": "object",
+      "required": ["width", "height", "detectedFormat"],
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "description": "Canvas width in pixels",
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "description": "Canvas height in pixels",
+          "type": "integer",
+          "minimum": 1
+        },
+        "detectedFormat": {
+          "description": "Detected orientation based on aspect ratio",
+          "type": "string",
+          "enum": ["vertical", "horizontal", "square"]
+        }
+      }
+    },
+    "background": {
+      "description": "Background fill configuration (solid color, gradient, or image placeholder)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "Type of background fill",
+          "type": "string",
+          "enum": ["solid", "gradient", "image"]
+        },
+        "color": {
+          "description": "Background color as 6-digit hex (e.g., #ffffff)",
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "gradient": {
+          "description": "Gradient configuration (required if kind=gradient)",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "description": "Gradient type",
+              "type": "string",
+              "enum": ["linear", "radial"]
+            },
+            "angle": {
+              "description": "Gradient angle in degrees (linear) or degrees (radial start)",
+              "type": "number"
+            },
+            "stops": {
+              "description": "Color stops for the gradient",
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "object",
+                "required": ["color", "position"],
+                "additionalProperties": false,
+                "properties": {
+                  "color": {
+                    "description": "Stop color as 6-digit hex",
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "position": {
+                    "description": "Stop position as percentage (0-100)",
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "confidence": {
+          "description": "AI confidence score for background detection",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "layers": {
+      "description": "Ordered array of detected design layers (front-to-back rendering order)",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "confidence", "bbox"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Unique layer identifier following 'layer-N' pattern",
+            "type": "string",
+            "pattern": "^layer-\\d+$"
+          },
+          "kind": {
+            "description": "Type of layer element",
+            "type": "string",
+            "enum": ["text", "image", "shape"]
+          },
+          "confidence": {
+            "description": "AI confidence score for this layer (0.0-1.0). Layers below 0.3 are discarded during validation",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "bbox": {
+            "description": "Bounding box in canvas coordinates (integers, >= 0)",
+            "type": "object",
+            "required": ["x", "y", "w", "h"],
+            "additionalProperties": false,
+            "properties": {
+              "x": { "type": "integer", "minimum": 0 },
+              "y": { "type": "integer", "minimum": 0 },
+              "w": { "type": "integer", "minimum": 0 },
+              "h": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "text": {
+            "description": "Text content (required when kind=text)",
+            "type": "string"
+          },
+          "style": {
+            "description": "Text styling properties (relevant when kind=text, but may be present on other kinds)",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "fontFamilyGuess": {
+                "description": "Best guess of the font family name",
+                "type": "string"
+              },
+              "fontCategory": {
+                "description": "General font category",
+                "type": "string",
+                "enum": ["serif", "sans-serif", "display", "handwriting", "monospace"]
+              },
+              "fontSize": {
+                "description": "Font size in points",
+                "type": "number",
+                "minimum": 0
+              },
+              "fontWeight": {
+                "description": "Font weight as CSS keyword or numeric string",
+                "type": "string"
+              },
+              "italic": {
+                "description": "Whether the text is italicized",
+                "type": "boolean"
+              },
+              "uppercase": {
+                "description": "Whether the text is all uppercase",
+                "type": "boolean"
+              },
+              "color": {
+                "description": "Text color as 6-digit hex",
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "textAlign": {
+                "description": "Text horizontal alignment",
+                "type": "string",
+                "enum": ["left", "center", "right", "justify"]
+              },
+              "lineHeight": {
+                "description": "Line height multiplier (1.0 = normal)",
+                "type": "number",
+                "minimum": 0
+              },
+              "letterSpacing": {
+                "description": "Letter spacing in pixels",
+                "type": "number"
+              },
+              "shadow": {
+                "description": "Text shadow configuration",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "color": {
+                    "description": "Shadow color as 6-digit hex",
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "offsetX": { "type": "number" },
+                  "offsetY": { "type": "number" },
+                  "blur": {
+                    "description": "Shadow blur radius",
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "description": {
+            "description": "Image content description (required when kind=image)",
+            "type": "string"
+          },
+          "cropFromSource": {
+            "description": "Whether this image layer should be cropped from the source image using its bbox",
+            "type": "boolean"
+          },
+          "shape": {
+            "description": "Shape type (required when kind=shape)",
+            "type": "string",
+            "enum": ["rectangle", "circle", "ellipse", "triangle", "line", "polygon"]
+          },
+          "shapeStyle": {
+            "description": "Shape visual style (required when kind=shape)",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "fill": {
+                "description": "Shape fill color as 6-digit hex",
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "opacity": {
+                "description": "Shape opacity (0.0-1.0)",
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "borderRadius": {
+                "description": "Border radius in pixels for rectangle shapes",
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "description": "Text layers MUST include text content",
+            "if": { "properties": { "kind": { "const": "text" } } },
+            "then": { "required": ["text"] }
+          },
+          {
+            "description": "Image layers MUST include a content description",
+            "if": { "properties": { "kind": { "const": "image" } } },
+            "then": { "required": ["description"] }
+          },
+          {
+            "description": "Shape layers MUST include shape type and style",
+            "if": { "properties": { "kind": { "const": "shape" } } },
+            "then": { "required": ["shape", "shapeStyle"] }
+          }
+        ]
+      }
+    },
+    "warnings": {
+      "description": "Non-critical warnings from the AI or validation process",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "usage": {
+      "description": "Token usage and cost for the AI model call that generated this SceneGraph",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "promptTokens": {
+          "description": "Number of prompt (input) tokens",
+          "type": "integer",
+          "minimum": 0
+        },
+        "completionTokens": {
+          "description": "Number of completion (output) tokens",
+          "type": "integer",
+          "minimum": 0
+        },
+        "costUsd": {
+          "description": "Estimated cost of the API call in USD",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

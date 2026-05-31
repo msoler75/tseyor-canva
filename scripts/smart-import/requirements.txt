@@ -1,0 +1,10 @@
+# Python dependencies for the calibration pipeline
+openai>=1.55.0
+pillow>=10.0.0
+jsonschema>=4.20.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# NOTE: tc_render.js (headless renderer) uses Playwright (Node.js).
+#   Install with: npm install --save-dev playwright && npx playwright install chromium
+#   It also requires: PHP 8.1+, MySQL/MariaDB, Laravel Composer deps

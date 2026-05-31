@@ -566,6 +566,54 @@ Editor
 
 ---
 
+## 5.1 MVP estricto
+
+El MVP debe ser deliberadamente pequeño. Si intentamos meter todo desde el primer sprint, destruimos la viabilidad del producto.
+
+### Lo que SÍ entra en V1
+
+- detectar textos visibles;
+- crear capas `text` editables;
+- mantener la imagen original como fondo o referencia;
+- extraer recortes rectangulares de fotografías solo con confianza alta;
+- compilar a `.tc v2`;
+- mostrar confianza por capa;
+- permitir ocultar o descartar capas problemáticas;
+- ofrecer modo **solo texto**;
+- cachear resultados por hash de imagen.
+
+### Lo que NO entra en V1
+
+- inpainting/repainting automático;
+- segmentación fina de personas/objetos;
+- background removal avanzado;
+- reconstrucción de fotos tapadas;
+- exportación a Figma;
+- iteración visual automática multi-paso;
+- fidelidad “tipo Stitch” prometida como si fuera un clon perfecto.
+
+### Regla de oro del MVP
+
+```text
+imagen original + texto editable + recortes rectangulares confiables
+```
+
+Nada más. El resto es V2.
+
+### UX honesta obligatoria
+
+El riesgo principal no es técnico; es de expectativa. “Importación inteligente” suena a magia, así que la interfaz debe ser explícita:
+
+- mostrar confianza por capa;
+- marcar capas dudosas;
+- permitir desactivar capas problemáticas;
+- ofrecer modo `text_only` como primer paso;
+- avisar que las fuentes son aproximaciones;
+- avisar que la fidelidad visual no será perfecta en tipografías complejas o textos sobre fotos;
+- explicar que el resultado es un **punto de partida editable**, no un clon perfecto.
+
+---
+
 ## 6. Qué modelo usar en cada fase
 
 ### Matriz de decisión por etapa
@@ -600,6 +648,14 @@ Precios verificados en OpenRouter el **2026-05-31**. Los importes son USD por mi
 | Prompt A visión, máxima fidelidad | `google/gemini-2.5-pro` | Mejor para composición compleja, jerarquía visual y razonamiento multimodal |
 | Prompt B traducción | `google/gemini-2.5-flash-lite` o `openai/gpt-5-mini` | Ya no necesita visión; necesita obedecer schema y generar JSON |
 | Producción robusta | Prompt B sustituido por `SmartImportCompiler` | Menos coste y más determinismo |
+
+### Modo recomendado para V1
+
+| Submodo | Qué hace | Nota |
+|---|---|---|
+| `text_only` | Extrae solo textos editables y deja la imagen original como fondo | Debe ser el primer submodo a lanzar |
+| `basic_image_layers` | Además detecta una foto principal y la inserta como recorte rectangular | Solo con confianza alta |
+| `advanced_restoration` | Usa inpainting/repainting para zonas ocluidas | V2, no MVP |
 
 ### Por qué NO usar solo un modelo
 
@@ -782,6 +838,21 @@ Regla de coste:
 - Usarlo en benchmarks, CI nocturno, calibración de prompts y comparación de modelos.
 - En producción, usar juez barato solo si el usuario pide “mejorar fidelidad” o si el pipeline detecta baja confianza.
 
+### Juez offline, no online
+
+El juez multimodal debe quedar fuera del flujo interactivo del usuario. Su lugar correcto es:
+
+- CI nocturno;
+- calibración de prompts;
+- comparación de candidatos;
+- regresión visual entre versiones del pipeline.
+
+No debe correr por cada importación. Si lo haces online:
+
+- sube el coste;
+- sube la latencia;
+- y el usuario no obtiene un beneficio proporcional.
+
 Métricas de benchmark por modelo:
 
 | Métrica | Qué mide |
@@ -835,6 +906,37 @@ La segunda opción parece más rápida, pero es una trampa. Cuando falle, no sab
 - Usar 5 imágenes fixture.
 - Guardar salidas `scene.json`.
 - Comparar manualmente.
+- Antes de fijar modelo por defecto, hacer benchmark con 10-15 imágenes propias del dominio real de la app.
+
+### Paso 1.1 — Caché por hash desde el día uno
+
+Antes de escalar a producción, el pipeline debe calcular un hash SHA-256 de la imagen y cachear:
+
+- SceneGraph generado;
+- máscara de oclusión;
+- crop/asset restaurado;
+- `.tc` compilado;
+- score del juez, si aplica.
+
+Objetivo:
+
+- evitar llamadas repetidas a la API si la misma imagen se reimporta;
+- reducir coste en producción;
+- acelerar el reintento del usuario.
+
+Clave recomendada:
+
+```text
+smart-import:{sha256}:{pipelineVersion}:{modelId}
+```
+
+Eso permite invalidar cuando cambie:
+
+- el prompt;
+- el compilador;
+- el modelo;
+- la lógica de máscara;
+- el contrato `.tc`.
 
 ### Paso 2 — Schema y validador
 
