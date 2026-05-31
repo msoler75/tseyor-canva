@@ -606,6 +606,29 @@ const resetEndpoint = computed(() => page.props.designer?.endpoints?.reset ?? '/
 const designsStoreEndpoint = computed(() => page.props.designer?.endpoints?.designsStore ?? null);
 const assetsIndexEndpoint = computed(() => page.props.designer?.endpoints?.assetsIndex ?? null);
 const authUser = computed(() => page.props.auth?.user ?? null);
+const wordCount = computed(() => {
+  const texts = [];
+  // Count from base content fields
+  if (state.content) {
+    Object.values(state.content).forEach(v => {
+      if (typeof v === 'string' && v.trim()) texts.push(v.trim());
+    });
+  }
+  // Count from custom elements that have html/text content
+  if (state.customElements) {
+    Object.values(state.customElements).forEach(el => {
+      const html = el?.html || el?.text || '';
+      if (html) {
+        const stripped = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (stripped) texts.push(stripped);
+      }
+    });
+  }
+  const full = texts.join(' ');
+  const words = full ? full.split(/\s+/).filter(Boolean).length : 0;
+  const chars = full.length;
+  return { words, chars };
+});
 const persistedTemplates = computed(() => page.props.designer?.templates ?? []);
 const currentDesignUuid = computed(() => state.currentDesignUuid ?? page.props.designer?.currentDesign?.uuid ?? null);
 const currentDesignBaseTemplate = computed(() => (
@@ -6631,6 +6654,7 @@ watch(
       :template-mode="isTemplateBaseEditor"
       :save-status="saveStatus"
       :is-dirty="isDirty"
+      :word-count="wordCount"
       @go-home="handleHomeNavigation"
       @create-new-design="handleCreateNewDesign"
       @download-design="handleExportNavigation"

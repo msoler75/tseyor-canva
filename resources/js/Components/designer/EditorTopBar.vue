@@ -56,6 +56,10 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  wordCount: {
+    type: Object,
+    default: () => ({ words: 0, chars: 0 }),
+  },
 });
 
 const emit = defineEmits([
@@ -226,6 +230,12 @@ const handleZoomInput = (event) => {
         <template v-else-if="isDirty">
           <span class="h-2 w-2 rounded-full bg-warning"></span>
         </template>
+      </div>
+
+      <!-- Word / character count -->
+      <div class="hidden sm:flex items-center gap-1 text-xs text-base-content/50 mr-2" title="palabras · caracteres">
+        <Icon icon="ph:text-align-left-bold" class="text-sm" />
+        <span>{{ wordCount.words }} palabras · {{ wordCount.chars }} caracteres</span>
       </div>
 
       <!-- Keyboard shortcut cheatsheet button -->
