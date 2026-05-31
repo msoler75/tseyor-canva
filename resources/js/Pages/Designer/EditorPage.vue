@@ -1452,6 +1452,22 @@ const recalculateLinkedTextAllocations = (headId) => {
       }
     }
 
+    // El head usa su HTML canónico para el canvas, pero sin text-align-last.
+    // Agregarlo inline para que el canvas/export justifique la última línea.
+    if (headElement?.html) {
+      const hc = document.createElement('div');
+      hc.innerHTML = headElement.html;
+      const blocks = hc.querySelectorAll('p,div,li,h1,h2,h3,h4,h5,h6,blockquote,pre');
+      let changed = false;
+      blocks.forEach(n => {
+        if (n.style.textAlign === 'justify') {
+          n.style.textAlignLast = 'justify';
+          changed = true;
+        }
+      });
+      if (changed) linkedTextSetElementField(headId, 'html', hc.innerHTML);
+    }
+
     for (const [boxId, fragment] of Object.entries(system.fragments)) {
       frontendLog.logFragmentation(groupId, boxId, fragment);
     }

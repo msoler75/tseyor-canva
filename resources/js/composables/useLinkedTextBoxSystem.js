@@ -379,22 +379,24 @@ export function createLinkedTextBoxSystem() {
          const sortedKeys = Object.keys(grouped).map(Number).sort((a, b) => a - b);
          const htmlParts = [];
 
-          const isParagraphSplit = (pIdx, units) => {
-            const para = paragraphs[pIdx];
-            if (!para) return false;
-            if ((para.tag === 'ul' || para.tag === 'ol') && para.items) {
-              const liUnits = units.filter(u => u.type === 'li');
-              return liUnits.length !== para.items.length;
-            }
-            const textUnits = units.filter(u => u.type === 'word');
-            return para.words.length > 0 && textUnits.length < para.words.length;
-          };
+            const isParagraphSplit = (pIdx, units) => {
+              const para = paragraphs[pIdx];
+              if (!para) return false;
+              if ((para.tag === 'ul' || para.tag === 'ol') && para.items) {
+                const liUnits = units.filter(u => u.type === 'li');
+                return liUnits.length !== para.items.length;
+              }
+              const textUnits = units.filter(u => u.type === 'word');
+              return para.words.length > 0 && textUnits.length < para.words.length;
+            };
 
-          const needsJustifyLastLine = (pIdx) => {
-            const paraStyle = layout?.paragraphStyles?.[pIdx];
-            const align = paraStyle?.textAlign || (!paraStyle ? layout?.textAlign : null);
-            return align === 'justify';
-          };
+            const needsJustifyLastLine = (pIdx) => {
+              const paraStyle = layout?.paragraphStyles?.[pIdx];
+              const align = paraStyle?.textAlign || (!paraStyle ? layout?.textAlign : null);
+              return align === 'justify';
+            };
+
+            const isSplitJustify = (pIdx, units) => isParagraphSplit(pIdx, units) && needsJustifyLastLine(pIdx);
 
           for (const pIdx of sortedKeys) {
             const units = grouped[pIdx];
@@ -403,7 +405,7 @@ export function createLinkedTextBoxSystem() {
 
             const tag = para.tag || 'p';
             let baseStyle = paragraphCssForIndex(para, pIdx, layout);
-            if (isParagraphSplit(pIdx, units) && needsJustifyLastLine(pIdx)) {
+            if (isSplitJustify(pIdx, units)) {
               baseStyle = (baseStyle ? baseStyle + ';' : '') + 'text-align-last:justify';
             }
             const styleAttr = baseStyle ? ` style="${escapeAttribute(baseStyle)}"` : '';
