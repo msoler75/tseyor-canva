@@ -62,3 +62,39 @@ Flujo: fullHtml → parseHtmlIntoParagraphs → allUnits → búsqueda binaria p
 ## Preservación de estilos
 
 `mergeParagraphStylesIntoHtml` fusiona (no reemplaza) estilos del layout con inline existentes. Propiedades del HTML pegado tienen prioridad sobre layout.
+
+### Styled spans en texto overflow
+
+**Problema**: `Range.cloneContents()` NO preserva el `<span>` padre cuando el text node está completamente seleccionado (`startOffset=0`, `endOffset=textContent.length`). Esto causaba pérdida de color (C2) y otros estilos en texto overflow de párrafos con estilos por carácter.
+
+**Solución en `extractStyledSlice`**: detectar cuándo `cloneContents()` pierde el span padre comparando `clone.childNodes.length` vs `1`. Si perdió el span, construir el HTML desde `startParent.outerHTML` en vez del clone.
+
+**Solución en `sliceInnerHtml`/`assignRichHtmlToFragments`**: mismo patrón — usar `cloneNode(true)` del párrafo original cuando `cloneContents()` devuelve solo texto plano sin span.
+
+### Propagación de marks carácter a carácter
+
+`buildHtmlFromUnitSlice` reconstruye el HTML de un slice de unidades preservando TODOS los styled spans originales del párrafo fuente. Cada unidad (palabra, espacio, signo) mantiene su span wrapper original con estilos inline completos.
+
+Fixes relacionados:
+- `672526d`: marks de styledText se preservan en toda la cadena linked (texto normal + enlazado)
+- `5963770`: cambios de estilo (color, bold, italic) durante Ctrl+A select-all se propagan a todas las cajas linked
+
+## Sincronización con Canvas
+
+Canvas/export renderer (html-2-image) usa la propiedad `html` del elemento, NO `fragment.html` del sistema de texto. Por tanto:
+
+### Element field sync
+
+En `recalculateLinkedTextAllocations`, tras `assignRichHtmlToFragments`, se itera sobre las cajas no-head y se asigna `customElements[boxId].html = fragment.html`. Esto garantiza que el render de canvas tenga el HTML correcto por caja.
+
+### text-align-last en canvas
+
+**Problema**: El renderer de canvas/export NO soporta CSS `text-align-last`. La última línea de un párrafo justificado aparecía alineada a la izquierda en exportación.
+
+**Solución**: En `recalculateLinkedTextAllocations`, tras construir el displayHtml de la caja head, se añade inline `text-align-last:justify` al estilo del párrafo final si está justificado. Detectado por `isSplitJustify()`.
+
+### Font-size mismatch en html-2-image
+
+**Problema** (`251b0d1`): html-2-image aplicaba `style="font-size: Xpx"` con un redondeo que reducía 0.1px el font-size, causando text wrapping distinto entre editor y PDF export.
+
+**Solución**: Eliminar la reducción de 0.1px en el inline style generado por el clon.

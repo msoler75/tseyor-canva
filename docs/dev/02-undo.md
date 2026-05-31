@@ -57,6 +57,24 @@ Acciones con entrada independiente (sin coalesce):
    - Watchers disparan `flushDesignerStateWithThumbnail`
    - Watch en `historyApplying` (true→false): sincroniza pages, recalcula linkedText
 
+## Estado actual: ~99% completo
+
+El sistema captura TODAS las operaciones del editor:
+- Edición de contenido, estilos, linked text → coalescing inteligente
+- Drag (start/end con force:true, isDragging flag bloquea watcher)
+- Operaciones de página (crear, eliminar, mover, cambiar)
+- Borrado de elementos, edición de texto, cambio de formato/dimensiones
+- Cambio de página activa
+- Título del diseño
+
+**Único gap conocido**: `CancelTextEdit` — cambios intermedios durante edición ya quedan capturados, no son descartables.
+
+## E2E Tests
+
+Archivo: `tests/e2e/undo-redo.spec.cjs` (245 líneas, `b023bcf`)
+
+Cubre: creación/eliminación de páginas, cambio de página activa, edición de contenido, drag, linked text, formato/dimensiones, selección post-undo, safety con páginas inválidas.
+
 ## Problemas resueltos
 
 1. **Snapshot intermedio linked-text**: force:true antes de modificar en delete
@@ -70,6 +88,6 @@ Acciones con entrada independiente (sin coalesce):
 
 ## Limitaciones
 
-- CancelTextEdit: cambios intermedios ya capturados, no descartables
+- CancelTextEdit: cambios intermedios ya capturados, no descartables (único gap conocido)
 - UI state: selección múltiple, edición activa, grupos no se restauran
 - Scroll/zoom: no se recoloca tras undo

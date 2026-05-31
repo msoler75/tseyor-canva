@@ -19,7 +19,16 @@
 - [x] Selección de elemento en página no activa
 - [x] Scroll sin cambiar página de trabajo
 - [x] Caja de texto normal ajusta altura automáticamente
+- [x] Undo/redo full (pages, formato, dimensiones, drag, linked text)
+- [x] Justify: última línea justificada en export/canvas
+- [x] Preservación de styled spans en texto overflow (C2 color loss fix)
+- [x] Marks carácter a carácter en linked text
+- [x] Propagación de estilo Ctrl+A en linked text
+- [x] Font-size sync entre editor y PDF export (html-2-image)
+- [x] Guías de alineación (rulers + snap drag)
+- [x] Brochure: clonación de texto enlazable
+- [x] Undo/redo E2E tests (245 lines)
 
 ## Pendientes
 
-- (según evolución del proyecto)
+- (ver OPORTUNIDADES.md — frontend + backend)
