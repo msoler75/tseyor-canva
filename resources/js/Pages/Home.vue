@@ -10,6 +10,10 @@ import { isHorizontalFormat } from '../data/designer';
 import { applyFormatToDimensions, parseSizeDetail } from '../utils/editorShared';
 
 const props = defineProps({
+    loading: {
+        type: Boolean,
+        default: false,
+    },
     currentStep: String,
     steps: Array,
     navigation: Object,
@@ -115,7 +119,7 @@ const finishAndOpenEditor = async ({ selectedTemplate, designerState } = {}) => 
 
     try {
         const response = selectedTemplate?.uuid
-            ? await axios.post(`/designer/design-templates/${selectedTemplate.uuid}/generate`, {
+            ? await axios.post(/designer/design-templates//generate, {
                 content: snapshot.content ?? {},
                 objective: snapshot.objective,
                 outputType: snapshot.outputType,
@@ -133,7 +137,7 @@ const finishAndOpenEditor = async ({ selectedTemplate, designerState } = {}) => 
         if (authUser.value && designUuid) {
             state.currentDesignUuid = designUuid;
             state.designTitle = response.data?.design?.name ?? snapshot.designTitle;
-            router.visit(`/designer/designs/${designUuid}/edit`);
+            router.visit(/designer/designs//edit);
         } else {
             // Invitado: ir al editor temporal
             router.visit('/designer/editor');
@@ -154,7 +158,7 @@ const openExistingDesign = async (design) => {
         console.error('Failed to flush state before opening design', error);
     }
 
-    router.visit(`/designer/designs/${design.uuid}/edit`);
+    router.visit(/designer/designs//edit);
 };
 
 const startRemoteLogin = async () => {
@@ -194,7 +198,7 @@ const openTemplateBase = async (template) => {
         console.error('Failed to flush state before opening template base design', error);
     }
 
-    router.visit(`/designer/designs/${template.base_design_uuid}/edit`);
+    router.visit(/designer/designs//edit);
 };
 
 
@@ -202,12 +206,12 @@ const duplicateDesign = async (design) => {
     if (!design?.uuid) return;
 
     try {
-        const response = await axios.post(`/designer/designs/${design.uuid}/duplicate`);
+        const response = await axios.post(/designer/designs//duplicate);
         const duplicateUuid = response.data?.design?.uuid;
         router.reload();
 
         if (duplicateUuid) {
-            router.visit(`/designer/designs/${duplicateUuid}/edit`);
+            router.visit(/designer/designs//edit);
         }
     } catch (error) {
         console.error('No se pudo duplicar el diseño', error);
@@ -221,7 +225,7 @@ const renameDesign = async (design) => {
     if (nextTitle === null) return;
 
     try {
-        await axios.patch(`/designer/designs/${design.uuid}/rename`, {
+        await axios.patch(/designer/designs//rename, {
             name: nextTitle,
         });
         router.reload();
@@ -233,11 +237,11 @@ const renameDesign = async (design) => {
 const deleteDesign = async (design) => {
     if (!design?.uuid) return;
 
-    const confirmed = window.confirm(`¿Eliminar "${design.name}"?`);
+    const confirmed = window.confirm(¿Eliminar ""?);
     if (!confirmed) return;
 
     try {
-        await axios.delete(`/designer/designs/${design.uuid}`);
+        await axios.delete(/designer/designs/);
         router.reload();
     } catch (error) {
         console.error('No se pudo borrar el diseño', error);
@@ -321,7 +325,10 @@ const deleteDesign = async (design) => {
                         </div>
                     </div>
 
-                    <div v-if="recentProjects.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+                    <div v-if="loading" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+                        <div v-for="n in 6" :key="'recent-skel-'+n" class="skeleton h-64 w-full rounded-2xl"></div>
+                    </div>
+                    <div v-else-if="recentProjects.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
                         <div
                             v-for="project in recentProjects"
                             :key="project.uuid"
@@ -352,8 +359,9 @@ const deleteDesign = async (design) => {
                             </div>
                         </div>
                     </div>
-                    <div v-else class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-5 text-sm text-base-content/65">
-                        {{ authUser ? 'Aún no tienes diseños guardados.' : 'Inicia sesión para ver tus diseños guardados.' }}
+                    <div v-else class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-10 text-center">
+                        <IconifyIcon icon="ph:file-plus-bold" class="text-5xl text-base-content/40 mb-3" />
+                        <p class="text-sm font-medium text-base-content/70">Todavía no tienes diseños. ¡Crea tu primer diseño!</p>
                     </div>
                 </div>
             </div>
@@ -366,7 +374,10 @@ const deleteDesign = async (design) => {
                     <span class="badge badge-primary badge-outline">Inspiración</span>
                 </div>
 
-                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+                <div v-if="loading" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+                    <div v-for="n in 6" :key="'community-skel-'+n" class="skeleton h-64 w-full rounded-2xl"></div>
+                </div>
+                <div v-else-if="communityDesigns.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
                     <button
                         v-for="item in communityDesigns"
                         :key="item.uuid"
@@ -385,6 +396,10 @@ const deleteDesign = async (design) => {
                         <p class="mt-2 text-xs font-medium text-primary">Clonar y editar</p>
                     </button>
                 </div>
+                <div v-else class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-10 text-center">
+                    <IconifyIcon icon="ph:images" class="text-5xl text-base-content/40 mb-3" />
+                    <p class="text-sm font-medium text-base-content/70">No hay diseños comunitarios disponibles</p>
+                </div>
             </div>
         </section>
 
@@ -397,7 +412,10 @@ const deleteDesign = async (design) => {
                     </div>
                 </div>
 
-                <div v-if="adminTemplates.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+                <div v-if="loading" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+                    <div v-for="n in 6" :key="'template-skel-'+n" class="skeleton h-64 w-full rounded-2xl"></div>
+                </div>
+                <div v-else-if="adminTemplates.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
                     <button
                         v-for="template in adminTemplates.slice(0, 6)"
                         :key="template.uuid"
@@ -413,8 +431,9 @@ const deleteDesign = async (design) => {
                         <p v-if="template.description" class="mt-1 line-clamp-2 text-xs text-base-content/65">{{ template.description }}</p>
                     </button>
                 </div>
-                <div v-else class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-5 text-sm text-base-content/65">
-                    Todavía no hay plantillas publicadas.
+                <div v-else class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-10 text-center">
+                    <IconifyIcon icon="ph:layout" class="text-5xl text-base-content/40 mb-3" />
+                    <p class="text-sm font-medium text-base-content/70">No hay plantillas disponibles</p>
                 </div>
             </div>
         </section>
