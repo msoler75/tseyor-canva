@@ -3109,17 +3109,12 @@ const scaleNumericField = (layout, field, factor, minimum = 0) => {
   layout[field] = Math.max(minimum, Number(layout[field]) * factor);
 };
 
-const rescaleDesignSurface = (previousSurface, nextSurface) => {
-  if (!previousSurface?.width || !previousSurface?.height || !nextSurface?.width || !nextSurface?.height) {
-    state.designSurface = nextSurface;
-    return;
-  }
+const rescaleElementLayoutCollection = (elementLayout, { widthScale, heightScale, averageScale }, scaledCollections) => {
+  if (!elementLayout || typeof elementLayout !== 'object') return;
+  if (scaledCollections?.has(elementLayout)) return;
+  scaledCollections?.add(elementLayout);
 
-  const widthScale = nextSurface.width / previousSurface.width;
-  const heightScale = nextSurface.height / previousSurface.height;
-  const averageScale = (widthScale + heightScale) / 2;
-
-  Object.entries(state.elementLayout ?? {}).forEach(([id, layout]) => {
+  Object.entries(elementLayout).forEach(([id, layout]) => {
     if (!layout || id === 'background') return;
 
     scaleNumericField(layout, 'x', widthScale);
@@ -3144,6 +3139,24 @@ const rescaleDesignSurface = (previousSurface, nextSurface) => {
 
     // Do not clamp persisted layouts during editor hydration/rescaling.
     // Users may intentionally place text flush with, or partially beyond, an edge.
+  });
+};
+
+const rescaleDesignSurface = (previousSurface, nextSurface) => {
+  if (!previousSurface?.width || !previousSurface?.height || !nextSurface?.width || !nextSurface?.height) {
+    state.designSurface = nextSurface;
+    return;
+  }
+
+  const widthScale = nextSurface.width / previousSurface.width;
+  const heightScale = nextSurface.height / previousSurface.height;
+  const averageScale = (widthScale + heightScale) / 2;
+  const scaledCollections = new WeakSet();
+  const scaleContext = { widthScale, heightScale, averageScale };
+
+  rescaleElementLayoutCollection(state.elementLayout, scaleContext, scaledCollections);
+  (state.pages ?? []).forEach((documentPage) => {
+    rescaleElementLayoutCollection(documentPage?.elementLayout, scaleContext, scaledCollections);
   });
 
   state.designSurface = nextSurface;
@@ -5832,9 +5845,11 @@ const cancelTextEdit = () => {
 
 
 onMounted(() => {
+  let importedTcDesignApplied = false;
   const importedState = sessionStorage.getItem('importedTcDesign');
   if (importedState) {
     try {
+      isSwitchingDocumentPage = true;
       const data = JSON.parse(importedState);
       state.userUploadedImages = [];
       for (const el of Object.values(data.elementLayout ?? {})) {
@@ -5859,8 +5874,18 @@ onMounted(() => {
         }
       }
       Object.assign(state, data);
+      const importedPageId = String(data.workingDocumentPageId ?? data.pages?.[0]?.id ?? activePageId.value);
+      if (Array.isArray(state.pages) && state.pages.some((documentPage) => documentPage.id === importedPageId)) {
+        activePageId.value = importedPageId;
+        workingDocumentPageId.value = importedPageId;
+        visuallyFocusedPageId.value = importedPageId;
+      }
+      ensureDocumentPages(true);
+      importedTcDesignApplied = true;
       sessionStorage.removeItem('importedTcDesign');
-    } catch (_) {}
+    } catch (_) {
+      isSwitchingDocumentPage = false;
+    }
   }
   // Ya se hizo resetDesignerState y rehidratación arriba
   syncEditorViewport();
@@ -5874,6 +5899,12 @@ onMounted(() => {
     rescaleDesignSurface(state.designSurface, nextSurface);
   } else {
     state.designSurface = nextSurface;
+  }
+  if (importedTcDesignApplied) {
+    ensureDocumentPages(true);
+    refreshDocumentPageList();
+    documentRevision.value += 1;
+    isSwitchingDocumentPage = false;
   }
   pushHistorySnapshot({ force: true });
   document.addEventListener('pointerdown', handleGlobalPointerDown, true);
