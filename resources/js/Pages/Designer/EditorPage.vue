@@ -49,8 +49,6 @@ const TemplateAdjustmentsPanel = defineAsyncComponent(() => import('../../Compon
 
 import ErrorBoundary from '../../Components/ErrorBoundary.vue';
 import KeyboardShortcutCheatsheet from '../../Components/designer/KeyboardShortcutCheatsheet.vue';
-import ToastNotification from '../../Components/designer/ToastNotification.vue';
-import { useToastNotification } from '../../composables/useToastNotification.js';
 
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const page = usePage();
@@ -149,7 +147,6 @@ const isDragging = ref(false);
 const isDirty = ref(false);
 const saveStatus = ref('idle');
 const showCheatsheet = ref(false);
-const { toasts, showToast, removeToast } = useToastNotification();
 let saveStatusTimer = null;
 if (Object.prototype.hasOwnProperty.call(state, 'activePageId')) {
   Reflect.deleteProperty(state, 'activePageId');
@@ -1084,12 +1081,10 @@ const {
 
 const performUndo = () => {
   _performUndo();
-  showToast({ message: `Deshecho: ${undoActionLabel.value}`, type: 'undo', duration: 2000 });
 };
 
 const performRedo = () => {
   _performRedo();
-  showToast({ message: `Rehecho: ${redoActionLabel.value}`, type: 'undo', duration: 2000 });
 };
 if (import.meta.env.DEV) {
   window.__TEST__ = {
@@ -5971,22 +5966,25 @@ const flushDesignerStateWithThumbnail = async () => {
   });
 };
 
-// Watcher principal para cambios en el diseño
+let lastSavedDesignHash = '';
+
 watch(
   () => [state.content, state.elementLayout, state.customElements],
   () => {
     if (isSwitchingDocumentPage) return;
     if (isDragging.value) return;
-    if (exportDialogOpen.value) {
-      return;
-    }
+    if (exportDialogOpen.value) return;
+
+    const hash = JSON.stringify({ c: state.content, el: state.elementLayout, ce: state.customElements });
+    if (hash === lastSavedDesignHash) return;
+    lastSavedDesignHash = hash;
+
     pushHistorySnapshot({ allowCoalesce: true });
     flushDesignerStateWithThumbnail();
   },
   { deep: true }
 );
 
-// Capturar drag start/end para pushHistorySnapshot sin watcher intermedio
 watch(
   () => drag.active,
   (active, wasActive) => {
@@ -5996,6 +5994,7 @@ watch(
     } else if (!active && wasActive) {
       isDragging.value = false;
       pushHistorySnapshot({ force: true });
+      flushDesignerStateWithThumbnail();
     }
   }
 );
@@ -6375,7 +6374,6 @@ const handleExportTc = async () => {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showToast({ message: 'Diseño exportado como .tc', type: 'success', duration: 3000 });
 };
 
 const handleRenameDesign = async () => {
@@ -7421,7 +7419,6 @@ watch(
         </div>
       </div>
     </dialog>
-    <ToastNotification :toasts="toasts" @remove="removeToast" />
     </div>
     </ErrorBoundary>
   </DesignerLayout>
