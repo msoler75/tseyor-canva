@@ -162,11 +162,13 @@ const startFontSizeDrag = (event) => {
               type="button"
               class="tooltip tooltip-bottom order-first hidden btn btn-ghost cursor-grab text-lg active:cursor-grabbing md:inline-flex"
               data-tip="Mover barra"
+               aria-label="Arrastrar barra de herramientas"
               @pointerdown="emit('start-drag', $event)"
             >⋮⋮</button>
 
             <button class="md:hidden absolute right-2 z-10 btn btn-neutral rounded-full w-14 h-14 border border-gray-500 shadow-sm"
             @click="emit('close-bar', $event)">
+            aria-label="Cerrar barra de herramientas"
                 <Icon icon="ph:check-bold" class="text-2xl" />
             </button>
 
@@ -205,6 +207,7 @@ const startFontSizeDrag = (event) => {
                   step="1"
                   :placeholder="isMixed('fontSize') ? '—' : ''"
                   class="w-8 h-6 font-semibold text-center [--input-color:var(--color-gray-500)] bg-transparent border-0 px-0 no-spinners"
+                  aria-label="Tamaño de fuente"
                   @input="selectedTextStyle.fontSize = $event.target.value ? Number($event.target.value) : 16"
                   @pointerdown="startFontSizeDrag"
                 />
@@ -221,6 +224,7 @@ const startFontSizeDrag = (event) => {
                   data-tip="Color"
                   :class="[getTabButtonClasses({ id: 'color'}, activePropertyPanel)]"
                   @click="$emit('property-tab-click', { id: 'color' })"
+                  aria-label="Color del texto"
                 >
                   A
                   <div
@@ -233,6 +237,7 @@ const startFontSizeDrag = (event) => {
                   type="button"
                   class="tooltip tooltip-bottom hidden btn border-0 text-xl font-bold md:inline-flex"
                   data-tip="Negrita"
+                  aria-label="Negrita"
                   :class="toggleStyleClass('fontWeight', selectedTextStyle.fontWeight, textMixedState?.fontWeight)"
                   @click="selectedTextStyle.fontWeight = selectedTextStyle.fontWeight === 'bold' ? 'regular' : 'bold'"
                 >B</button>
@@ -241,6 +246,7 @@ const startFontSizeDrag = (event) => {
                   type="button"
                   class="tooltip tooltip-bottom hidden btn border-0 text-lg font-thin italic font-serif md:inline-flex"
                   data-tip="Cursiva"
+                  aria-label="Cursiva"
                   :class="toggleStyleClass('italic', selectedTextStyle.italic, textMixedState?.italic)"
                   @click="selectedTextStyle.italic = !selectedTextStyle.italic"
                 >I</button>
@@ -249,6 +255,7 @@ const startFontSizeDrag = (event) => {
                   type="button"
                   class="tooltip tooltip-bottom hidden btn w-10 border-0 text-lg underline md:inline-flex"
                   data-tip="Subrayado"
+                  aria-label="Subrayado"
                   :class="toggleStyleClass('underline', selectedTextStyle.underline, textMixedState?.underline)"
                   @click="selectedTextStyle.underline = !selectedTextStyle.underline"
                 >U</button>
@@ -257,6 +264,7 @@ const startFontSizeDrag = (event) => {
                   type="button"
                   class="tooltip tooltip-bottom hidden btn w-10 border-0 text-lg md:inline-flex"
                   data-tip="Mayúsculas"
+                  aria-label="Mayúsculas"
                   :class="toggleStyleClass('uppercase', selectedTextStyle.uppercase, textMixedState?.uppercase)"
                   @click="selectedTextStyle.uppercase = !selectedTextStyle.uppercase"
                 >Aa</button>
@@ -265,6 +273,7 @@ const startFontSizeDrag = (event) => {
                   type="button"
                   class="tooltip tooltip-bottom hidden btn w-10 border-0 p-0 text-lg md:inline-flex"
                   data-tip="Alineación"
+                  aria-label="Cambiar alineación"
                   @click="emit('cycle-alignment')"
                 >
                   <Icon :icon="isMixed('textAlign') ? 'ph:minus' : currentAlignmentIcon" class="scale-150" />
@@ -274,6 +283,7 @@ const startFontSizeDrag = (event) => {
                 type="button"
                 class="tooltip tooltip-bottom hidden btn w-10 border-0 p-0 text-lg md:inline-flex"
                 data-tip="Lista"
+                  aria-label="Cambiar tipo de lista"
                 :class="listType !== 'none' ? 'btn-accent' : 'btn-outline'"
                 @click="emit('cycle-list')"
               >

@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import axios from 'axios';
 import { router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -18,7 +18,7 @@ const props = defineProps({
     steps: Array,
     navigation: Object,
     designs: {
-        type: Array,
+        type: [Array, Object],
         default: () => [],
     },
     communityDesigns: {
@@ -46,7 +46,10 @@ const assistantStep = ref('objective');
 const isCreatingDesign = ref(false);
 
 const authUser = computed(() => page.props.auth?.user ?? null);
-const recentProjects = computed(() => props.designs ?? []);
+const recentProjects = computed(() => {
+    if (Array.isArray(props.designs)) return props.designs;
+    return props.designs?.data ?? [];
+});
 
 const communityDesigns = computed(() => props.communityDesigns ?? []);
 const adminTemplates = computed(() => props.adminTemplates ?? []);
@@ -269,7 +272,7 @@ const deleteDesign = async (design) => {
                                 :src="props.sessionDesign.thumbnail_url || props.sessionDesign.thumbnailDataUrl"
                                 alt="Miniatura diseño temporal"
                                 class="h-full w-full object-contain rounded-xl bg-transparent"
-                            />
+                            loading="lazy"`r`n                            />
                             <span v-else class="text-xs font-medium text-base-content/65">Sin miniatura</span>
                         </div>
                         <div class="flex-1">
@@ -297,7 +300,7 @@ const deleteDesign = async (design) => {
                             type="button"
                             class="btn btn-primary btn-lg rounded-full pl-2 pr-8"
                             @click="openAssistant"
-                        >
+                        aria-label="Crear nuevo diseño"`r`n                        >
                             <span class="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary-content/15 text-2xl leading-none">+</span>
                             CREAR
                         </button>
@@ -338,9 +341,9 @@ const deleteDesign = async (design) => {
                                 type="button"
                                 class="w-full text-left"
                                 @click="openExistingDesign(project)"
-                            >
+                             :aria-label="'Abrir diseño ' + project.name"`r`n                            >
                                 <div class="h-36 rounded-xl opacity-90 flex items-center justify-center mb-2 bg-base-200/80">
-                                    <img v-if="project.thumbnail_url" :src="project.thumbnail_url" :alt="project.name" class="h-full w-full object-contain rounded-xl bg-transparent" />
+                                    <img v-if="project.thumbnail_url" :src="project.thumbnail_url" :alt="project.name" class="h-full w-full object-contain rounded-xl bg-transparent" loading="lazy" />
                                     <span v-else class="text-xs font-medium text-base-content/65">Sin miniatura</span>
                                 </div>
                                 <p class="font-semibold">{{ project.name }}</p>
@@ -384,9 +387,9 @@ const deleteDesign = async (design) => {
                         type="button"
                         class="rounded-2xl border border-base-300 bg-linear-to-br from-base-100 to-base-200 p-4 text-left hover:border-primary/60"
                         @click="openExistingDesign(item)"
-                    >
+                     :aria-label="'Abrir diseño ' + item.name"`r`n                        >
                         <div class="h-36 rounded-xl opacity-90 flex items-center justify-center bg-base-200/80 mb-2">
-                            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.name" class="h-full w-full object-contain rounded-xl bg-transparent" />
+                            <img v-if="item.thumbnail_url" :src="item.thumbnail_url" :alt="item.name" class="h-full w-full object-contain rounded-xl bg-transparent" loading="lazy" />
                             <span v-else class="text-xs font-medium text-base-content/65">Sin miniatura</span>
                         </div>
                         <p class="mt-3 font-semibold">{{ item.name }}</p>
@@ -422,9 +425,9 @@ const deleteDesign = async (design) => {
                         type="button"
                         class="rounded-2xl border border-base-300 bg-linear-to-br from-base-100 to-base-200 p-4 text-left hover:border-primary/60"
                         @click="openTemplateBase(template)"
-                    >
+                     :aria-label="'Abrir plantilla ' + template.name"`r`n                        >
                         <div class="h-36 rounded-xl opacity-90 flex items-center justify-center bg-base-200/80 mb-2">
-                            <img v-if="template.thumbnail_url" :src="template.thumbnail_url" :alt="template.name" class="h-full w-full object-contain rounded-xl bg-transparent" />
+                            <img v-if="template.thumbnail_url" :src="template.thumbnail_url" :alt="template.name" class="h-full w-full object-contain rounded-xl bg-transparent" loading="lazy" />
                             <span v-else class="text-xs font-medium text-base-content/65">Sin miniatura</span>
                         </div>
                         <p class="font-semibold">{{ template.name }}</p>

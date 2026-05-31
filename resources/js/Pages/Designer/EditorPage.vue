@@ -5894,7 +5894,7 @@ const flushDesignerStateWithThumbnail = () => {
       isDirty.value = false;
       saveStatus.value = 'saved';
     } catch (error) {
-      console.error('No se pudo guardar el estado del diseño automáticamente', error);
+      console.error('No se pudo guardar el estado del diseï¿½o automï¿½ticamente', error);
       saveStatus.value = 'error';
     }
     clearTimeout(saveStatusTimer);
@@ -6994,6 +6994,8 @@ watch(
             ref="canvasGridRef"
             class="canvas-grid relative h-full overflow-auto bg-slate-100 px-4 pt-6 pb-28 [touch-action:pan-x_pan-y] dark:bg-slate-950 sm:px-10 sm:pt-4 sm:pb-10 md:px-10 md:pt-16 md:pb-10"
             :style="canvasGridStyle"
+            role="region"
+            aria-label="Lienzo de diseÃ±o"
             @scroll.passive="handleDocumentPagesScroll"
             @wheel.capture="handleCanvasWheel"
             @pointerdown="handleCanvasPointerDownWithPinch"

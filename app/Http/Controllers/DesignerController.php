@@ -393,7 +393,8 @@ class DesignerController extends Controller
                 ? $user->designs()
                     ->whereDoesntHave('baseTemplate')
                     ->latest('updated_at')
-                    ->get([
+                    ->paginate(50, [
+                        'id',
                         'uuid',
                         'name',
                         'objective',
@@ -402,7 +403,7 @@ class DesignerController extends Controller
                         'thumbnail_path',
                         'updated_at',
                         'created_at',
-                    ])->map(fn (Design $design): array => [
+                    ])->through(fn (Design $design): array => [
                         'uuid' => $design->uuid,
                         'name' => $design->name,
                         'objective' => $design->objective,

@@ -371,7 +371,7 @@ const endPanelCloseDrag = () => {
                         class="group overflow-hidden rounded-xl border border-base-300/70 bg-base-100/70"
                         @click="addLibraryImage(image)"
                       >
-                        <img :src="image.src" :alt="image.label" class="h-20 w-full object-cover transition group-hover:scale-105" />
+                        <img :src="image.src" :alt="image.label" class="h-20 w-full object-cover transition group-hover:scale-105" loading="lazy" />
                         <span class="block px-2 py-1 text-[11px] text-base-content/70">{{ image.label }}</span>
                       </button>
                     </div>
@@ -385,7 +385,7 @@ const endPanelCloseDrag = () => {
                           class="group relative overflow-hidden rounded-xl border border-base-300/70 bg-base-100/70 text-left"
                           @click="addUploadedImage(image)"
                         >
-                          <img :src="image.src" :alt="image.label" class="h-20 w-full object-cover transition group-hover:scale-105" />
+                          <img :src="image.src" :alt="image.label" class="h-20 w-full object-cover transition group-hover:scale-105" loading="lazy" />
                           <div class="px-2 py-1.5">
                             <div class="flex items-start justify-between gap-2">
                               <span class="block truncate text-[11px] text-base-content/70">{{ image.label }}</span>

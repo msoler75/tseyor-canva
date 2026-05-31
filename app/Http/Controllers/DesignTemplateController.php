@@ -10,6 +10,7 @@ use App\Support\HasRevisionTracking;
 use App\Support\HasThumbnailRouting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -75,6 +76,8 @@ class DesignTemplateController extends Controller
             ],
         );
 
+        Cache::forget('designer.published_templates');
+
         return response()->json([
             'template' => $this->serializeTemplate($template->fresh('baseDesign')),
         ], 201);
@@ -94,6 +97,8 @@ class DesignTemplateController extends Controller
                 ? ($template->published_at ?? now())
                 : ($nextStatus === 'draft' ? null : $template->published_at),
         ])->save();
+
+        Cache::forget('designer.published_templates');
 
         return response()->json([
             'template' => $this->serializeTemplate($template->fresh('baseDesign')),

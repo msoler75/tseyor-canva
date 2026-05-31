@@ -32,6 +32,7 @@
 
 
 <script setup>
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 const props = defineProps({
     show: {
@@ -63,6 +64,27 @@ const props = defineProps({
 const emit = defineEmits(['close']);
 const modal_id = ref(null)
 
+/**
+ * Returns all focusable elements within a given container.
+ * Covers links, buttons, inputs, textareas, selects, and elements
+ * with an explicit non-negative tabindex.
+ */
+function getFocusableElements(container) {
+    if (!container) return []
+    const selectors = [
+        'a[href]',
+        'button:not([disabled])',
+        'input:not([disabled])',
+        'textarea:not([disabled])',
+        'select:not([disabled])',
+        '[tabindex]:not([tabindex="-1"])'
+    ]
+    return Array.from(container.querySelectorAll(selectors.join(',')))
+}
+
+/** Element that had focus before the modal opened — used to restore focus on close. */
+const previousActiveElement = ref(null)
+
 const close = () => {
     if (props.closeable) {
         emit('close');
@@ -77,8 +99,36 @@ const closeOnEscape = (e) => {
     }
 };
 
-// creamos un array de diÃ¡logos para saber cuales son los modales abiertos
-watch(() => props.show, (newValue) => {
+/**
+ * Traps Tab / Shift+Tab focus cycling inside the modal when open.
+ */
+function handleTabKeydown(e) {
+    if (e.key !== 'Tab' || !props.show) return
+
+    const modalEl = document.querySelector('.component-modal')
+    if (!modalEl) return
+
+    const focusableElements = getFocusableElements(modalEl)
+    if (focusableElements.length === 0) return
+
+    const first = focusableElements[0]
+    const last = focusableElements[focusableElements.length - 1]
+
+    if (e.shiftKey) {
+        if (document.activeElement === first) {
+            e.preventDefault()
+            last.focus()
+        }
+    } else {
+        if (document.activeElement === last) {
+            e.preventDefault()
+            first.focus()
+        }
+    }
+}
+
+// creamos un array de diálogos para saber cuales son los modales abiertos
+watch(() => props.show, async (newValue) => {
     if(typeof window === 'undefined') return
     if (!window.modals)
         window.modals = []
@@ -87,12 +137,33 @@ watch(() => props.show, (newValue) => {
         modal_id.value = Math.random().toString(36).substr(2, 9);
     if (newValue) {
         window.modals.push(modal_id.value)
+
+        // --- Focus trap: save previous focus and focus first element inside modal ---
+        previousActiveElement.value = document.activeElement
+        await nextTick()
+        const modalEl = document.querySelector('.component-modal')
+        if (modalEl) {
+            const focusableElements = getFocusableElements(modalEl)
+            if (focusableElements.length > 0) {
+                focusableElements[0].focus()
+            }
+        }
     }
-    else
+    else {
         window.modals.splice(window.modals.indexOf(modal_id.value), 1)
+
+        // --- Focus trap: restore previously focused element ---
+        if (previousActiveElement.value && typeof previousActiveElement.value.focus === 'function') {
+            previousActiveElement.value.focus()
+        }
+        previousActiveElement.value = null
+    }
 });
 
-onMounted(() => document.addEventListener('keydown', closeOnEscape));
+onMounted(() => {
+    document.addEventListener('keydown', closeOnEscape);
+    document.addEventListener('keydown', handleTabKeydown);
+});
 
 /* watch(() => props.show, () => {
     if (props.show) {
@@ -104,6 +175,7 @@ onMounted(() => document.addEventListener('keydown', closeOnEscape));
 
 onBeforeUnmount(() => {
     document.removeEventListener('keydown', closeOnEscape);
+    document.removeEventListener('keydown', handleTabKeydown);
     //document.body.style.overflow = null;
 });
 

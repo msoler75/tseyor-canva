@@ -265,6 +265,7 @@ const handleZoomInput = (event) => {
           max="200"
           step="5"
           class="range range-primary h-2 w-28"
+          aria-label="Nivel de zoom"
           @input="handleZoomInput"
         />
         <input
@@ -274,6 +275,7 @@ const handleZoomInput = (event) => {
           max="200"
           step="5"
           class="input input-bordered input-sm w-14 text-md"
+          aria-label="Zoom en porcentaje"
           @input="handleZoomInput"
         />
         <span class="text-xs text-base-content/60">%</span>
@@ -284,6 +286,7 @@ const handleZoomInput = (event) => {
         class="btn text-lg rounded-full px-1.5"
         :title="darkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'"
         @click="handleToggleDarkMode"
+        aria-label="Cambiar a modo claro/oscuro"
       >
         {{ darkMode ? '🌙' : '☀️' }}
       </button>

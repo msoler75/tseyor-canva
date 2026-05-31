@@ -16,7 +16,7 @@ defineProps({
             : 'outline-base-300 bg-base-100 hover:outline-primary/40'"
     >
         <div v-if="template.thumbnail_url" class="relative min-h-64 bg-base-200">
-            <img :src="template.thumbnail_url" :alt="template.name" class="h-64 w-full object-cover" />
+            <img :src="template.thumbnail_url" :alt="template.name" class="h-64 w-full object-cover" loading="lazy" />
         </div>
         <div v-else class="bg-gradient-to-br p-5" :class="[template.theme || 'from-slate-100 via-white to-slate-200', template.text || 'text-slate-950']">
             <h4 class="mt-4 text-3xl font-black leading-none">{{ content.title }}</h4>

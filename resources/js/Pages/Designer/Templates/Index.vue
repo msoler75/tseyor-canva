@@ -69,6 +69,7 @@ const openTemplateBase = (template) => {
                 :src="template.thumbnail_url"
                 :alt="template.title"
                 class="h-full w-full object-cover"
+              loading="lazy"
               />
               <div v-else class="flex h-full min-h-56 items-center justify-center text-sm text-base-content/60">
                 Sin miniatura
