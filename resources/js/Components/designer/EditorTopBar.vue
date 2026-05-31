@@ -233,9 +233,9 @@ const handleZoomInput = (event) => {
       </div>
 
       <!-- Word / character count -->
-      <div class="hidden sm:flex items-center gap-1 text-xs text-base-content/50 mr-2" title="palabras · caracteres">
+      <div class="hidden sm:flex items-center gap-1 text-xs text-base-content/50 mr-2" title="palabras Â· caracteres">
         <Icon icon="ph:text-align-left-bold" class="text-sm" />
-        <span>{{ wordCount.words }} palabras · {{ wordCount.chars }} caracteres</span>
+        <span>{{ wordCount.words }} palabras Â· {{ wordCount.chars }} caracteres</span>
       </div>
 
       <!-- Keyboard shortcut cheatsheet button -->

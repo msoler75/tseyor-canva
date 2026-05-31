@@ -82,7 +82,7 @@ function getFocusableElements(container) {
     return Array.from(container.querySelectorAll(selectors.join(',')))
 }
 
-/** Element that had focus before the modal opened � used to restore focus on close. */
+/** Element that had focus before the modal opened â used to restore focus on close. */
 const previousActiveElement = ref(null)
 
 const close = () => {
@@ -127,7 +127,7 @@ function handleTabKeydown(e) {
     }
 }
 
-// creamos un array de di�logos para saber cuales son los modales abiertos
+// creamos un array de diálogos para saber cuales son los modales abiertos
 watch(() => props.show, async (newValue) => {
     if(typeof window === 'undefined') return
     if (!window.modals)
