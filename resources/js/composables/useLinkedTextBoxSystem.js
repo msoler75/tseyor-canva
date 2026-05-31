@@ -314,31 +314,12 @@ export function createLinkedTextBoxSystem() {
           padding: 0 !important;
         `;
 
-        // ANCHO DIN?MICO: medir con el mismo viewport textual que el render real.
-        let width = layout.w || 300;
-        if (renderedTextNode) {
-          const textRect = renderedTextNode.getBoundingClientRect();
-          if (textRect.width > 0) {
-            width = textRect.width;
-          } else {
-            const computedStyle = window.getComputedStyle(renderedTextNode);
-            const computedWidth = computedStyle.width;
-            if (computedWidth && computedWidth !== 'auto') {
-              width = parseFloat(computedWidth);
-            }
-          }
-        } else if (renderedElement) {
-          const elementRect = renderedElement.getBoundingClientRect();
-          if (elementRect.width > 0) {
-            width = elementRect.width;
-          } else {
-            const computedStyle = window.getComputedStyle(renderedElement);
-            const computedWidth = computedStyle.width;
-            if (computedWidth && computedWidth !== 'auto') {
-              width = parseFloat(computedWidth);
-            }
-          }
-        }
+        // ANCHO FIABLE: layout.w es el ancho de diseño de la caja.
+        // NO usar getBoundingClientRect() (distorsionado por transform:scale del canvas)
+        // NI getComputedStyle().width (inconsistente entre contextos de renderizado).
+        // El padding del background se compensa con margin negativo en elementContentStyle,
+        // por lo que el ancho de contenido real SIEMPRE es layout.w.
+        const width = layout.w || 300;
         innerDiv.style.width = `${width}px`;
 
         // Copiar estilos computados reales antes que los fallbacks.
@@ -449,7 +430,22 @@ export function createLinkedTextBoxSystem() {
               if (isComplete && para.innerHTML) {
                 contents = para.innerHTML;
               } else if (textUnits.length > 0) {
-                contents = textUnits.map(u => escapeHtml(u.word)).join('') || '\u200B';
+                // Preservar spans con estilos inline incluso en párrafos partidos,
+                // para que la medición binaria coincida con el render real de C1.
+                if (para.innerHTML) {
+                  try {
+                    const styled = extractStyledSlice(para, textUnits);
+                    if (styled) {
+                      contents = styled;
+                    } else {
+                      contents = textUnits.map(u => escapeHtml(u.word)).join('') || '\u200B';
+                    }
+                  } catch {
+                    contents = textUnits.map(u => escapeHtml(u.word)).join('') || '\u200B';
+                  }
+                } else {
+                  contents = textUnits.map(u => escapeHtml(u.word)).join('') || '\u200B';
+                }
               } else {
                 contents = '<br>';
               }
@@ -458,10 +454,63 @@ export function createLinkedTextBoxSystem() {
           }
 
          return htmlParts.join('');
-       };
+        };
 
-       /**
-        * Construir HTML completo con marcador en un unitIndex (word-level).
+        const extractStyledSlice = (para, textUnits) => {
+          const fullText = para.words.join('');
+          const sliceText = textUnits.map(u => u.word).join('');
+          const textStart = fullText.indexOf(sliceText);
+          if (textStart === -1) return '';
+          const textEnd = textStart + sliceText.length;
+          const temp = document.createElement('div');
+
+          temp.innerHTML = `<${para.tag || 'p'}>${para.innerHTML}</${para.tag || 'p'}>`;
+          const el = temp.firstElementChild;
+          if (!el) return '';
+          const elFullText = el.textContent || '';
+          if (textStart <= 0 && textEnd >= elFullText.length) return el.innerHTML;
+          try {
+            const range = document.createRange();
+            const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+            let charPos = 0;
+            let startNode = null, startOffset = 0;
+            let endNode = null, endOffset = 0;
+            while (walker.nextNode()) {
+              const node = walker.currentNode;
+              const len = node.textContent.length;
+              if (startNode === null && charPos + len > textStart) {
+                startNode = node;
+                startOffset = textStart - charPos;
+              }
+              if (endNode === null && charPos + len >= textEnd) {
+                endNode = node;
+                endOffset = textEnd - charPos;
+                break;
+              }
+              charPos += len;
+            }
+            if (!startNode || !endNode) return '';
+            range.setStart(startNode, Math.min(startOffset, startNode.textContent.length));
+            range.setEnd(endNode, Math.min(endOffset, endNode.textContent.length));
+            // cloneContents() NO preserva el <span> padre cuando el text node
+            // está completamente seleccionado (offset 0 a length).
+            // Detectar ese caso y devolver el outerHTML del padre directamente.
+            const startParent = startNode.parentElement;
+            if (startNode === endNode && startParent && startParent !== el
+                && startOffset === 0 && endOffset === startNode.textContent.length
+                && startParent.childNodes.length === 1) {
+              return startParent.outerHTML;
+            }
+            const wrapper = document.createElement('span');
+            wrapper.appendChild(range.cloneContents());
+            return wrapper.innerHTML;
+          } catch {
+            return '';
+          }
+        };
+
+        /**
+         * Construir HTML completo con marcador en un unitIndex (word-level).
         */
        const buildHtmlWithMarkerAtUnitIndex = (markerUnitIndex, layout = null) => {
          const markerHtml = '<span data-linked-text-flow-marker="true" style="display:inline-block;width:0;height:1em;line-height:1;vertical-align:top;overflow:hidden"></span>';
@@ -616,26 +665,23 @@ export function createLinkedTextBoxSystem() {
         const rawVisibleSlice = allUnits.slice(unitIdx, unitIdx + fitUnits);
         const rawOverflowSlice = allUnits.slice(unitIdx + fitUnits);
 
-        // Eliminar tokens de espacio al final de la porción visible y al inicio del overflow
-        const visibleSlice = [...rawVisibleSlice];
-        while (visibleSlice.length > 0
-          && visibleSlice[visibleSlice.length - 1]?.type === 'word'
-          && /^\s+$/.test(visibleSlice[visibleSlice.length - 1]?.word || '')) {
-          visibleSlice.pop();
-        }
-        const overflowSlice = [...rawOverflowSlice];
-        let leadingSpaces = 0;
-        while (overflowSlice.length > 0
-          && overflowSlice[0]?.type === 'word'
-          && /^\s+$/.test(overflowSlice[0]?.word || '')) {
-          overflowSlice.shift();
-          leadingSpaces++;
-        }
-
-        const visibleHtml = buildHtmlFromUnitSlice(visibleSlice, layout);
-
         // REGLA: Si la caja tiene enlace siguiente, NUNCA tiene overflowHtml
         const isLastInChain = !layout.linkedTextNext;
+
+        // Solo la última caja elimina espacios finales (evita perder el espacio entre palabras en el límite entre cajas)
+        let visibleSlice = [...rawVisibleSlice];
+        if (isLastInChain) {
+          while (visibleSlice.length > 0
+            && visibleSlice[visibleSlice.length - 1]?.type === 'word'
+            && /^\s+$/.test(visibleSlice[visibleSlice.length - 1]?.word || '')) {
+            visibleSlice.pop();
+          }
+        }
+        // NO eliminar espacios iniciales del overflow: el espacio entre palabras que cae
+        // al inicio del overflow debe preservarse para la siguiente caja de la cadena
+        const overflowSlice = [...rawOverflowSlice];
+
+        const visibleHtml = buildHtmlFromUnitSlice(visibleSlice, layout);
         const overflowHtml = isLastInChain ? buildHtmlFromUnitSlice(overflowSlice, layout) : '';
 
         const fullTextHtml = buildHtmlFromUnitSlice(allUnits, layout);
@@ -653,7 +699,7 @@ export function createLinkedTextBoxSystem() {
           fitsInBox: fitsInBox
         };
 
-        unitIdx += fitUnits + leadingSpaces;
+        unitIdx += fitUnits;
 
         frontendLog.info('boxFragment',
           `Caja ${boxIndex + 1}: ${fitUnits}/${totalUnits - (unitIdx - fitUnits)} unidades caben`,

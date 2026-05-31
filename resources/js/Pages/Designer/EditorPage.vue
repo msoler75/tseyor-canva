@@ -1432,7 +1432,6 @@ const recalculateLinkedTextAllocations = (headId) => {
 
   const system = linkedTextBoxSystem.getOrCreateSystem(groupId);
   if (system.fragments) {
-    console.log('[RECALC] AFTER redistribute, fragment keys:', Object.keys(system.fragments), 'C1 html:', system.fragments['C1']?.html?.substring?.(0, 30) || '(empty)', 'C2 html:', system.fragments['C2']?.html?.substring?.(0, 30) || '(empty)');
     const richHtml = headElement.html && headElement.html.trim() ? headElement.html : '';
     if (richHtml) {
       const styled = mergeParagraphStylesIntoHtml(richHtml, headStyles);
@@ -1440,6 +1439,17 @@ const recalculateLinkedTextAllocations = (headId) => {
       // el texto plano del fragmento coincida con el del HTML original.
       // Esto preserva formato inline, listas y encabezados en cada caja.
       assignRichHtmlToFragments(system.fragments, chain, richHtml, styled, headStyles);
+    }
+
+    // Sincronizar el HTML estilizado de cada fragmento al elemento real
+    // (para que el renderer de Canva en el canvas respete los spans con color).
+    // NO tocar la cabeza de la cadena: su html/text canónico se mantiene aparte.
+    for (const [boxId, fragment] of Object.entries(system.fragments)) {
+      if (boxId === headId) continue;
+      if (fragment.html) {
+        linkedTextSetElementField(boxId, 'html', fragment.html);
+        linkedTextSetElementField(boxId, 'text', fragment.html.replace(/<[^>]*>/g, '').replace(/[\u200B\u200C\u200D\uFEFF]/g, ''));
+      }
     }
 
     for (const [boxId, fragment] of Object.entries(system.fragments)) {
@@ -1520,9 +1530,20 @@ function assignRichHtmlToFragments(fragments, chain, richHtml, styledHtml, headS
       for (const attr of el.attributes) {
         result.setAttribute(attr.name, attr.value);
       }
-      result.appendChild(range.cloneContents());
+      // cloneContents() NO preserva el <span> padre cuando el text node
+      // está completamente seleccionado. Detectar ese caso y clonar el
+      // elemento padre directamente para mantener atributos de estilo.
+      const startParent = startNode.parentElement;
+      if (startNode === endNode && startParent && startParent !== el
+          && startOffset === 0 && endOffset === startNode.textContent.length
+          && startParent.childNodes.length === 1) {
+        result.appendChild(startParent.cloneNode(true));
+      } else {
+        result.appendChild(range.cloneContents());
+      }
       return result.outerHTML;
-    } catch {
+    } catch (e) {
+      console.warn('[SLICE] error:', e, { outerHtml, textStart, textEnd });
       return '';
     }
   }
@@ -1545,7 +1566,6 @@ function assignRichHtmlToFragments(fragments, chain, richHtml, styledHtml, headS
     const idx = fullText.indexOf(fragText, searchPos);
     if (idx === -1) continue;
 
-    // Encontrar qué bloques cubre este fragmento
     let startBlock = -1, endBlock = -1;
     let charPos = 0;
     for (let i = 0; i < blockData.length; i++) {
@@ -1561,16 +1581,12 @@ function assignRichHtmlToFragments(fragments, chain, richHtml, styledHtml, headS
     }
     if (startBlock === -1 || endBlock === -1) continue;
 
-    const blockCharOffsets = blockData.map(b => b.text.length);
     const startInBlock = idx - blockData.slice(0, startBlock).reduce((s, b) => s + b.text.length, 0);
     const endInBlock = (idx + fragText.length) - blockData.slice(0, endBlock).reduce((s, b) => s + b.text.length, 0);
 
     if (startInBlock === 0 && endInBlock === blockData[endBlock].text.length) {
-      // Alineación exacta con bloques
       frag.html = blockData.slice(startBlock, endBlock + 1).map(b => b.html).join('');
     } else {
-      // Fragmento que empieza o termina a medio párrafo:
-      // extraer el HTML rico (con <span> de styledText) para el slice de texto exacto
       const parts = [];
       for (let i = startBlock; i <= endBlock; i++) {
         const block = blockData[i];
@@ -1581,54 +1597,6 @@ function assignRichHtmlToFragments(fragments, chain, richHtml, styledHtml, headS
       }
       if (parts.length) frag.html = parts.join('');
     }
-
-    searchPos = idx + fragText.length;
-  }
-}
-
-  const blockData = blocks.map(el => ({
-    html: el.outerHTML,
-    text: cleanText(el.textContent),
-  }));
-  const fullText = blockData.map(b => b.text).join('');
-
-  let searchPos = 0;
-  for (const box of chain) {
-    const frag = fragments[box.id];
-    if (!frag) continue;
-
-    // Calcular texto plano del fragmento (los fragments no tienen campo 'text')
-    const fragHtml = frag.html || '';
-    const fragText = cleanText(fragHtml.replace(/<[^>]*>/g, ''));
-    if (!fragText) continue;
-
-    const idx = fullText.indexOf(fragText, searchPos);
-    if (idx === -1) continue;
-
-    // Encontrar qué bloques cubre este fragmento
-    let startBlock = -1, endBlock = -1;
-    let charPos = 0;
-    for (let i = 0; i < blockData.length; i++) {
-      const blockLen = blockData[i].text.length;
-      if (startBlock === -1 && charPos <= idx && idx < charPos + blockLen) startBlock = i;
-      if (startBlock !== -1) {
-        if (idx + fragText.length <= charPos + blockLen) {
-          endBlock = i;
-          break;
-        }
-      }
-      charPos += blockLen;
-    }
-    if (startBlock === -1 || endBlock === -1) continue;
-
-    // Verificar alineación exacta con bloques
-    const startInBlock = idx - blockData.slice(0, startBlock).reduce((s, b) => s + b.text.length, 0);
-    const endInBlock = (idx + fragText.length) - blockData.slice(0, endBlock).reduce((s, b) => s + b.text.length, 0);
-    if (startInBlock !== 0 || endInBlock !== blockData[endBlock].text.length) continue;
-
-    const richPart = blockData.slice(startBlock, endBlock + 1).map(b => b.html).join('');
-    frag.html = richPart;
-
     searchPos = idx + fragText.length;
   }
 }
