@@ -1,6 +1,5 @@
 ﻿<template>
-    <ClientOnly>
-        <teleport to="body">
+    <teleport to="body">
             <transition leave-active-class="duration-200">
                 <div
                     v-cloak
@@ -83,7 +82,6 @@
                 </div>
             </transition>
         </teleport>
-    </ClientOnly>
 </template>
 
 <script setup>

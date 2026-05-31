@@ -1,6 +1,5 @@
 <template>
-    <ClientOnly>
-        <teleport to="body">
+    <teleport to="body">
             <transition leave-active-class="duration-200">
                 <div v-cloak v-show="show" class="component-modal fixed inset-0 overflow-y-auto px-4 py-6 sm:px-0 select-none" scroll-region
                     :class="[centered ? 'flex items-center' : '']"
@@ -27,8 +26,7 @@
                 </div>
             </transition>
         </teleport>
-    </ClientOnly>
-</template>
+    </template>
 
 
 <script setup>
