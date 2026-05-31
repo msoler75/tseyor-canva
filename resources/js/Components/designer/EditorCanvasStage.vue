@@ -426,11 +426,13 @@ const forceSelectAllSet = computed(() => {
                 : (drag.active && drag.elementId === item.id
                     ? 'ring-2 ring-cyan-300/50 bg-white/10'
                     : 'ring-2 ring-cyan-300/50 bg-white/8'))
-            : (showFieldLabels && item.fieldKey
-                ? (item.fieldKey === props.hoveredFieldKey ? 'z-[70] ring-2 ring-accent/50 bg-accent/10' : 'z-50 ring-2 ring-accent/50 bg-accent/10')
-                : (linkedTextLink?.active && linkedTextLink.hoverTargetId === item.id
-                    ? 'z-40 ring-2 ring-emerald-400/70 bg-emerald-400/15'
-                    : 'z-10'))),
+            : (item.type === 'linkedText' && !isElementSelected(item.id) && isLinkedTextChainActive(item.id) && editingElementId !== item.id
+                ? 'z-30 ring-2 ring-cyan-300/20 bg-white/5'
+                : (showFieldLabels && item.fieldKey
+                    ? (item.fieldKey === props.hoveredFieldKey ? 'z-[70] ring-2 ring-accent/50 bg-accent/10' : 'z-50 ring-2 ring-accent/50 bg-accent/10')
+                    : (linkedTextLink?.active && linkedTextLink.hoverTargetId === item.id
+                        ? 'z-40 ring-2 ring-emerald-400/70 bg-emerald-400/15'
+                        : 'z-10')))),
             (item.type === 'linkedText' || item.type === 'text') && !item.text?.trim() && editingElementId !== item.id ? 'z-20' : '']"
             :style="[elementBoxStyle(item.id), (item.type === 'linkedText' || item.type === 'text') && !item.text?.trim() && editingElementId !== item.id ? { outline: '2px dashed rgba(14,165,233,0.5)', outlineOffset: '0px' } : {}, item.type === 'linkedText' && editingElementId === item.id ? { overflow: 'hidden' } : {}]"
           @click="emit('elementClick', { event: $event, id: item.id })"
@@ -464,7 +466,7 @@ const forceSelectAllSet = computed(() => {
                 :box-dimensions="item.type === 'linkedText' ? { w: layoutFor(item.id)?.w, h: layoutFor(item.id)?.h, fontSize: layoutFor(item.id)?.fontSize, lineHeight: layoutFor(item.id)?.lineHeight } : null"
                 :display-mode="item.type === 'linkedText' && editingElementId !== item.id && isLinkedTextInChainBeingEdited(item.id)"
                 :force-select-all="item.type === 'linkedText' ? forceSelectAllSet.has(item.id) : false"
-                :initial-html="item.type === 'linkedText' ? (item.linkedTextInitialHtml ?? '') : ''"
+                :initial-html="item.type === 'linkedText' ? (item.linkedTextInitialHtml ?? '') : (item.html ?? '')"
                 :display-html="item.type === 'linkedText' ? (item.linkedTextDisplayHtml ?? '') : ''"
                 :overflow-html="item.type === 'linkedText' ? (item.linkedTextOverflowHtml ?? '') : ''"
                 :full-text-html="item.type === 'linkedText' ? (item.linkedTextFullTextHtml ?? '') : ''"
@@ -489,8 +491,8 @@ const forceSelectAllSet = computed(() => {
               <button
                 v-if="item.type === 'linkedText' && isElementSelected(item.id) && editingElementId !== item.id"
                 type="button"
-                class="linked-text-link-btn absolute -bottom-4 right-1 z-20 flex h-6 w-6 cursor-grab items-center justify-center rounded-full bg-primary/80 text-white shadow-md transition hover:bg-primary active:cursor-grabbing"
-                title="Arrastra para conectar con otro texto enlazado"
+                :class="'linked-text-link-btn absolute -bottom-4 right-1 z-20 flex h-6 w-6 cursor-grab items-center justify-center rounded-full shadow-md transition active:cursor-grabbing ' + (item.linkedTextIsLastInChain && item.linkedTextOverflowHtml ? 'bg-amber-500/90 text-white hover:bg-amber-500' : 'bg-primary/80 text-white hover:bg-primary')"
+                :title="item.linkedTextIsLastInChain && item.linkedTextOverflowHtml ? 'Tiene texto oculto — arrastra para conectar' : 'Arrastra para conectar con otro texto enlazado'"
                 @pointerdown.stop="emit('linkedTextLinkStart', { event: $event, id: item.id })"
               >
                 <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

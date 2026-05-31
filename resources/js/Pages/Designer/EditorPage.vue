@@ -1486,6 +1486,106 @@ function assignRichHtmlToFragments(fragments, chain, richHtml, styledHtml, headS
     return (t || '').replace(/[\u200B\u200C\u200D\uFEFF]/g, '').trim();
   }
 
+  function sliceInnerHtml(outerHtml, textStart, textEnd) {
+    const temp = document.createElement('div');
+    temp.innerHTML = outerHtml;
+    const el = temp.firstElementChild;
+    if (!el) return '';
+    const fullText = el.textContent || '';
+    if (textStart <= 0 && textEnd >= fullText.length) return el.outerHTML;
+    try {
+      const range = document.createRange();
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let charPos = 0;
+      let startNode = null, startOffset = 0;
+      let endNode = null, endOffset = 0;
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const len = node.textContent.length;
+        if (startNode === null && charPos + len > textStart) {
+          startNode = node;
+          startOffset = textStart - charPos;
+        }
+        if (endNode === null && charPos + len >= textEnd) {
+          endNode = node;
+          endOffset = textEnd - charPos;
+          break;
+        }
+        charPos += len;
+      }
+      if (!startNode || !endNode) return '';
+      range.setStart(startNode, Math.min(startOffset, startNode.textContent.length));
+      range.setEnd(endNode, Math.min(endOffset, endNode.textContent.length));
+      const result = document.createElement(el.tagName);
+      for (const attr of el.attributes) {
+        result.setAttribute(attr.name, attr.value);
+      }
+      result.appendChild(range.cloneContents());
+      return result.outerHTML;
+    } catch {
+      return '';
+    }
+  }
+
+  const blockData = blocks.map(el => ({
+    html: el.outerHTML,
+    text: cleanText(el.textContent),
+  }));
+  const fullText = blockData.map(b => b.text).join('');
+
+  let searchPos = 0;
+  for (const box of chain) {
+    const frag = fragments[box.id];
+    if (!frag) continue;
+
+    const fragHtml = frag.html || '';
+    const fragText = cleanText(fragHtml.replace(/<[^>]*>/g, ''));
+    if (!fragText) continue;
+
+    const idx = fullText.indexOf(fragText, searchPos);
+    if (idx === -1) continue;
+
+    // Encontrar qué bloques cubre este fragmento
+    let startBlock = -1, endBlock = -1;
+    let charPos = 0;
+    for (let i = 0; i < blockData.length; i++) {
+      const blockLen = blockData[i].text.length;
+      if (startBlock === -1 && charPos <= idx && idx < charPos + blockLen) startBlock = i;
+      if (startBlock !== -1) {
+        if (idx + fragText.length <= charPos + blockLen) {
+          endBlock = i;
+          break;
+        }
+      }
+      charPos += blockLen;
+    }
+    if (startBlock === -1 || endBlock === -1) continue;
+
+    const blockCharOffsets = blockData.map(b => b.text.length);
+    const startInBlock = idx - blockData.slice(0, startBlock).reduce((s, b) => s + b.text.length, 0);
+    const endInBlock = (idx + fragText.length) - blockData.slice(0, endBlock).reduce((s, b) => s + b.text.length, 0);
+
+    if (startInBlock === 0 && endInBlock === blockData[endBlock].text.length) {
+      // Alineación exacta con bloques
+      frag.html = blockData.slice(startBlock, endBlock + 1).map(b => b.html).join('');
+    } else {
+      // Fragmento que empieza o termina a medio párrafo:
+      // extraer el HTML rico (con <span> de styledText) para el slice de texto exacto
+      const parts = [];
+      for (let i = startBlock; i <= endBlock; i++) {
+        const block = blockData[i];
+        const blockStart = (i === startBlock) ? startInBlock : 0;
+        const blockEnd = (i === endBlock) ? endInBlock : block.text.length;
+        const sliced = sliceInnerHtml(block.html, blockStart, blockEnd);
+        if (sliced) parts.push(sliced);
+      }
+      if (parts.length) frag.html = parts.join('');
+    }
+
+    searchPos = idx + fragText.length;
+  }
+}
+
   const blockData = blocks.map(el => ({
     html: el.outerHTML,
     text: cleanText(el.textContent),
@@ -1649,6 +1749,7 @@ const editorElements = computed(() => {
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
       qrDataUrl: element.type === 'qr' ? element.qrDataUrl : null,
       qrUrl: element.type === 'qr' ? element.url : null,
+      html: element.type !== 'linkedText' ? (element.html ?? '') : '',
     };
   });
 
@@ -1766,6 +1867,7 @@ const editorElementsForPage = (pageState) => {
       shapeKind: element.type === 'shape' ? element.shapeKind : null,
       qrDataUrl: element.type === 'qr' ? element.qrDataUrl : null,
       qrUrl: element.type === 'qr' ? element.url : null,
+      html: element.type !== 'linkedText' ? (element.html ?? '') : '',
     };
   });
 
@@ -2300,6 +2402,12 @@ const applyParagraphStyleField = (field, value) => {
       style[field] = field === 'color' ? normalizeColor(value) : value;
     };
 
+    const CHAR_STYLE_FIELDS = new Set(['color', 'fontWeight', 'italic', 'underline', 'fontSize', 'fontFamily']);
+
+    const editorRef = richEditorRefs.value[state.selectedElementId];
+    const { from: selFrom, to: selTo } = editorRef?.getSelection?.() ?? {};
+    const hasActiveTextSelection = selFrom !== undefined && selTo !== undefined && selFrom !== selTo;
+
     if (editingElementId.value === state.selectedElementId && paragraphSelection.active) {
       const start = clamp(Math.min(paragraphSelection.start, paragraphSelection.end), 0, Math.max(0, styles.length - 1));
       const end = clamp(Math.max(paragraphSelection.start, paragraphSelection.end), 0, Math.max(0, styles.length - 1));
@@ -2307,32 +2415,53 @@ const applyParagraphStyleField = (field, value) => {
         applyToStyle(styles[index]);
       }
     } else if (editingElementId.value === state.selectedElementId) {
-      applyToStyle(styles[clamp(selectedParagraphIndex.value, 0, Math.max(0, styles.length - 1))]);
+      // Para campos de carácter en selección que no es párrafo completo,
+      // no actualizar el paragraphStyle del párrafo — el styledText mark
+      // maneja el estilo a nivel carácter. Si actualizamos acá, el watcher
+      // del editor reconstruye el doc con buildDoc() y pierde las marks.
+      if (!CHAR_STYLE_FIELDS.has(field) || ((field === 'fontSize' || field === 'fontFamily') && !hasActiveTextSelection)) {
+        applyToStyle(styles[clamp(selectedParagraphIndex.value, 0, Math.max(0, styles.length - 1))]);
+      }
     } else {
       styles.forEach(applyToStyle);
     }
 
-    const isLinkedStyle = state.customElements?.[styleSourceId]?.type === 'linkedText';
-    // Para texto enlazado en edición selectiva, NO actualizar la propiedad base del layout,
-    // porque el cambio es solo en el párrafo seleccionado, no debe propagarse a todos.
-    if (!isLinkedStyle || editingElementId.value !== state.selectedElementId) {
-      if (field === 'fontSize' || field === 'fontFamily' || field === 'fontWeight' || field === 'italic' || field === 'letterSpacing' || field === 'lineHeight' || field === 'color' || field === 'textAlign' || field === 'underline' || field === 'uppercase') {
+    // Actualizar layout ANTES de los dispatches del editor, así syncLinkedTextCanonicalFromHtml
+    // ve el valor correcto como fallback en parseLinkedParagraphStylesFromHtml.
+    // fontSize y fontFamily son campos híbridos: con selección activa aplican a nivel carácter,
+    // sin selección activa aplican como valor por defecto del párrafo.
+    if (field === 'fontSize' || field === 'fontFamily' || field === 'fontWeight' || field === 'italic' || field === 'letterSpacing' || field === 'lineHeight' || field === 'color' || field === 'textAlign' || field === 'underline' || field === 'uppercase') {
+      if (editingElementId.value !== state.selectedElementId || paragraphSelection.active || !CHAR_STYLE_FIELDS.has(field) || ((field === 'fontSize' || field === 'fontFamily') && !hasActiveTextSelection)) {
         layout[field] = field === 'color' ? normalizeColor(value) : value;
       }
     }
 
-    const editorRef = richEditorRefs.value[state.selectedElementId];
-
-    const CHAR_STYLE_FIELDS = new Set(['color', 'fontWeight', 'italic', 'underline', 'fontSize', 'fontFamily']);
+    const TOGGLE_STYLE_FIELDS = new Set(['fontWeight', 'italic', 'underline', 'uppercase']);
 
     if (editorRef && editingElementId.value === state.selectedElementId) {
         if (paragraphSelection.active && CHAR_STYLE_FIELDS.has(field)) {
-            editorRef.applyCharacterStyle(field, value);
+            if (linkedTextSelectAllHeadId.value && TOGGLE_STYLE_FIELDS.has(field)) {
+                editorRef.applyStyle(field, value);
+                if (editorRef.removeMarkStyle) {
+                    editorRef.removeMarkStyle('styledText');
+                }
+            } else {
+                editorRef.applyStyle(field, value);
+                editorRef.applyCharacterStyle(field, value);
+            }
         } else {
+        // Para selección carácter (no paragraphSelection), applyStyle cambiaría el párrafo entero.
+        // Solo llamarlo para campos NO caracter (textAlign, lineHeight, letterSpacing).
+        // fontSize/fontFamily son híbridos: applyStyle solo si NO hay selección (cambio de default).
+        if (!CHAR_STYLE_FIELDS.has(field) || ((field === 'fontSize' || field === 'fontFamily') && !hasActiveTextSelection)) {
+            editorRef.applyStyle(field, value);
+        }
             if (linkedTextSelectAllHeadId.value && CHAR_STYLE_FIELDS.has(field) && editorRef.removeMarkStyle) {
                 editorRef.removeMarkStyle('styledText');
             }
-            editorRef.applyStyle(field, value);
+            if (CHAR_STYLE_FIELDS.has(field) && editorRef.applyCharacterStyle) {
+                editorRef.applyCharacterStyle(field, value);
+            }
         }
     } else if (editorRef) {
         editorRef.applyStyleAll(field, value);
@@ -2436,6 +2565,14 @@ const selectedTextStyle = computed(() => {
   const mergedAttrs = Object.fromEntries(
     Object.entries(activeAttrs).filter(([, value]) => value !== null && value !== undefined)
   );
+
+  // styledText mark attributes override paragraph ATTRS for character-level styles
+  const markAttrs = editorRef?.getMarkAttributes?.('styledText') ?? {};
+  for (const key of ['fontSize', 'fontFamily', 'fontWeight', 'color']) {
+    if (markAttrs[key] !== null && markAttrs[key] !== undefined) {
+      mergedAttrs[key] = markAttrs[key];
+    }
+  }
   const attrs = buildParagraphStyle(selectedElement.value ?? {}, {
     ...fallbackStyle,
     ...mergedAttrs,
@@ -2456,12 +2593,8 @@ const selectedTextStyle = computed(() => {
                         if (editorRef?.applyCharacterStyle) {
                             const { from, to } = editorRef.getSelection?.() ?? {};
                             if (from !== undefined && to !== undefined && from !== to) {
-                                // Durante select-all, NO tomar el shortcut de marks
-                                // Necesitamos que applyParagraphStyleField propague a toda la cadena
-                                if (!linkedTextSelectAllHeadId.value) {
-                                    editorRef.applyCharacterStyle(key, value);
-                                    return true;
-                                }
+                                // applyCharacterStyle se maneja DENTRO de applyParagraphStyleField (con orden applyStyle→applyCharacterStyle)
+                                // para que syncLinkedTextCanonicalFromHtml detecte el cambio correctamente en el HTML.
                             }
                         }
                     }
@@ -3277,12 +3410,16 @@ const redistributeLinkedText = (startId) => {
 
 const onRichEditorHtmlUpdate = (id, html) => {
   const element = linkedTextElementFromAnyPage(id);
-  if (!element || element.type !== 'linkedText') return;
+  if (!element) return;
 
-  // Cuando select-all está activo, el text update handler ya redistribuyó
-  if (linkedTextSelectAllHeadId.value) return;
-
-  syncLinkedTextCanonicalFromHtml(id, html || '');
+  if (element.type === 'linkedText') {
+    // Cuando select-all está activo, el text update handler ya redistribuyó
+    if (linkedTextSelectAllHeadId.value) return;
+    syncLinkedTextCanonicalFromHtml(id, html || '');
+  } else {
+    // Para texto no-enlazable, preservar el HTML con styledText marks
+    element.html = html || '';
+  }
 };
 
 const addTemplateFieldElement = (fieldKey) => {
@@ -5247,7 +5384,6 @@ const onSelectAllClick = () => {
 };
 
 const onRichEditorTextUpdate = (id, newText) => {
-  console.log('[TEXT-UPDATE:CATCHALL] id=', id, 'newText=|', newText?.substring(0, 50), '|', 'flag=', linkedTextSelectAllHeadId.value);
   const baseTextKeys = ['title', 'subtitle', 'meta', 'contact', 'extra'];
   if (baseTextKeys.includes(id)) {
     if (id === 'meta') {

@@ -159,6 +159,7 @@ const props = defineProps({
     overflowHtml: { type: String, default: '' },
     fullTextHtml: { type: String, default: '' },
     tailHtml: { type: String, default: '' },
+    initialHtml: { type: String, default: '' },
     showOverflow: { type: Boolean, default: false },
     linkedTextActive: { type: Boolean, default: false },
     editorTopOffset: { type: Number, default: 0 }, /* este atributo ya no se usa */
@@ -658,15 +659,13 @@ const applyCharacterStyle = (field, value) => {
 
     let finalAttrs;
     if (isToggleField) {
-        const currentValue = existingAttrs[newAttrKey];
-        const isActive = currentValue === toggleValue;
-        if (isActive) {
-            // Remove the attribute (toggle off)
+        if (value) {
+            // Set the attribute ON
+            finalAttrs = { ...existingAttrs, [newAttrKey]: toggleValue };
+        } else {
+            // Remove the attribute OFF
             const { [newAttrKey]: _, ...rest } = existingAttrs;
             finalAttrs = rest;
-        } else {
-            // Set the attribute (toggle on), keep others
-            finalAttrs = { ...existingAttrs, [newAttrKey]: toggleValue };
         }
     } else {
         finalAttrs = { ...existingAttrs, [newAttrKey]: value };
@@ -704,7 +703,7 @@ const syncEditorContentFromProps = ({ force = false } = {}) => {
     if (!editor?.value || (!force && props.displayMode)) return;
     if (!force && props.editable) return;
 
-    const nextContent = props.fullTextHtml || buildDoc(props.text, props.paragraphStyles);
+    const nextContent = props.initialHtml || props.fullTextHtml || buildDoc(props.text, props.paragraphStyles);
     const currentText = editor.value.getText() || '';
     const currentHtml = editor.value.getHTML() || '';
     const nextText = typeof nextContent === 'string'
@@ -730,6 +729,11 @@ const getHtml = () => {
     return editor.value.getHTML();
 };
 
+const getMarkAttributes = (markName) => {
+    if (!editor?.value) return {};
+    return editor.value.getAttributes(markName);
+};
+
 defineExpose({
     selectAll,
     applyStyle,
@@ -742,6 +746,7 @@ defineExpose({
     getPlainText,
     getParagraphStyles,
     getHtml,
+    getMarkAttributes,
     applyMarkStyle,
     removeMarkStyle,
     toggleMarkStyle,
