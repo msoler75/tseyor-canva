@@ -5832,6 +5832,36 @@ const cancelTextEdit = () => {
 
 
 onMounted(() => {
+  const importedState = sessionStorage.getItem('importedTcDesign');
+  if (importedState) {
+    try {
+      const data = JSON.parse(importedState);
+      state.userUploadedImages = [];
+      for (const el of Object.values(data.elementLayout ?? {})) {
+        if (el.background) {
+          el.background.backgroundImageAssetId = null;
+          el.background.backgroundImageStoragePath = null;
+          if (el.background.backgroundImageSrc?.startsWith('data:')) {
+            el.background.backgroundImagePendingDataUrl = el.background.backgroundImageSrc;
+          }
+        }
+      }
+      for (const el of Object.values(data.customElements ?? {})) {
+        if (el.type === 'image') {
+          el.assetId = null;
+          el.storagePath = null;
+          el.uploadStatus = 'pending';
+          el.needsUpload = true;
+          el.errorMessage = null;
+          if (el.src?.startsWith('data:')) {
+            el.pendingDataUrl = el.src;
+          }
+        }
+      }
+      Object.assign(state, data);
+      sessionStorage.removeItem('importedTcDesign');
+    } catch (_) {}
+  }
   // Ya se hizo resetDesignerState y rehidratación arriba
   syncEditorViewport();
   editorViewportQuery = window.matchMedia('(max-width: 767px)');
@@ -6221,6 +6251,100 @@ const handleDuplicateDesign = async () => {
   } catch (error) {
     console.error('Failed to persist duplicated design title', error);
   }
+};
+
+const urlToDataUrl = async (url) => {
+  if (!url || typeof url !== 'string') return url;
+  if (url.startsWith('data:')) return url;
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) return url;
+    const blob = await resp.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => resolve(url);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return url;
+  }
+};
+
+const handleExportTc = async () => {
+  try {
+    commitTextEdit();
+  } catch (_) {}
+  syncActivePageSnapshot();
+  const el = clonePlain(state.elementLayout ?? {});
+  const ce = clonePlain(state.customElements ?? {});
+  const uui = clonePlain(state.userUploadedImages ?? []);
+
+  const urlsToConvert = new Set();
+  for (const item of Object.values(ce)) {
+    if (item.type === 'image' && item.src && typeof item.src === 'string' && !item.src.startsWith('data:')) {
+      urlsToConvert.add(item.src);
+    }
+  }
+  for (const lay of Object.values(el)) {
+    if (lay.background?.backgroundImageSrc && typeof lay.background.backgroundImageSrc === 'string' && !lay.background.backgroundImageSrc.startsWith('data:')) {
+      urlsToConvert.add(lay.background.backgroundImageSrc);
+    }
+  }
+  for (const img of uui) {
+    if (img.src && typeof img.src === 'string' && !img.src.startsWith('data:')) {
+      urlsToConvert.add(img.src);
+    }
+  }
+
+  if (urlsToConvert.size > 0) {
+    const entries = Array.from(urlsToConvert);
+    const results = await Promise.allSettled(entries.map((url) => urlToDataUrl(url)));
+    const urlMap = {};
+    entries.forEach((url, i) => {
+      const val = results[i].status === 'fulfilled' ? results[i].value : url;
+      if (val !== url) urlMap[url] = val;
+    });
+    for (const item of Object.values(ce)) {
+      if (item.src && urlMap[item.src]) item.src = urlMap[item.src];
+    }
+    for (const lay of Object.values(el)) {
+      if (lay.background?.backgroundImageSrc && urlMap[lay.background.backgroundImageSrc]) {
+        lay.background.backgroundImageSrc = urlMap[lay.background.backgroundImageSrc];
+      }
+    }
+    for (const img of uui) {
+      if (img.src && urlMap[img.src]) img.src = urlMap[img.src];
+    }
+  }
+
+  const snapshot = {
+    format: state.format ?? null,
+    size: state.size ?? null,
+    designSurface: state.designSurface ?? null,
+    designTitle: state.designTitle ?? '',
+    designTitleManual: state.designTitleManual ?? false,
+    objective: state.objective ?? null,
+    outputType: state.outputType ?? null,
+    pages: clonePlain(state.pages ?? []),
+    content: clonePlain(state.content ?? {}),
+    elementLayout: el,
+    customElements: ce,
+    userUploadedImages: uui,
+    workingDocumentPageId: state.workingDocumentPageId ?? null,
+    tcVersion: 2,
+  };
+  const json = JSON.stringify(snapshot, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${state.designTitle || 'diseno'}.tc`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast({ message: 'Diseño exportado como .tc', type: 'success', duration: 3000 });
 };
 
 const handleRenameDesign = async () => {
@@ -6677,6 +6801,7 @@ watch(
       @update-zoom-level="setZoomLevel"
       @export-navigate="handleExportNavigation"
       @open-cheatsheet="showCheatsheet = true"
+      @export-tc="handleExportTc"
 
       />
     <ExportDialog v-if="exportDialogOpen" :navigation="navigation" @close="exportDialogOpen = false" />

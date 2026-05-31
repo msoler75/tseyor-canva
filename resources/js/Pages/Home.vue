@@ -1,7 +1,7 @@
 <script setup>
 import axios from 'axios';
 import { router, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import DesignerAssistant from './../Components/designer/DesignerAssistant.vue';
 import DesignerLayout from './../Layouts/DesignerLayout.vue';
 import TimeAgo from '../Components/TimeAgo.vue';
@@ -44,6 +44,7 @@ const state = useDesignerState();
 const assistantOpen = ref(false);
 const assistantStep = ref('objective');
 const isCreatingDesign = ref(false);
+const fileInputRef = ref(null);
 
 const authUser = computed(() => page.props.auth?.user ?? null);
 const recentProjects = computed(() => {
@@ -66,6 +67,30 @@ const openAssistant = () => {
 
 const closeAssistant = () => {
     assistantOpen.value = false;
+};
+
+const processImportedTc = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (!data.tcVersion) {
+                alert('El archivo no parece ser un diseño .tc válido.');
+                return;
+            }
+            sessionStorage.setItem('importedTcDesign', JSON.stringify(data));
+            window.location.href = '/designer/editor?imported=tc';
+        } catch (err) {
+            alert('No se pudo leer el archivo. Asegúrate de que sea un diseño .tc válido.');
+            console.error('Import error:', err);
+        }
+    };
+    reader.readAsText(file);
+};
+
+const handleImportTc = () => {
+    fileInputRef.value?.click();
 };
 
 const newDesignUuid = () => {
@@ -250,6 +275,17 @@ const deleteDesign = async (design) => {
         console.error('No se pudo borrar el diseño', error);
     }
 };
+
+onMounted(() => {
+    const saved = sessionStorage.getItem('importedTcDesign');
+    if (saved) {
+        try {
+            const data = JSON.parse(saved);
+            Object.assign(state, data);
+            sessionStorage.removeItem('importedTcDesign');
+        } catch (_) {}
+    }
+});
 </script>
 
 <template>
@@ -304,6 +340,22 @@ const deleteDesign = async (design) => {
                             <span class="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary-content/15 text-2xl leading-none">+</span>
                             CREAR
                         </button>
+                        <button
+                            type="button"
+                            class="btn btn-outline btn-lg rounded-full px-8 ml-3"
+                            @click="handleImportTc"
+                            aria-label="Importar diseño .tc"
+                        >
+                            <IconifyIcon icon="ph:file-arrow-down-bold" class="text-lg" />
+                            <span>Importar .tc</span>
+                        </button>
+                        <input
+                            ref="fileInputRef"
+                            type="file"
+                            accept=".tc"
+                            class="hidden"
+                            @change="processImportedTc($event.target.files[0])"
+                        />
                         <button
                             v-if="!authUser"
                             type="button"

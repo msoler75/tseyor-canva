@@ -26,6 +26,10 @@ import {
 const props = defineProps({ navigation: Object });
 const emit = defineEmits(['close']);
 
+const exportOptionsRef = ref(null);
+const previewMaxHeight = ref('auto');
+let optionsResizeObserver = null;
+
 // Cerrar con Escape
 function handleKeydown(e) {
   if (e.key === 'Escape') {
@@ -40,9 +44,21 @@ onMounted(async () => {
     await document.fonts.ready;
     computeLinkedTextFragments();
   }
+  optionsResizeObserver = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      previewMaxHeight.value = `${entry.contentRect.height}px`;
+    }
+  });
+  if (exportOptionsRef.value) {
+    optionsResizeObserver.observe(exportOptionsRef.value);
+  }
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown);
+  if (optionsResizeObserver) {
+    optionsResizeObserver.disconnect();
+    optionsResizeObserver = null;
+  }
 });
 
 const state = useDesignerState();
@@ -67,7 +83,7 @@ const exportSuccess = ref('');
 const exportPreviewRef = ref(null);
 const linkedTextFragments = ref({});
 const linkedTextHtml = ref({});
-const previewImageUrl = ref('');
+const pagePreviewUrls = ref([]);
 const documentPages = computed(() => (Array.isArray(state.pages) && state.pages.length
     ? state.pages
     : [{
@@ -78,18 +94,13 @@ const documentPages = computed(() => (Array.isArray(state.pages) && state.pages.
     }]
 ));
 const hasMultiplePages = computed(() => documentPages.value.length > 1);
+const expectedPreviewPages = computed(() => Math.min(documentPages.value.length || 1, 4));
 const isBrochureExport = computed(() => isBrochureFormat(state.format));
 const dpiOptions = computed(() => (
     state.outputType === 'print'
         ? allDpiOptions.filter((option) => option.value !== 96)
         : allDpiOptions
 ));
-// Genera un SVG transparente con las dimensiones deseadas y lo convierte a data-uri
-function svgPlaceholder(width, height) {
-  // SVG sin width/height, solo viewBox, para que el <img> lo escale igual que la imagen real
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${width} ${height}'></svg>`;
-  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-}
 const isPreviewRendering = ref(true);
 const previewRenderError = ref('');
 let previewTimer = null;
@@ -913,10 +924,10 @@ async function renderGeneratedImagePreview() {
       await document.fonts.ready;
     }
     const previewFormat = selectedExportFormat.value === 'jpg' ? 'jpg' : 'png';
-    let dataUrl;
     if (isBrochureExport.value) {
       const pages = documentPages.value;
       const count = pages.length;
+      let dataUrl;
       if (count > 2) {
         const leftIdx = count - 1;
         const rightIdx = 0;
@@ -944,11 +955,18 @@ async function renderGeneratedImagePreview() {
         if (runId !== previewRenderSeq) return;
         dataUrl = rendered[0];
       }
+      if (runId !== previewRenderSeq) return;
+      pagePreviewUrls.value = [dataUrl];
     } else {
-      dataUrl = await withRenderedPage(documentPages.value[0], () => renderCurrentPreviewNode(previewFormat));
+      const pages = documentPages.value.slice(0, 4);
+      pagePreviewUrls.value = [];
+      for (const page of pages) {
+        if (runId !== previewRenderSeq) return;
+        const url = await withRenderedPage(page, () => renderCurrentPreviewNode(previewFormat));
+        if (runId !== previewRenderSeq) return;
+        pagePreviewUrls.value = [...pagePreviewUrls.value, url];
+      }
     }
-    if (runId !== previewRenderSeq) return;
-    previewImageUrl.value = dataUrl;
   } catch (error) {
     if (runId !== previewRenderSeq) return;
     console.error('No se pudo renderizar la vista previa', error);
@@ -1078,7 +1096,7 @@ watch(() => state.outputType, () => {
       <h3 class="font-bold text-xl mb-4">Exportar diseño</h3>
       <section class="grid gap-8 md:grid-cols-[1.5fr_0.8fr] items-start">
         <!-- Opciones de exportación -->
-        <div class="glass soft-shadow rounded-4xl border border-base-300/70 p-6 text-base-content sm:p-10">
+        <div ref="exportOptionsRef" class="glass soft-shadow rounded-4xl border border-base-300/70 p-6 text-base-content sm:p-10">
           <div class="space-y-6">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary mb-1">Opciones de exportación</p>
@@ -1132,25 +1150,37 @@ watch(() => state.outputType, () => {
           </div>
         </div>
         <!-- Preview reducida -->
-        <div class="glass soft-shadow rounded-4xl border border-base-300/70 p-5 flex flex-col items-center mx-auto">
+        <div class="glass soft-shadow rounded-4xl border border-base-300/70 p-5 flex flex-col items-center w-full">
           <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary mb-2">Vista previa</p>
           <div
-            class="mx-auto bg-white p-2 rounded-xl shadow-2xl dark:bg-slate-900 flex flex-col items-center w-full"
-            :style="{
-              aspectRatio: `${targetDimensions.width} / ${targetDimensions.height}`,
-              maxWidth: '220px',
-              width: '100%'
-            }"
+            class="overflow-y-auto w-full bg-white p-2 rounded-xl shadow-2xl dark:bg-slate-900 flex flex-col items-center"
+            :style="{ maxHeight: previewMaxHeight }"
           >
-            <img
-              :src="isPreviewRendering
-                ? svgPlaceholder(targetDimensions.width, targetDimensions.height)
-                : previewImageUrl"
-              :alt="isPreviewRendering ? 'Cargando preview...' : 'Preview exportación'"
-              class="w-full rounded-md border border-base-200 shadow"
-              style="display:block;object-fit:contain;"
-              :style="isPreviewRendering ? 'opacity:0.5;' : ''"
-            />
+            <template v-if="isPreviewRendering || pagePreviewUrls.length < expectedPreviewPages">
+              <div
+                v-for="n in (expectedPreviewPages - pagePreviewUrls.length)"
+                :key="'skel-' + n"
+                class="skeleton rounded-md w-full flex-shrink-0"
+                :class="{ 'mb-2': n < (expectedPreviewPages - pagePreviewUrls.length) }"
+                :style="{
+                  aspectRatio: `${targetDimensions.width} / ${targetDimensions.height}`,
+                  width: '100%',
+                }"
+              />
+            </template>
+            <template v-for="(url, idx) in pagePreviewUrls" :key="idx">
+              <div class="w-full" :class="{ 'mb-2': idx < pagePreviewUrls.length - 1 }">
+                <p v-if="pagePreviewUrls.length > 1" class="text-[10px] text-center text-base-content/50 mb-1 font-medium">
+                  Página {{ idx + 1 }}
+                </p>
+                <img
+                  :src="url"
+                  :alt="'Página ' + (idx + 1)"
+                  class="w-full rounded-md border border-base-200 shadow"
+                  style="display:block;object-fit:contain;"
+                />
+              </div>
+            </template>
             <p v-if="previewRenderError" class="mt-2 text-xs text-red-500">{{ previewRenderError }}</p>
           </div>
           <!-- DOM oculto para exportación/preview -->

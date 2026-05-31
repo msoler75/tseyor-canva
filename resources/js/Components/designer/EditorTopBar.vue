@@ -67,6 +67,7 @@ const emit = defineEmits([
   'createNewDesign',
   'downloadDesign',
   'duplicateDesign',
+  'exportTc',
   'login',
   'logout',
   'renameDesign',
@@ -124,6 +125,12 @@ const handleZoomInput = (event) => {
             <button type="button" @click="emit('duplicateDesign')">
               <Icon icon="ph:copy-bold" class="text-lg" />
               Hacer una copia
+            </button>
+          </li>
+          <li>
+            <button type="button" @click="emit('exportTc')">
+              <Icon icon="ph:file-arrow-down-bold" class="text-lg" />
+              Exportar como .tc
             </button>
           </li>
           <li v-if="authUser">
