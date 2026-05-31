@@ -122,7 +122,7 @@ const finishAndOpenEditor = async ({ selectedTemplate, designerState } = {}) => 
 
     try {
         const response = selectedTemplate?.uuid
-            ? await axios.post(/designer/design-templates//generate, {
+            ? await axios.post(`/designer/design-templates/${selectedTemplate.uuid}/generate`, {
                 content: snapshot.content ?? {},
                 objective: snapshot.objective,
                 outputType: snapshot.outputType,
@@ -140,7 +140,7 @@ const finishAndOpenEditor = async ({ selectedTemplate, designerState } = {}) => 
         if (authUser.value && designUuid) {
             state.currentDesignUuid = designUuid;
             state.designTitle = response.data?.design?.name ?? snapshot.designTitle;
-            router.visit(/designer/designs//edit);
+            router.visit(`/designer/designs/${designUuid}/edit`);
         } else {
             // Invitado: ir al editor temporal
             router.visit('/designer/editor');
@@ -161,7 +161,7 @@ const openExistingDesign = async (design) => {
         console.error('Failed to flush state before opening design', error);
     }
 
-    router.visit(/designer/designs//edit);
+    router.visit(`/designer/designs/${design.uuid}/edit`);
 };
 
 const startRemoteLogin = async () => {
@@ -201,7 +201,7 @@ const openTemplateBase = async (template) => {
         console.error('Failed to flush state before opening template base design', error);
     }
 
-    router.visit(/designer/designs//edit);
+    router.visit(`/designer/designs/${template.base_design_uuid}/edit`);
 };
 
 
@@ -209,12 +209,12 @@ const duplicateDesign = async (design) => {
     if (!design?.uuid) return;
 
     try {
-        const response = await axios.post(/designer/designs//duplicate);
+        const response = await axios.post(`/designer/designs/${design.uuid}/duplicate`);
         const duplicateUuid = response.data?.design?.uuid;
         router.reload();
 
         if (duplicateUuid) {
-            router.visit(/designer/designs//edit);
+            router.visit(`/designer/designs/${duplicateUuid}/edit`);
         }
     } catch (error) {
         console.error('No se pudo duplicar el diseño', error);
@@ -228,7 +228,7 @@ const renameDesign = async (design) => {
     if (nextTitle === null) return;
 
     try {
-        await axios.patch(/designer/designs//rename, {
+        await axios.patch(`/designer/designs/${design.uuid}/rename`, {
             name: nextTitle,
         });
         router.reload();
@@ -240,11 +240,11 @@ const renameDesign = async (design) => {
 const deleteDesign = async (design) => {
     if (!design?.uuid) return;
 
-    const confirmed = window.confirm(¿Eliminar ""?);
+    const confirmed = window.confirm(`¿Eliminar "${design.name}"?`);
     if (!confirmed) return;
 
     try {
-        await axios.delete(/designer/designs/);
+        await axios.delete(`/designer/designs/${design.uuid}`);
         router.reload();
     } catch (error) {
         console.error('No se pudo borrar el diseño', error);
