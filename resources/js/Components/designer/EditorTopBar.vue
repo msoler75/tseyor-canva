@@ -48,6 +48,14 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  saveStatus: {
+    type: String,
+    default: 'idle',
+  },
+  isDirty: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits([
@@ -64,6 +72,7 @@ const emit = defineEmits([
   'redo',
   'updateZoomLevel',
   'exportNavigate',
+  'openCheatsheet',
 ]);
 
 const handleZoomInput = (event) => {
@@ -200,6 +209,37 @@ const handleZoomInput = (event) => {
     </div>
 
     <div class="flex flex-wrap items-center gap-3 sm:gap-4">
+      <!-- Save status indicator -->
+      <div class="flex items-center gap-1">
+        <template v-if="saveStatus === 'saving'">
+          <Icon icon="ph:spinner-bold" class="animate-spin text-primary text-lg" />
+          <span class="text-xs text-primary font-medium">Guardando...</span>
+        </template>
+        <template v-else-if="saveStatus === 'saved'">
+          <Icon icon="ph:check-circle-bold" class="text-success text-lg" />
+          <span class="text-xs text-success font-medium">Guardado</span>
+        </template>
+        <template v-else-if="saveStatus === 'error'">
+          <Icon icon="ph:warning-circle-bold" class="text-error text-lg" />
+          <span class="text-xs text-error font-medium">Error al guardar</span>
+        </template>
+        <template v-else-if="isDirty">
+          <span class="h-2 w-2 rounded-full bg-warning"></span>
+        </template>
+      </div>
+
+      <!-- Keyboard shortcut cheatsheet button -->
+      <button
+        type="button"
+        class="btn btn-ghost btn-circle"
+        title="Atajos de teclado"
+        aria-label="Atajos de teclado"
+        @click="emit('openCheatsheet')"
+      >
+        <Icon icon="ph:keyboard-bold" class="text-xl" />
+      </button>
+
+      
 
         <div class="hidden xl:flex gap-3 sm:gap-4 mr-8">
             <span class="max-w-[22ch] truncate text-sm font-semibold text-base-content">{{ designTitle || 'Diseño sin título' }}</span>

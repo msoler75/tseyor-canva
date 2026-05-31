@@ -47,6 +47,11 @@ const SelectionOverlay = defineAsyncComponent(() => import('../../Components/des
 const TemplateFormModal = defineAsyncComponent(() => import('../../Components/designer/TemplateFormModal.vue'));
 const TemplateAdjustmentsPanel = defineAsyncComponent(() => import('../../Components/designer/TemplateAdjustmentsPanel.vue'));
 
+import ErrorBoundary from '../../Components/ErrorBoundary.vue';
+import KeyboardShortcutCheatsheet from '../../Components/designer/KeyboardShortcutCheatsheet.vue';
+import ToastNotification from '../../Components/designer/ToastNotification.vue';
+import { useToastNotification } from '../../composables/useToastNotification.js';
+
 defineProps({ currentStep: String, steps: Array, navigation: Object });
 const page = usePage();
 // Siempre reset y rehidratar al montar
@@ -141,6 +146,11 @@ const visuallyFocusedPageId = ref(null);
 let visiblePageFrame = null;
 let isSwitchingDocumentPage = false;
 const isDragging = ref(false);
+const isDirty = ref(false);
+const saveStatus = ref('idle');
+const showCheatsheet = ref(false);
+const { toasts, showToast, removeToast } = useToastNotification();
+let saveStatusTimer = null;
 if (Object.prototype.hasOwnProperty.call(state, 'activePageId')) {
   Reflect.deleteProperty(state, 'activePageId');
 }
@@ -1030,8 +1040,8 @@ const {
   undoActionLabel,
   redoActionLabel,
   pushHistorySnapshot,
-  performUndo,
-  performRedo,
+  performUndo: _performUndo,
+  performRedo: _performRedo,
   replaceImageAssetSource,
   mutateWithoutHistory,
 } = useEditorHistory({
@@ -1049,6 +1059,15 @@ const {
   visuallyFocusedPageId,
 });
 
+const performUndo = () => {
+  _performUndo();
+  showToast({ message: `Deshecho: ${undoActionLabel.value}`, type: 'undo', duration: 2000 });
+};
+
+const performRedo = () => {
+  _performRedo();
+  showToast({ message: `Rehecho: ${redoActionLabel.value}`, type: 'undo', duration: 2000 });
+};
 if (import.meta.env.DEV) {
   window.__TEST__ = {
     undo: () => performUndo(),
@@ -5842,14 +5861,21 @@ onMounted(() => {
 
 // --- GENERAR MINIATURA ANTES DE GUARDAR ---
 const flushDesignerStateWithThumbnail = () => {
+  isDirty.value = true;
+  saveStatus.value = 'saving';
   syncActivePageSnapshot();
   generateThumbnailAndThen(async () => {
     try {
       syncActivePageSnapshot();
       await flushDesignerStatePersistence();
+      isDirty.value = false;
+      saveStatus.value = 'saved';
     } catch (error) {
-      console.error('No se pudo guardar el estado del diseÃ±o automÃ¡ticamente', error);
+      console.error('No se pudo guardar el estado del diseño automáticamente', error);
+      saveStatus.value = 'error';
     }
+    clearTimeout(saveStatusTimer);
+    saveStatusTimer = setTimeout(() => { saveStatus.value = 'idle'; }, 3000);
   });
 };
 
@@ -5883,6 +5909,10 @@ watch(
 );
 
 const handleBeforeUnload = (event) => {
+  if (isDirty.value) {
+    event.preventDefault();
+    event.returnValue = '';
+  }
   syncActivePageSnapshot();
   const snapshot = JSON.parse(JSON.stringify(state));
   const payload = { state: snapshot };
@@ -6586,6 +6616,7 @@ watch(
     :show-header="false"
     :full-height="true"
   >
+    <ErrorBoundary :show-detail="authUser?.name === 'admin'">
     <div class="flex h-full min-h-0 flex-col overflow-hidden bg-base-100">
 
     <EditorTopBar
@@ -6598,6 +6629,8 @@ watch(
       :redo-action-label="redoActionLabel"
       :zoom-level="zoomLevel"
       :template-mode="isTemplateBaseEditor"
+      :save-status="saveStatus"
+      :is-dirty="isDirty"
       @go-home="handleHomeNavigation"
       @create-new-design="handleCreateNewDesign"
       @download-design="handleExportNavigation"
@@ -6611,9 +6644,11 @@ watch(
       @redo="performRedo"
       @update-zoom-level="setZoomLevel"
       @export-navigate="handleExportNavigation"
+      @open-cheatsheet="showCheatsheet = true"
 
       />
     <ExportDialog v-if="exportDialogOpen" :navigation="navigation" @close="exportDialogOpen = false" />
+    <KeyboardShortcutCheatsheet :show="showCheatsheet" @close="showCheatsheet = false" />
 
     <TemplateFormModal
       :open="templateFormOpen"
@@ -7196,7 +7231,9 @@ watch(
         </div>
       </div>
     </dialog>
+    <ToastNotification :toasts="toasts" @remove="removeToast" />
     </div>
+    </ErrorBoundary>
   </DesignerLayout>
 </template>
 
