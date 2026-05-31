@@ -5883,9 +5883,17 @@ onMounted(() => {
 
 
 // --- GENERAR MINIATURA ANTES DE GUARDAR ---
-const flushDesignerStateWithThumbnail = () => {
+const flushDesignerStateWithThumbnail = async () => {
   isDirty.value = true;
   saveStatus.value = 'saving';
+  if (authUser.value && !state.currentDesignUuid) {
+    try {
+      await ensurePersistedDesign();
+    } catch (_) {
+      saveStatus.value = 'idle';
+      return;
+    }
+  }
   syncActivePageSnapshot();
   generateThumbnailAndThen(async () => {
     try {
