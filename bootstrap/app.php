@@ -2,13 +2,11 @@
 
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Auth\AuthenticationException;
-use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\RateLimiter;
 use Inertia\Inertia;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable as ThrowableContract;
@@ -20,14 +18,6 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        RateLimiter::for('api', function (Request $request): Limit {
-            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
-        });
-
-        RateLimiter::for('saves', function (Request $request): Limit {
-            return Limit::perMinute(30)->by($request->user()?->id ?: $request->ip());
-        });
-
         $middleware->validateCsrfTokens(except: [
             'auth/*',
             'designer/*',
