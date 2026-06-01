@@ -192,7 +192,7 @@ Florence-2 usa Replicate (gratis: 6/min, burst=1). Pipeline implementa:
 
 | Backend | Estado | Tiempo por crop |
 |---------|--------|-----------------|
-| **LaMa** (lama-cleaner) | ❌ No instalado | — |
+| **LaMa** (lama-cleaner) | ⚠️ CLI v1.2.5 (API web, no CLI directa) | — |
 | **OpenCV TELEA** | ✅ Activo (fallback) | ~0.5s |
 
 ### Cadena de fallback
@@ -241,14 +241,37 @@ La clase `BackgroundInpainter` mantiene la API de V4:
 
 ### Pendiente para V5+
 
-- [ ] Instalar LaMa (`pip install lama-cleaner`) y re-testear inpainting
 - [ ] Ejecutar pipeline V5 completo (`--all`) con Florence-2 OCR en todo el dataset
 - [ ] Comparar scores V5 vs V4 (evaluator sobre outputs V5 vs V4)
-- [ ] Font matcher sobre múltiples crops de texto del dataset
+- [ ] Font matcher integrado en pipeline (sobre crops de texto del dataset)
 - [ ] Implementar rate limiting avanzado con backoff exponencial para Florence-2
 
 ---
 
+## 6. Galería de renders V4 vs V5
+
+Renders generados por Gemini Flash (pipeline V1) evaluados por el auto-evaluador V5.
+Score Overall V5 (7 dimensiones) vs el Score Judge de V1 (solo Gemini).
+
+| Imagen | Original | Render | Score V5 | Score V1 |
+|--------|----------|--------|:--------:|:--------:|
+| **poster-gradient** | ![original](dataset/poster-gradient.jpg) | ![render](output/google-gemini-2-5-flash/poster-gradient/render.png) | **0.83** | N/A |
+| **portrait-overlay** | ![original](dataset/portrait-overlay.jpg) | ![render](output/google-gemini-2-5-flash/portrait-overlay/render.png) | **0.81** | N/A |
+| **poster-person** | ![original](dataset/poster-person.jpg) | ![render](output/google-gemini-2-5-flash/poster-person/render.png) | **0.74** | N/A |
+| **banner-horizontal** | ![original](dataset/banner-horizontal.jpg) | ![render](output/google-gemini-2-5-flash/banner-horizontal/render.png) | **0.73** | 0.00 |
+| **poster-simple** | ![original](dataset/poster-simple.jpg) | ![render](output/google-gemini-2-5-flash/poster-simple/render.png) | **0.70** | 0.65 |
+| **poster-low-contrast** | ![original](dataset/poster-low-contrast.jpg) | ![render](output/google-gemini-2-5-flash/poster-low-contrast/render.png) | **0.66** | N/A |
+| **poster-display-font** | ![original](dataset/poster-display-font.jpg) | ![render](output/google-gemini-2-5-flash/poster-display-font/render.png) | **0.63** | N/A |
+| **multi-photo-collage** | ![original](dataset/multi-photo-collage.jpg) | ![render](output/google-gemini-2-5-flash/multi-photo-collage/render.png) | **0.65** | N/A |
+| **flyer-text-heavy** | ![original](dataset/flyer-text-heavy.jpg) | ![render](output/google-gemini-2-5-flash/flyer-text-heavy/render.png) | **0.54** | 0.75 |
+| **showcase-two-products** | ![original](dataset/showcase-two-products.jpg) | ![render](output/google-gemini-2-5-flash/showcase-two-products/render.png) | **0.58** | N/A |
+| **meditacion** | ![original](dataset/meditacion_11_julio_vertical_completo.jpg) | ![render](output/google-gemini-2-5-flash/meditacion_11_julio_vertical_completo/render.png) | **0.45** | 0.40 |
+
+**Nota**: Score V1 (Gemini Judge) solo disponible para 4/11 imágenes (el judge fallaba en 7/11).
+
+---
+
 <style>
-table img { max-width: 200px; max-height: 180px; object-fit: contain; }
+table img { max-width: 240px; max-height: 200px; object-fit: contain; }
+table td { vertical-align: middle; text-align: center; }
 </style>

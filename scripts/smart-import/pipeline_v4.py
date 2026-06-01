@@ -269,7 +269,9 @@ def to_scenegraph(assembly: dict, canvas_w: float, canvas_h: float) -> dict:
         bw = _safe_float(bbox.get("w", 0), 0)
         bh = _safe_float(bbox.get("h", 0), 0)
 
-        if is_pixel:
+        # If assemble_v3() already scaled Qwen→real, skip this scale
+        coords_already_scaled = assembly.get("coordsScaled", False)
+        if is_pixel and not coords_already_scaled:
             if qw > 0 and qh > 0:
                 scale_x = canvas_w / qw
                 scale_y = canvas_h / qh
@@ -277,7 +279,7 @@ def to_scenegraph(assembly: dict, canvas_w: float, canvas_h: float) -> dict:
                 by *= scale_y
                 bw *= scale_x
                 bh *= scale_y
-        else:
+        elif not is_pixel:
             bx = bx * canvas_w
             by = by * canvas_h
             bw = bw * canvas_w
