@@ -181,6 +181,8 @@ class OpenRouterClient:
 
         # Accumulated usage logs for this client instance
         self.usage_logs: list[UsageLog] = []
+        # Full conversation logs (messages sent + response received)
+        self.conversation_logs: list[dict] = []
 
     # ---------------------------------------------------------------
     # Core method
@@ -301,6 +303,8 @@ class OpenRouterClient:
 
         # --- Log usage ---
         self._log_usage(chat_resp)
+        # --- Log conversation (messages + response) ---
+        self._log_conversation(messages, chat_resp)
         return chat_resp
 
     # ---------------------------------------------------------------
@@ -492,6 +496,36 @@ class OpenRouterClient:
             json.dump(self.get_usage_logs(), f, indent=2, ensure_ascii=False)
 
     # ---------------------------------------------------------------
+    # Conversation log helpers
+    # ---------------------------------------------------------------
+
+    def _log_conversation(self, messages: list[dict], response: ChatResponse) -> None:
+        """Record the full request messages and response content."""
+        conv = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "model": response.model,
+            "status": response.status,
+            "latency_ms": response.latency_ms,
+            "request": {
+                "messages": _truncate_conversation(messages),
+            },
+            "response": {
+                "content": response.content if response.status == "success" else None,
+                "error": response.error_message,
+            },
+        }
+        self.conversation_logs.append(conv)
+
+    def get_conversation_logs(self) -> list[dict]:
+        return list(self.conversation_logs)
+
+    def save_conversation_log(self, path: str) -> None:
+        """Write all accumulated conversation logs to a JSON file."""
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.get_conversation_logs(), f, indent=2, ensure_ascii=False)
+
+    # ---------------------------------------------------------------
     # Internal JSON extraction
     # ---------------------------------------------------------------
 
@@ -531,3 +565,29 @@ class OpenRouterClient:
             f"Failed to parse JSON from {context} response. "
             f"Content starts with: {content[:300]}"
         )
+
+
+def _truncate_conversation(messages: list[dict]) -> list[dict]:
+    """Return a copy of messages with image data URIs truncated for readability."""
+    truncated = []
+    for msg in messages:
+        t_msg = {"role": msg.get("role")}
+        content = msg.get("content")
+        if isinstance(content, str):
+            t_msg["content"] = content
+        elif isinstance(content, list):
+            t_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    url = part.get("image_url", {}).get("url", "")
+                    if url.startswith("data:image/"):
+                        t_parts.append({"type": "image_url", "image_url": {"url": f"data:image/...;base64,<TRUNCATED ({len(url)} chars)>"}})
+                    else:
+                        t_parts.append(part)
+                else:
+                    t_parts.append(part)
+            t_msg["content"] = t_parts
+        else:
+            t_msg["content"] = content
+        truncated.append(t_msg)
+    return truncated

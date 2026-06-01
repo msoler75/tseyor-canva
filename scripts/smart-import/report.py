@@ -85,6 +85,15 @@ def generate_report(results: list[dict], output_dir: str) -> dict:
     ]
     avg_overall = _safe_avg(all_overall)
 
+    # SceneGraph & TC scores (Level 1 & 2)
+    def _safe_nested(result: dict, key: str) -> float | None:
+        s = result.get(key) or {}
+        return s.get("overallScore")
+    scene_scores = [_safe_nested(r, "sceneScore") for r in results if r.get("sceneScore")]
+    tc_scores = [_safe_nested(r, "tcScore") for r in results if r.get("tcScore")]
+    avg_scene_score = _safe_avg(scene_scores)
+    avg_tc_score = _safe_avg(tc_scores)
+
     # Group by model
     by_model: dict[str, list[dict]] = defaultdict(list)
     for r in results:
@@ -136,6 +145,8 @@ def generate_report(results: list[dict], output_dir: str) -> dict:
         image_rows: list[dict] = []
         for r in sorted(model_results, key=lambda x: x.get("imageId", "")):
             score = r.get("score") or {}
+            scene_s = r.get("sceneScore") or {}
+            tc_s = r.get("tcScore") or {}
             image_rows.append({
                 "imageId": r.get("imageId", "?"),
                 "visualSimilarity": score.get("visualSimilarity"),
@@ -144,6 +155,18 @@ def generate_report(results: list[dict], output_dir: str) -> dict:
                 "colorAccuracy": score.get("colorAccuracy"),
                 "editability": score.get("editability"),
                 "overallScore": score.get("overallScore"),
+                "sceneOverall": scene_s.get("overallScore"),
+                "scenePrecision": scene_s.get("elementPrecision"),
+                "sceneRecall": scene_s.get("elementRecall"),
+                "sceneF1": scene_s.get("f1Score"),
+                "sceneTextAcc": scene_s.get("textAccuracy"),
+                "sceneTypeAcc": scene_s.get("typeAccuracy"),
+                "tcOverall": tc_s.get("overallScore"),
+                "tcPreservation": tc_s.get("elementPreservation"),
+                "tcTypeFidelity": tc_s.get("typeFidelity"),
+                "tcTextFidelity": tc_s.get("textFidelity"),
+                "tcPosFidelity": tc_s.get("positionFidelity"),
+                "tcPropFidelity": tc_s.get("propertyFidelity"),
                 "costUsd": r.get("costUsd"),
                 "latencyMs": r.get("latencyMs"),
                 "status": r.get("status", "?"),
@@ -202,6 +225,8 @@ def generate_report(results: list[dict], output_dir: str) -> dict:
             "totalImages": total_images,
             "totalCost": round(total_cost, 6),
             "avgOverallScore": round(avg_overall, 4),
+            "avgSceneGraphScore": round(avg_scene_score, 4),
+            "avgTcFidelityScore": round(avg_tc_score, 4),
             "totalModels": len(by_model),
         },
         "modelStats": model_stats_list,
@@ -243,7 +268,9 @@ def _format_markdown(report: dict, raw_results: list[dict]) -> str:
     lines.append("|--------|-------|")
     lines.append(f"| Total images | {s['totalImages']} |")
     lines.append(f"| Total cost | ${s['totalCost']:.6f} |")
-    lines.append(f"| Avg score | {s['avgOverallScore']:.4f} |")
+    lines.append(f"| Avg visual score (Level 3) | {s['avgOverallScore']:.4f} |")
+    lines.append(f"| Avg SceneGraph score (Level 1) | {s.get('avgSceneGraphScore', 'N/A')} |")
+    lines.append(f"| Avg TC fidelity score (Level 2) | {s.get('avgTcFidelityScore', 'N/A')} |")
     if report["ranking"]:
         best = report["ranking"][0]
         lines.append(
@@ -265,7 +292,9 @@ def _format_markdown(report: dict, raw_results: list[dict]) -> str:
         )
         lines.append("")
 
-        # Table header
+        # ---- Level 3: Visual comparison ----
+        lines.append("#### Level 3 — Visual (Judge)")
+        lines.append("")
         lines.append(
             "| Image | Visual | Text | Layout | Color | Editability | "
             "Overall | Cost | Time |"
@@ -311,6 +340,51 @@ def _format_markdown(report: dict, raw_results: list[dict]) -> str:
                     f"  _(Error: {img['errorMessage']})_"
                 )
 
+        lines.append("")
+
+        # ---- Level 1: SceneGraph evaluation ----
+        lines.append("#### Level 1 — SceneGraph Extraction")
+        lines.append("")
+        lines.append(
+            "| Image | Precision | Recall | F1 | Text Acc | Type Acc | "
+            "Overall |"
+        )
+        lines.append(
+            "|-------|-----------|--------|----|----------|----------|"
+            "---------|"
+        )
+        for img in ms["images"]:
+            lines.append(
+                f"| {img['imageId']} "
+                f"| {_fmt(img.get('scenePrecision'))} "
+                f"| {_fmt(img.get('sceneRecall'))} "
+                f"| {_fmt((img.get('scenePrecision') or 0 + img.get('sceneRecall') or 0) / 2 if img.get('scenePrecision') is not None else None)} "
+                f"| {_fmt(img.get('sceneTextAcc'))} "
+                f"| {_fmt(img.get('sceneTypeAcc'))} "
+                f"| {_fmt(img.get('sceneOverall'))} |"
+            )
+        lines.append("")
+
+        # ---- Level 2: TC fidelity ----
+        lines.append("#### Level 2 — TC Compilation Fidelity")
+        lines.append("")
+        lines.append(
+            "| Image | Element Preserv. | Type Fidelity | Text Fidelity | "
+            "Pos Fidelity | Overall |"
+        )
+        lines.append(
+            "|-------|------------------|---------------|---------------|"
+            "-------------|---------|"
+        )
+        for img in ms["images"]:
+            lines.append(
+                f"| {img['imageId']} "
+                f"| {_fmt(img.get('tcPreservation'))} "
+                f"| {_fmt(img.get('tcFidelity'))} "
+                f"| {_fmt(img.get('tcTextFidelity'))} "
+                f"| {_fmt(img.get('tcPosFidelity'))} "
+                f"| {_fmt(img.get('tcOverall'))} |"
+            )
         lines.append("")
 
     # --- Model Ranking ---
@@ -419,6 +493,9 @@ def _read_result(image_dir: str, model_name: str, image_id: str) -> dict:
                 "; ".join(error_entries) if error_entries else "API error"
             )
 
+    scene_score = _safe_read_json(os.path.join(image_dir, "scene-score.json"))
+    tc_score = _safe_read_json(os.path.join(image_dir, "tc-score.json"))
+
     return {
         "imageId": image_id,
         "model": model_name,
@@ -426,6 +503,8 @@ def _read_result(image_dir: str, model_name: str, image_id: str) -> dict:
         "tcPath": os.path.join(image_dir, "design.tc"),
         "renderPath": os.path.join(image_dir, "render.png"),
         "score": score,
+        "sceneScore": scene_score,
+        "tcScore": tc_score,
         "costUsd": cost_usd,
         "latencyMs": latency_ms,
         "status": status,

@@ -41,8 +41,18 @@ Thumbs.db
 storage/app/public/thumbnails/*
 storage/app/public/users/*
 public/fontsx/*
+public/uploads
 .agents
 .claude
 .continue
 .kilocode
 .qwen
+
+# Smart Import pipeline — temp outputs and cache
+scripts/smart-import/output/
+scripts/smart-import/__pycache__/
+scripts/smart-import/.pytest_cache/
+scripts/smart-import/dataset/__pycache__/
+scripts/smart-import/dataset/.pytest_cache/
+scripts/smart-import/dataset/.photo_cache/
+scripts/smart-import/tests/__pycache__/

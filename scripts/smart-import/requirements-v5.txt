@@ -1,0 +1,19 @@
+# Smart Import V5 — Pinned Dependencies
+# Python 3.11
+# Generated: 2026-06-01
+
+# Core image processing
+scikit-image==0.24.0
+opencv-python-headless==4.10.0.84
+pillow==11.1.0
+scipy==1.16.2
+
+# OCR evaluation
+easyocr==1.7.2
+rapidfuzz==3.9.7
+
+# Existing shared deps (pinned for V5 lockfile)
+openai>=1.55.0
+jsonschema>=4.20.0
+requests>=2.31.0
+python-dotenv>=1.0.0

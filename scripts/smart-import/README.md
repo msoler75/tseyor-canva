@@ -547,3 +547,204 @@ tests/
 - **Caché por hash**: SceneGraph, `.tc` y score se cachean por SHA-256 + versión + modelo/modo para evitar coste API repetido.
 - **Sin estado compartido**: Cada ejecución es independiente. El output es la única fuente de verdad.
 - **Tests con mocking**: Ningún test real hace llamadas reales a OpenRouter.
+
+---
+
+## 11. V3 Pipeline — Qwen3-VL Detection (Single Prompt + Pixel Coords + Image Crops)
+
+V3 es un pipeline alternativo a V1/V2 que utiliza **Qwen3-VL-32B** vía OpenRouter para
+detección unificada en un solo prompt, combinado con **OpenCV** para datos duros (paleta,
+dimensiones reales). Elimina la arquitectura de 3 prompts secuenciales de V1/V2.
+
+### Diferencias clave V1/V2 vs V3
+
+| Aspecto | V1 / V2 (Gemini) | V3 (Qwen3-VL) |
+|---------|-------------------|----------------|
+| **Modelo** | Gemini 2.5 Flash (3 prompts) | Qwen3-VL-32B (1 prompt) |
+| **Coordenadas** | Normalizadas 0..1 (forzadas) | Píxeles naturales |
+| **Crop de imágenes** | ❌ No (descripción textual) | ✅ Sí (Pillow recorta desde source) |
+| **Compilación** | Compilador vía subprocess (frágil) | SmartImportCompiler directo (API) |
+| **Canvas** | Fijo / estimado por LLM | OpenCV dimensiones reales + escalado |
+| **Detección texto bajo contraste** | ⚠️ Parcial | ✅ Funciona (#d9d9d9 sobre #f5f5f5) |
+| **Múltiples imágenes** | ⚠️ Inconsistente | ✅ 3/3 collage con overlaps |
+| **Prompt** | 3 llamadas secuenciales | 1 llamada unificada |
+| **Latencia** | Alta (3 rondas) | 1 ronda (~12-15s por imagen) |
+
+### Arquitectura V3
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                   pipeline_v3.py                          │
+│  Orquestador V3: Qwen3-VL → OpenCV → Assembly → .tc      │
+└────┬──────────────────────────────────────────────┬───────┘
+     │ 1. Qwen3-VL Detection (1 prompt)             │
+     ▼                                               │
+┌──────────────────────┐                              │
+│  Qwen3-VL vision API │  text_elements + images +    │
+│  (OpenRouter)        │  shapes + canvas estimate     │
+│  QWEN_DETECTION_     │  Output: position {x,y,       │
+│  PROMPT unificado    │  width, height} en píxeles    │
+└──────┬───────────────┘                              │
+     │ 2. OpenCV Analysis                             │
+     ▼                                               │
+┌──────────────────────┐                              │
+│  extract_palette()   │  K-means clustering → 5      │
+│                      │  colores dominantes +         │
+│                      │  dimensiones reales canvas    │
+└──────┬───────────────┘                              │
+     │ 3. Assembly                                    │
+     ▼                                               │
+┌──────────────────────┐                              │
+│  assemble_v3()       │  Mapea Qwen output a capas:  │
+│                      │  text_elements → textLayers   │
+│                      │  images → imageLayers         │
+│                      │  shapes → shapeLayers         │
+│                      │  + infiere estilo desde        │
+│                      │  font_style string             │
+└──────┬───────────────┘                              │
+     │ 4. Image Cropping (nuevo en V3)                │
+     ▼                                               │
+┌──────────────────────┐                              │
+│  _crop_image_regions │  Pillow recorta cada región  │
+│                      │  detectada: crops/imgN.png   │
+│                      │  + data URI para .tc          │
+└──────┬───────────────┘                              │
+     │ 5. SceneGraph + Compile                        │
+     ▼                                               │
+┌──────────────────────┐                              │
+│  to_scenegraph() →   │  Píxeles Qwen escalados a    │
+│  SmartImportCompiler │  canvas real (OpenCV)         │
+│  .compile()          │  → .tc con imágenes embebidas │
+└──────┬───────────────┘                              │
+     │ 6. Render (opcional)                           │
+     ▼                                               │
+┌──────────────────────┐                              │
+│  tc_render_standalone│  Playwright headless → PNG   │
+│  .js                 │                              │
+└──────────────────────┘                              │
+```
+
+### Coordenadas: píxeles naturales
+
+A diferencia de V1/V2 que forzaban coordenadas normalizadas 0..1 en el prompt
+(lo que confundía a los modelos), V3 **no impone sistema de coordenadas**.
+Qwen3-VL outputea naturalmente valores en píxeles con `position {x, y, width, height}`.
+
+El pipeline detecta automáticamente si las coordenadas son píxeles o normalizadas
+mediante `_is_pixel_coord()` (cualquier valor > 1.5 = píxeles) y escala
+proporcionalmente al canvas real detectado por OpenCV.
+
+### Canvas scaling
+
+Qwen estima dimensiones de canvas (ej: 1024×1366) que pueden diferir del tamaño
+real de la imagen (ej: 1080×1350). V3 escala las coordenadas de Qwen usando
+factores `scale_x = real_w / qwen_w` y `scale_y = real_h / qwen_h`,
+manteniendo precisión sub-pixel.
+
+### Image cropping con Pillow
+
+Por primera vez en el pipeline, las imágenes detectadas se **extraen físicamente**
+de la fuente original usando `PIL.Image.crop()` con las coordenadas devueltas por
+Qwen. Los crops se guardan en `output/<model>/v3/<image>/crops/<id>.png` y
+también se embeden como data URIs en el .tc compilado.
+
+### Compilación directa (sin subprocess)
+
+V1/V2 llamaban al compilador mediante `subprocess.run(["python", "compiler.py", ...])`,
+pero `compiler.py` **no tiene entry point CLI** — el subprocess retornaba éxito pero
+no producía `.tc`. V3 importa `SmartImportCompiler` directamente:
+```python
+from compiler import SmartImportCompiler
+compiler = SmartImportCompiler(mode="basic_image_layers")
+tc = compiler.compile(scene_json, source_image)
+compiler.export(tc, output_tc)
+```
+
+### Uso
+
+```bash
+# Pipeline completo (Qwen3-VL por defecto)
+python scripts/smart-import/pipeline_v3.py --image-dir scripts/smart-import/dataset
+
+# Imagen específica
+python scripts/smart-import/pipeline_v3.py --image-dir scripts/smart-import/dataset --image poster-simple
+
+# Sin render (solo análisis + .tc)
+python scripts/smart-import/pipeline_v3.py --image-dir scripts/smart-import/dataset --skip-render
+
+# Modelo alternativo
+python scripts/smart-import/pipeline_v3.py --image-dir scripts/smart-import/dataset --model qwen/qwen3-vl-32b-instruct
+```
+
+### Flags V3
+
+| Flag | Default | Descripción |
+|------|---------|-------------|
+| `--image-dir`, `-d` | **requerido** | Directorio con imágenes de entrada |
+| `--model` | `qwen/qwen3-vl-32b-instruct` | Modelo visión para detección |
+| `--output` | `scripts/smart-import/output/` | Directorio raíz de salida |
+| `--image` | `null` (todas) | Procesar solo una imagen |
+| `--skip-detection` | `false` | Saltar detección → reusar caché |
+| `--skip-render` | `false` | Saltar renderizado (solo .tc) |
+| `--verbose`, `-v` | `false` | Logging DEBUG |
+
+### Output structure V3
+
+```
+output/<model>/v3/<image>/
+├── detection.json          ← Respuesta cruda de Qwen3-VL (textos, imágenes, formas)
+├── palette.json             ← Paleta OpenCV (5 colores dominantes + dimensiones)
+├── assembly.json            ← Capas unificadas (fusiona detection + palette)
+├── scene.json               ← SceneGraph listo para compilar (píxeles escalados)
+├── design.tc                ← .tc v2 compilado (importable en editor)
+├── render.png               ← Screenshot headless (si --skip-render es false)
+└── crops/                   ← Imágenes recortadas desde source
+    ├── img1.png
+    ├── img2.png
+    └── ...
+```
+
+### Evaluación visual
+
+Las tablas comparativas se encuentran en:
+- `visual-review.md` — V1 (Gemini, 3 formatos)
+- `visual-review-2.md` — V2 (Gemini, 3 prompts + coords normalizadas)
+- `visual-review-3.md` — V3 (Qwen3-VL, pixel coords + crops)
+
+### Futuras mejoras
+
+1. **Sub-detección dentro de crops**: Pasar cada crop de vuelta a Qwen para detectar
+   objetos dentro de la imagen extraída (ej: detectar una persona dentro de un retrato).
+   Ya hay un test que lo confirma funcional (`_test_subdetect.py`).
+
+2. **Florence-2 (Replicate)**: Cuando haya crédito en Replicate, probar Florence-2 para
+   bboxes más precisos que Qwen3-VL. El cliente ya existe en `florence_client.py`.
+
+3. **PaddleOCR**: Integrar OCR dedicado para mejorar detección de texto, especialmente
+   en fuentes decorativas o bajo contraste. Actualmente descartado por coste de instalación.
+
+4. **Detección de formas geométricas**: OpenCV ya tiene `detect_shapes_opencv()` para
+   detectar círculos, rectángulos, líneas mediante contornos. Integrar con la detección
+   de Qwen para formas no rectangulares.
+
+5. **Pipeline híbrido**: Combinar Qwen3-VL para detección macro del layout con
+   modelos especializados (OCR, object detection, segmentación) para micro-detección.
+
+6. **Evaluación automática V3**: Integrar `evaluate.py` (juez multimodal) para obtener
+   scores estructurados de calidad, similar a V1.
+
+### Lecciones aprendidas
+
+- **Qwen3-VL funciona mejor sin imponer sistema de coordenadas** — naturalmente
+  outputea píxeles. Mencionar "normalizado" en el prompt lo confunde y produce
+  valores mixtos (absolutos + normalizados).
+- **El orden de chequeo de fuentes importa**: "sans-serif" contiene "serif" como
+  substring — hay que checkear "sans" ANTES que "serif" en `_infer_text_style()`.
+- **Canvas de Qwen vs real**: Qwen estima dimensiones cercanas pero no exactas
+  (ej: 1024×1366 vs real 1080×1350). Escalar con factores proporcionales es esencial.
+- **SmartImportCompiler no tiene CLI**: No se puede llamar por subprocess. Usar
+  import directo con `compiler.compile(scene, source_image)`.
+- **El crop doble no es problema**: `_crop_image_regions()` guarda a disco para
+  revisión visual, y `SmartImportCompiler._build_image_element()` cropa de nuevo
+  desde source para el .tc — ambos usan la misma función `region_to_data_uri()`.
+

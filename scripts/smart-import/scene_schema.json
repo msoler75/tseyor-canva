@@ -43,7 +43,7 @@
         "color": {
           "description": "Background color as 6-digit hex (e.g., #ffffff)",
           "type": "string",
-          "pattern": "^#[0-9a-fA-F]{6}$"
+          "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
         },
         "gradient": {
           "description": "Gradient configuration (required if kind=gradient)",
@@ -56,9 +56,9 @@
               "enum": ["linear", "radial"]
             },
             "angle": {
-              "description": "Gradient angle in degrees (linear) or degrees (radial start)",
-              "type": "number"
-            },
+                "description": "Gradient angle in degrees or CSS direction keyword (e.g., 'to left', 'to bottom')",
+                "type": ["number", "string"]
+              },
             "stops": {
               "description": "Color stops for the gradient",
               "type": "array",
@@ -71,7 +71,7 @@
                   "color": {
                     "description": "Stop color as 6-digit hex",
                     "type": "string",
-                    "pattern": "^#[0-9a-fA-F]{6}$"
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
                   },
                   "position": {
                     "description": "Stop position as percentage (0-100)",
@@ -153,7 +153,7 @@
               },
               "fontWeight": {
                 "description": "Font weight as CSS keyword or numeric string",
-                "type": "string"
+                "type": ["string", "number"]
               },
               "italic": {
                 "description": "Whether the text is italicized",
@@ -166,7 +166,7 @@
               "color": {
                 "description": "Text color as 6-digit hex",
                 "type": "string",
-                "pattern": "^#[0-9a-fA-F]{6}$"
+                "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
               },
               "textAlign": {
                 "description": "Text horizontal alignment",
@@ -190,7 +190,7 @@
                   "color": {
                     "description": "Shadow color as 6-digit hex",
                     "type": "string",
-                    "pattern": "^#[0-9a-fA-F]{6}$"
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
                   },
                   "offsetX": { "type": "number" },
                   "offsetY": { "type": "number" },
@@ -224,7 +224,7 @@
               "fill": {
                 "description": "Shape fill color as 6-digit hex",
                 "type": "string",
-                "pattern": "^#[0-9a-fA-F]{6}$"
+                "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
               },
               "opacity": {
                 "description": "Shape opacity (0.0-1.0)",

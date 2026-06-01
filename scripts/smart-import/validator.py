@@ -65,32 +65,69 @@ def _load_schema() -> dict:
 def _normalize_hex_color(color: str) -> str:
     """Normalize a hex color to lowercase 6-digit format.
 
-    Handles ``#RGB``, ``#RRGGBB``, with or without ``#`` prefix.
+    Handles ``#RGB``, ``#RRGGBB``, ``#RRGGBBAA``, with or without ``#`` prefix.
     Returns the original string unchanged if it cannot be normalized.
     """
     if not color or not isinstance(color, str):
         return color
     c = color.strip().lstrip("#")
-    if not c or len(c) not in (3, 6):
+    if not c or len(c) not in (3, 6, 8):
         return color  # not a recognizable hex shortcut
     if not re.match(r"^[0-9a-fA-F]+$", c):
         return color  # invalid hex chars
     if len(c) == 3:
         c = "".join(2 * ch for ch in c)
+    if len(c) == 8:
+        c = c[:6]  # drop alpha channel
     return f"#{c.lower()}"
 
 
-def _normalize_colors_in_scene(scene: dict) -> dict:
-    """Deep-normalize all hex colours found in the scene."""
+CSS_DIRECTION_MAP = {
+    "to top": 0, "to right": 90, "to bottom": 180, "to left": 270,
+    "to top right": 45, "to top left": 315,
+    "to bottom right": 135, "to bottom left": 225,
+}
+
+def _normalize_gradient_angle(angle: object) -> float:
+    """Normalize gradient angle to float degrees.
+
+    Handles CSS direction keywords (``'to left'``), ``'Xdeg'`` strings,
+    plain numeric strings, and numbers.
+    """
+    if angle is None:
+        return 180.0
+    if isinstance(angle, (int, float)):
+        return float(angle)
+    s = str(angle).strip().lower()
+    if s in CSS_DIRECTION_MAP:
+        return float(CSS_DIRECTION_MAP[s])
+    if s.endswith("deg"):
+        s = s[:-3]
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return 180.0
+
+
+_ALLOWED_BACKGROUND_KEYS = {"kind", "color", "gradient", "confidence"}
+
+
+def _normalize_scene(scene: dict) -> dict:
+    """Deep-normalize all colours, gradient angles, and other values in a scene."""
     fixed = copy.deepcopy(scene)
 
-    # Background
+    # Background — strip unknown keys (e.g. AI sometimes adds 'description')
     bg = fixed.get("background")
     if isinstance(bg, dict):
+        for key in list(bg):
+            if key not in _ALLOWED_BACKGROUND_KEYS:
+                del bg[key]
         if "color" in bg:
             bg["color"] = _normalize_hex_color(bg["color"])
         grad = bg.get("gradient")
         if isinstance(grad, dict):
+            if "angle" in grad:
+                grad["angle"] = _normalize_gradient_angle(grad["angle"])
             for stop in grad.get("stops", []):
                 if isinstance(stop, dict) and "color" in stop:
                     stop["color"] = _normalize_hex_color(stop["color"])
@@ -101,8 +138,22 @@ def _normalize_colors_in_scene(scene: dict) -> dict:
             continue
         style = layer.get("style")
         if isinstance(style, dict):
+            if "fontSize" in style and isinstance(style["fontSize"], str):
+                import re as _re
+                _m = _re.match(r"(\d+(?:\.\d+)?)", style["fontSize"])
+                if _m:
+                    style["fontSize"] = float(_m.group(1))
+                else:
+                    style["fontSize"] = 24
             if "color" in style:
                 style["color"] = _normalize_hex_color(style["color"])
+            if "fontWeight" in style and isinstance(style["fontWeight"], (int, float)):
+                style["fontWeight"] = str(style["fontWeight"])
+            if "fontSize" in style:
+                val = style["fontSize"]
+                if isinstance(val, str):
+                    m = re.match(r"(\d+(?:\.\d+)?)", val)
+                    style["fontSize"] = float(m.group(1)) if m else 24
             shadow = style.get("shadow")
             if isinstance(shadow, dict) and "color" in shadow:
                 shadow["color"] = _normalize_hex_color(shadow["color"])
@@ -336,8 +387,8 @@ def validate_scene(scene: dict, mode: str = "basic_image_layers") -> ValidationR
     for msg in repairs:
         logger.debug("Repair: %s", msg)
 
-    # --- 3. Normalize colors ---
-    fixed = _normalize_colors_in_scene(fixed)
+    # --- 3. Normalize colors, gradient angles, etc. ---
+    fixed = _normalize_scene(fixed)
 
     # --- 4. Apply mode-aware filtering ---
     fixed, discarded_non_text, discarded_low_confidence = _filter_layers_for_mode(

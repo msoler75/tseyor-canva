@@ -31,6 +31,8 @@ from compiler import SmartImportCompiler
 from evaluate import ImportJudge
 from openrouter import OpenRouterClient, OpenRouterError
 from report import generate_report
+from scene_evaluator import evaluate_scene_graph
+from tc_evaluator import evaluate_tc_fidelity
 from validator import validate_scene
 
 logger = logging.getLogger(__name__)
@@ -99,22 +101,27 @@ class Result:
     model: str = ""
     paths: dict = field(default_factory=dict)
     score: Optional[dict] = None
+    scene_score: Optional[dict] = None
+    tc_score: Optional[dict] = None
     cost_usd: float = 0.0
     latency_ms: int = 0
     status: str = "success"
     error_message: Optional[str] = None
 
     def to_dict(self) -> dict:
-        return {
+        d: dict = {
             "imageId": self.image_id,
             "model": self.model,
             "paths": self.paths,
             "score": self.score,
+            "sceneScore": self.scene_score,
+            "tcScore": self.tc_score,
             "costUsd": self.cost_usd,
             "latencyMs": self.latency_ms,
             "status": self.status,
             "errorMessage": self.error_message,
         }
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -259,12 +266,12 @@ class SmartImportPipeline:
                     else "N/A"
                 )
                 logger.info(
-                    "  ✓ Done — score=%s, cost=$%.6f, latency=%dms",
+                    "  [OK] Done — score=%s, cost=$%.6f, latency=%dms",
                     score_str, result.cost_usd, result.latency_ms,
                 )
             else:
                 logger.warning(
-                    "  ✗ Failed — %s", result.error_message,
+                    "  [FAIL] %s", result.error_message,
                 )
 
         # --- Generate report ---
@@ -327,6 +334,8 @@ class SmartImportPipeline:
             "tc": os.path.join(image_dir, "design.tc"),
             "render": os.path.join(image_dir, "render.png"),
             "score": os.path.join(image_dir, "score.json"),
+            "scene_score": os.path.join(image_dir, "scene-score.json"),
+            "tc_score": os.path.join(image_dir, "tc-score.json"),
             "openrouter": os.path.join(image_dir, "openrouter.json"),
         }
 
@@ -399,8 +408,12 @@ class SmartImportPipeline:
                     for w in validation.warnings:
                         logger.info("  Scene warning: %s", w)
 
-            # Persist usage logs for this image
+            # Persist usage logs + conversation logs for this image
             self._save_image_usage_log(paths["openrouter"], usage_count_before)
+            self._save_image_conversation_log(
+                os.path.join(image_dir, "conversation.json"),
+                usage_count_before,
+            )
 
         except OpenRouterError as exc:
             logger.error("  Analyze failed: %s", exc)
@@ -410,6 +423,17 @@ class SmartImportPipeline:
             logger.error("  Analyze unexpected error: %s", exc)
             raw_scene = None
             fixed_scene = None
+
+        # ---- SceneGraph Evaluation (Level 1) ----
+        scene_score: Optional[dict] = None
+        try:
+            logger.info("  SceneGraph eval...")
+            scene_score = evaluate_scene_graph(fixed_scene, image_id)
+        except Exception as exc:
+            logger.warning("  SceneGraph eval failed: %s", exc)
+            scene_score = {"overallScore": 0.0, "detail": {"reason": str(exc)}}
+        if scene_score is not None:
+            _write_json(paths.get("scene_score", os.path.join(image_dir, "scene-score.json")), scene_score)
 
         # ---- Phase 2: Compile (SceneGraph → .tc) ----
         tc: Optional[dict] = None
@@ -457,6 +481,17 @@ class SmartImportPipeline:
                     self._save_to_cache(analysis_cache_key, "tc", tc)
                 except Exception:
                     pass
+
+        # ---- TC Fidelity Evaluation (Level 2) ----
+        tc_score: Optional[dict] = None
+        try:
+            tc_score = evaluate_tc_fidelity(tc, fixed_scene)
+            logger.info("  TC eval... %s", tc_score.get("overallScore", "N/A"))
+        except Exception as exc:
+            logger.warning("  TC eval failed: %s", exc)
+            tc_score = {"overallScore": 0.0, "detail": {"reason": str(exc)}}
+        if tc_score is not None:
+            _write_json(paths.get("tc_score", os.path.join(image_dir, "tc-score.json")), tc_score)
 
         # ---- Phase 3: Render (.tc → PNG) ----
         render_success = False
@@ -539,6 +574,8 @@ class SmartImportPipeline:
         # ---- Collect result ----
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         result.score = score
+        result.scene_score = scene_score
+        result.tc_score = tc_score
         result.cost_usd = self._calculate_image_cost(usage_count_before)
         result.latency_ms = elapsed_ms
         result.status = "success" if not result.error_message else "failed"
@@ -555,7 +592,7 @@ class SmartImportPipeline:
         Raises ``FileNotFoundError`` if the render script is missing, or
         ``RuntimeError`` if the script exits with a non-zero code.
         """
-        render_script = os.path.join(self._script_dir, "tc_render.js")
+        render_script = os.path.join(self._script_dir, "tc_render_standalone.js")
         if not os.path.isfile(render_script):
             raise FileNotFoundError(
                 f"Render script not found: {render_script}"
@@ -573,16 +610,15 @@ class SmartImportPipeline:
             ["node", render_script, "--tc", tc_path, "--output", output_path],
             capture_output=True,
             text=True,
+            errors="backslashreplace",
             timeout=120,
         )
 
         if proc.returncode != 0:
-            error_msg = (
-                proc.stderr.strip()
-                or proc.stdout.strip()
-                or f"Exit code {proc.returncode}"
-            )
-            raise RuntimeError(f"tc_render.js failed: {error_msg}")
+            stderr = proc.stderr.strip() if proc.stderr else ""
+            stdout = proc.stdout.strip() if proc.stdout else ""
+            error_msg = stderr or stdout or f"Exit code {proc.returncode}"
+            raise RuntimeError(f"Render failed: {error_msg}")
 
     # ---------------------------------------------------------------
     # Cached-scene helpers
@@ -674,6 +710,16 @@ class SmartImportPipeline:
                     indent=2,
                     ensure_ascii=False,
                 )
+
+    def _save_image_conversation_log(
+        self, path: str, conv_count_before: int
+    ) -> None:
+        """Persist conversation logs added since *conv_count_before*."""
+        new_logs = self.client.conversation_logs[conv_count_before:]
+        if new_logs:
+            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(new_logs, f, indent=2, ensure_ascii=False)
 
     def _calculate_image_cost(self, usage_count_before: int) -> float:
         """Sum the cost of API calls made since *usage_count_before*."""
