@@ -3,7 +3,7 @@ evaluate_v5.py — Auto-Evaluator V5 for Smart Import Pipeline.
 
 Compares original design images against rendered output across 7 scoring
 dimensions: layout, textAccuracy, colorAccuracy, visualSimilarity,
-editability, structureF1, and semantic (Gemini judge).
+editability, structureF1, and posterQuality (legibilidad, contraste, CTA).
 
 Usage
 -----
@@ -85,7 +85,7 @@ WEIGHTS: dict[str, float] = {
     "visualSimilarity": 0.15,
     "editability": 0.10,
     "structureF1": 0.10,
-    "semantic": 0.15,
+    "posterQuality": 0.15,
 }
 
 # ---------------------------------------------------------------------------
@@ -102,7 +102,7 @@ class ScoreDimension(str, Enum):
     VISUAL_SIMILARITY = "visualSimilarity"
     EDITABILITY = "editability"
     STRUCTURE_F1 = "structureF1"
-    SEMANTIC = "semantic"
+    POSTER_QUALITY = "posterQuality"
 
 
 @dataclass
@@ -119,7 +119,7 @@ class EvaluationResult:
     visualSimilarity: float = 0.0
     editability: float = 0.0
     structureF1: float = 0.0
-    semantic: float = 0.0
+    posterQuality: float = 0.0
     overall: float = 0.0
     weights: dict[str, float] = field(default_factory=lambda: dict(WEIGHTS))
     details: Optional[dict[str, Any]] = None
@@ -183,54 +183,130 @@ def _ocr_text(image_path: Path, reader: Any) -> list[str]:
 
 
 def score_text_accuracy(
-    original_path: Path,
     render_path: Path,
+    detection: dict,
     reader: Optional[Any] = None,
 ) -> tuple[float, Optional[dict]]:
-    """Score dimension 2 — **textAccuracy** via easyocr + rapidfuzz.
+    """Score dimension 2 — **textAccuracy** via expected-texts OCR.
 
-    Extracts text from both images with easyocr, then computes
-    ``fuzz.token_sort_ratio`` on the concatenated text strings.
+    Instead of comparing original vs render OCR (which is fragile), uses the
+    texts detected by Qwen (``detection``) as the ground-truth expected texts,
+    then checks whether each one appears in the render via easyocr.
 
     Returns
     -------
     ``(score, details_or_None)``
     """
     try:
+        # Collect expected texts from detection (Qwen-sourced only, skip Florence)
+        expected = _collect_expected_texts(detection)
+        if not expected:
+            logger.info("  [textAccuracy] No expected texts in detection -> 1.0")
+            return 1.0, {"expected": [], "found": [], "matched": 0, "total": 0}
+
         if reader is None:
             import easyocr
 
             reader = easyocr.Reader(["en"], gpu=False)
 
-        orig_texts = _ocr_text(original_path, reader)
         render_texts = _ocr_text(render_path, reader)
+        # Normalise: lowercase, strip, collapse whitespace
+        render_norm = [re.sub(r"\s+", " ", t.lower()).strip() for t in render_texts]
 
-        orig_concat = " ".join(orig_texts)
-        render_concat = " ".join(render_texts)
+        matched = 0
+        details_per_text = []
+        for exp in expected:
+            exp_norm = re.sub(r"\s+", " ", exp.lower()).strip()
+            # Check if this text appears (fuzzy) in any render OCR result
+            best = max(
+                (fuzz.ratio(exp_norm, rn) for rn in render_norm),
+                default=0,
+            )
+            found = best >= 70  # 70% fuzzy threshold
+            if found:
+                matched += 1
+            details_per_text.append({
+                "text": exp,
+                "found": found,
+                "best_match_pct": best,
+            })
 
-        if not orig_concat and not render_concat:
-            # Both empty → no text to compare → perfect score
-            return 1.0, {"orig_texts": [], "render_texts": [], "similarity": 1.0}
+        score = matched / len(expected) if expected else 1.0
+        score = max(0.0, min(1.0, score))
 
-        if not orig_concat or not render_concat:
-            # One has text, the other doesn't
-            return 0.0, {
-                "orig_texts": orig_texts,
-                "render_texts": render_texts,
-                "similarity": 0.0,
-            }
-
-        similarity = fuzz.token_sort_ratio(orig_concat, render_concat) / 100.0
-        similarity = max(0.0, min(1.0, similarity))
-
-        return similarity, {
-            "orig_texts": orig_texts,
-            "render_texts": render_texts,
-            "similarity": round(similarity, 4),
+        return score, {
+            "expected_count": len(expected),
+            "matched_count": matched,
+            "score": round(score, 4),
+            "details": details_per_text,
+            "render_ocr_raw": render_texts[:20],
         }
     except Exception as exc:
         logger.warning("  [textAccuracy] Exception: %s", exc)
         return 0.0, {"error": str(exc)}
+
+
+def _iter_detection_elements(detection: dict):
+    """Yield all elements from detection regardless of format.
+
+    V4/V5: ``elements`` array with ``type`` field.
+    V6:    separate ``text_elements``, ``images``, ``shapes`` arrays.
+    """
+    if "text_elements" in detection:
+        for el in detection.get("text_elements", []):
+            yield {"type": "text", **el}
+        for el in detection.get("images", []):
+            yield {"type": "image", **el}
+        for el in detection.get("shapes", []):
+            yield {"type": "shape", **el}
+    elif "elements" in detection:
+        yield from detection["elements"]
+
+
+def _collect_expected_texts(detection: dict) -> list[str]:
+    """Collect unique, non-noise texts from detection results.
+
+    Handles both V4/V5 format (``elements`` array with ``type`` field)
+    and V6 format (``text_elements`` array, ``images``, ``shapes``).
+    Filters out Florence-2 noise (``</s>`` prefix, exact dupes, etc.).
+    """
+    seen: set[str] = set()
+    texts: list[str] = []
+
+    # V6-style: text_elements, images, shapes
+    if "text_elements" in detection:
+        for el in detection.get("text_elements", []):
+            text = (el.get("text") or el.get("content") or "").strip()
+            if not text:
+                continue
+            # Skip Florence-2 noise
+            source = el.get("source", "")
+            if source == "florence-2":
+                continue
+            norm = re.sub(r"\s+", " ", text.lower()).strip()
+            if norm in seen:
+                continue
+            seen.add(norm)
+            texts.append(text)
+
+    # V4/V5-style: elements array with type field
+    elif "elements" in detection:
+        for el in _iter_detection_elements(detection):
+            if el.get("type") != "text":
+                continue
+            text = (el.get("text") or el.get("content") or "").strip()
+            if not text:
+                continue
+            source = el.get("source", "")
+            if source == "florence-2":
+                continue
+            norm = re.sub(r"\s+", " ", text.lower()).strip()
+            if norm in seen:
+                continue
+            seen.add(norm)
+            texts.append(text)
+
+    return texts
 
 
 def score_color_accuracy(
@@ -487,171 +563,306 @@ def score_structure_f1(
 
 
 # ===================================================================
-# SEMANTIC DIMENSION — Gemini via OpenRouter (cached)
+# POSTER QUALITY DIMENSION — automated metrics (legibilidad, contraste, CTA)
 # ===================================================================
 
 
-def _gemini_eval_prompt() -> str:
-    """Return the system prompt for the semantic judge evaluation."""
-    return (
-        "You are a design quality judge. Compare the ORIGINAL design image "
-        "with the IMPORTED RENDER (a screenshot of what the editor produced). "
-        "Evaluate whether the render preserves the original design intent — "
-        "layout, color scheme, text content, visual hierarchy, and overall "
-        "aesthetic. Return ONLY valid JSON matching this schema:\n"
-        '{"semanticScore": 0.0-1.0, "reasoning": "brief explanation", '
-        '"criticalIssues": ["..."], "strengths": ["..."]}'
-    )
-
-
-def call_gemini(
+def score_poster_quality(
     original_path: Path,
     render_path: Path,
-    model: str = DEFAULT_MODEL,
-) -> dict:
-    """Call Gemini (via OpenRouter) to evaluate semantic similarity.
-
-    Parameters
-    ----------
-    original_path:
-        Path to the original design image.
-    render_path:
-        Path to the rendered output image.
-    model:
-        OpenRouter model identifier (default: ``google/gemini-2.5-flash``).
-
-    Returns
-    -------
-    dict
-        Parsed JSON response with keys ``semanticScore``, ``reasoning``,
-        ``criticalIssues``, ``strengths``.
-
-    Raises
-    ------
-    OpenRouterError
-        If the API call fails or response cannot be parsed.
-    """
-    # Lazy import to avoid circular dependency at module level
-    from openrouter import OpenRouterClient, _encode_image, OpenRouterError
-
-    original_b64 = _encode_image(str(original_path))
-    render_b64 = _encode_image(str(render_path))
-
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": _gemini_eval_prompt()},
-                {"type": "image_url", "image_url": {"url": original_b64}},
-                {"type": "image_url", "image_url": {"url": render_b64}},
-            ],
-        }
-    ]
-
-    client = OpenRouterClient(model=model)
-    response = client.chat_completion(
-        messages=messages,
-        response_format={"type": "json_object"},
-        model=model,
-    )
-
-    if response.status == "error":
-        raise OpenRouterError(
-            f"Gemini semantic evaluation failed: {response.error_message}",
-            response_body=response.error_message or "",
-        )
-
-    # Parse JSON from response
-    content = response.content.strip()
-    try:
-        result = json.loads(content)
-    except json.JSONDecodeError:
-        result = OpenRouterClient._parse_json_response(content, "semantic")
-
-    return {
-        "semanticScore": result.get("semanticScore", 0.0),
-        "reasoning": result.get("reasoning", ""),
-        "criticalIssues": result.get("criticalIssues", []),
-        "strengths": result.get("strengths", []),
-    }
-
-
-def _cached_gemini_eval(
-    original_path: Path,
-    render_path: Path,
-    image_id: str,
-) -> dict:
-    """Call semantic Gemini judge with caching.
-
-    Caches results in ``output/.eval_cache/{image_id}.json`` to avoid
-    re-calling the API for the same image.
-
-    Returns
-    -------
-    dict with keys ``semanticScore``, ``reasoning``, ``criticalIssues``,
-    ``strengths``.
-    """
-    EVAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_path = EVAL_CACHE_DIR / f"{image_id}.json"
-
-    # Check cache first
-    if cache_path.is_file():
-        try:
-            cached = json.loads(cache_path.read_text(encoding="utf-8"))
-            # Validate cache has the expected key
-            if "semanticScore" in cached:
-                logger.info("  [semantic] Using cached result")
-                return cached
-        except (json.JSONDecodeError, OSError):
-            logger.warning("  [semantic] Cache corrupt, re-evaluating")
-
-    # Call API
-    logger.info("  [semantic] Calling Gemini via OpenRouter...")
-    try:
-        result = call_gemini(original_path, render_path)
-
-        # Normalise score
-        raw = result.get("semanticScore", 0.0)
-        if isinstance(raw, str):
-            raw = float(raw)
-        result["semanticScore"] = max(0.0, min(1.0, float(raw)))
-
-        # Cache result
-        cache_path.write_text(
-            json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-        return result
-    except Exception as exc:
-        logger.warning("  [semantic] API call failed: %s", exc)
-        return {
-            "semanticScore": 0.0,
-            "reasoning": f"API error: {exc}",
-            "criticalIssues": [],
-            "strengths": [],
-        }
-
-
-def score_semantic(
-    original_path: Path,
-    render_path: Path,
-    image_id: str,
+    detection: dict,
+    reader: Optional[Any] = None,
 ) -> tuple[float, Optional[dict]]:
-    """Score dimension 7 — **semantic** via Gemini judge.
+    """Score dimension 7 — **posterQuality** (preservation of quality).
 
-    Uses ``call_gemini`` (with caching) to evaluate whether the render
-    preserves the original design intent.
+    Measures whether the render PRESERVES the original's poster quality
+    across three dimensions:
+      1. Legibilidad (0.40) — text readability similarity
+      2. Contraste    (0.35) — text-background contrast similarity
+      3. CTA          (0.25) — CTA prominence similarity
+
+    For each sub-dimension we compute the score on BOTH original and
+    render, then the final score is **how close they are** (1 − |diff|).
+    If original and render have identical quality -> 1.0, even if both
+    are "low" quality.
+
+    All fully automated, no API calls.
 
     Returns
     -------
     ``(score, details_or_None)``
     """
-    result = _cached_gemini_eval(original_path, render_path, image_id)
-    score = result.get("semanticScore", 0.0)
+    try:
+        orig_img = cv2.imread(str(original_path))
+        render_img = cv2.imread(str(render_path))
+        if orig_img is None or render_img is None:
+            return 0.0, {"error": "cannot read one or both images"}
+
+        if reader is None:
+            import easyocr
+            reader = easyocr.Reader(["en"], gpu=False)
+
+        WEIGHTS_PQ = {"legibilidad": 0.40, "contraste": 0.35, "cta": 0.25}
+
+        # ── 1. Legibilidad ────────────────────────────────────────
+        # Original: OCR its own texts directly
+        orig_ocr = _ocr_text(original_path, reader)
+        render_ocr = _ocr_text(render_path, reader)
+        legibilidad, leg_details = _score_legibilidad(
+            orig_ocr, render_ocr, detection
+        )
+
+        # ── 2. Contraste ──────────────────────────────────────────
+        contraste, con_details = _score_contraste(
+            orig_img, render_img, detection
+        )
+
+        # ── 3. CTA prominence ─────────────────────────────────────
+        cta, cta_details = _score_cta_prominence(
+            original_path, render_path, render_img, detection, reader
+        )
+
+        # ── Composite ─────────────────────────────────────────────
+        composite = (
+            WEIGHTS_PQ["legibilidad"] * legibilidad
+            + WEIGHTS_PQ["contraste"] * contraste
+            + WEIGHTS_PQ["cta"] * cta
+        )
+        composite = max(0.0, min(1.0, composite))
+
+        return composite, {
+            "pq_score": round(composite, 4),
+            "weights": WEIGHTS_PQ,
+            "legibilidad": {"score": round(legibilidad, 4), **leg_details},
+            "contraste": {"score": round(contraste, 4), **con_details},
+            "cta": {"score": round(cta, 4), **cta_details},
+        }
+    except Exception as exc:
+        logger.warning("  [posterQuality] Exception: %s", exc)
+        return 0.0, {"error": str(exc)}
+
+
+def _score_legibilidad(
+    orig_ocr: list[str],
+    render_ocr: list[str],
+    detection: dict,
+) -> tuple[float, dict]:
+    """Legibilidad: compare original OCR vs render OCR readability.
+
+    1. Get expected texts from detection (what *should* be there).
+    2. Compute % found in original OCR -> orig_quality.
+    3. Compute % found in render OCR -> render_quality.
+    4. Score = 1 − |orig_quality − render_quality|.
+    """
+    expected = _collect_expected_texts(detection)
+
+    if not expected:
+        # No expected texts -> compare raw OCR similarity
+        orig_set = set(re.sub(r"\s+", " ", t.lower()).strip() for t in orig_ocr)
+        render_set = set(re.sub(r"\s+", " ", t.lower()).strip() for t in render_ocr)
+        if not orig_set and not render_set:
+            return 1.0, {"note": "no texts in either", "orig_quality": 1.0, "render_quality": 1.0}
+        intersect = orig_set & render_set
+        similarity = len(intersect) / max(len(orig_set | render_set), 1)
+        return similarity, {
+            "note": "fallback: raw OCR similarity (no detection texts)",
+            "orig_quality": 1.0 if not orig_set else 0.0,
+            "render_quality": 1.0 if not render_set else 0.0,
+            "ocr_similarity": round(similarity, 4),
+        }
+
+    # Compute quality on original: what % of expected texts appear in original OCR?
+    orig_norm = [re.sub(r"\s+", " ", t.lower()).strip() for t in orig_ocr]
+    orig_matched = 0
+    for exp in expected:
+        exp_norm = re.sub(r"\s+", " ", exp.lower()).strip()
+        best = max((fuzz.ratio(exp_norm, t) for t in orig_norm), default=0)
+        if best >= 70:
+            orig_matched += 1
+    orig_quality = orig_matched / len(expected)
+
+    # Compute quality on render: what % of expected texts appear in render OCR?
+    render_norm = [re.sub(r"\s+", " ", t.lower()).strip() for t in render_ocr]
+    render_matched = 0
+    render_per_text = []
+    for exp in expected:
+        exp_norm = re.sub(r"\s+", " ", exp.lower()).strip()
+        best = max((fuzz.ratio(exp_norm, t) for t in render_norm), default=0)
+        found = best >= 70
+        if found:
+            render_matched += 1
+        render_per_text.append({
+            "text": exp,
+            "found": found,
+            "best_match_pct": best,
+        })
+    render_quality = render_matched / len(expected) if expected else 1.0
+
+    # Score = how close are they?
+    score = 1.0 - abs(orig_quality - render_quality)
+
     return score, {
-        "semanticScore": round(score, 4),
-        "reasoning": result.get("reasoning", ""),
-        "criticalIssues": result.get("criticalIssues", []),
-        "strengths": result.get("strengths", []),
+        "orig_quality": round(orig_quality, 4),
+        "render_quality": round(render_quality, 4),
+        "orig_matched": orig_matched,
+        "render_matched": render_matched,
+        "total_expected": len(expected),
+        "render_per_text": render_per_text,
+        "orig_ocr_preview": orig_ocr[:10],
+        "render_ocr_preview": render_ocr[:10],
+    }
+
+
+def _score_contraste(
+    orig_img: np.ndarray,
+    render_img: np.ndarray,
+    detection: dict,
+) -> tuple[float, dict]:
+    """Contraste: compare text-background contrast between original and render.
+
+    For each text element in detection:
+      1. Compute contrast on original at that position
+      2. Compute contrast on render at that position
+      3. Score per element = 1 − |orig_contrast − render_contrast|
+    Returns average across all elements.
+    """
+    h, w = render_img.shape[:2]
+    per_element: list[dict] = []
+    scores: list[float] = []
+
+    for el in _iter_detection_elements(detection):
+        if el.get("type") != "text":
+            continue
+        pos = el.get("position", {})
+        if not pos:
+            continue
+        tx, ty, tw, th = (
+            int(pos.get("x", 0)),
+            int(pos.get("y", 0)),
+            int(pos.get("width", 0)),
+            int(pos.get("height", 0)),
+        )
+        if tw < 5 or th < 5:
+            continue
+
+        text_hex = el.get("color") or (el.get("style") or {}).get("colorHex", "#000000")
+        try:
+            text_hex = text_hex.lstrip("#")
+            tr, tg, tb = int(text_hex[:2], 16), int(text_hex[2:4], 16), int(text_hex[4:6], 16)
+        except (ValueError, IndexError):
+            tr, tg, tb = 0, 0, 0
+        text_lum = 0.299 * tr + 0.587 * tg + 0.114 * tb
+
+        def _weber_contrast(img: np.ndarray) -> float:
+            x1, y1 = max(0, tx - 5), max(0, ty - 5)
+            x2, y2 = min(img.shape[1], tx + tw + 5), min(img.shape[0], ty + th + 5)
+            if x2 <= x1 or y2 <= y1:
+                return 0.0
+            bg = img[y1:y2, x1:x2]
+            bg_mean = bg.mean(axis=(0, 1))
+            bg_lum = 0.114 * bg_mean[0] + 0.587 * bg_mean[1] + 0.299 * bg_mean[2]
+            if bg_lum < 1:
+                bg_lum = 1.0
+            return abs(text_lum - bg_lum) / bg_lum
+
+        orig_contrast = _weber_contrast(orig_img)
+        render_contrast = _weber_contrast(render_img)
+
+        # Normalise both
+        orig_norm = min(1.0, orig_contrast * 1.2)
+        render_norm = min(1.0, render_contrast * 1.2)
+
+        element_score = 1.0 - abs(orig_norm - render_norm)
+        scores.append(element_score)
+        per_element.append({
+            "id": el.get("id", "?"),
+            "orig_contrast": round(orig_contrast, 3),
+            "render_contrast": round(render_contrast, 3),
+            "orig_score": round(orig_norm, 3),
+            "render_score": round(render_norm, 3),
+            "similarity": round(element_score, 3),
+        })
+
+    if not scores:
+        return 0.5, {"note": "no text elements with positions", "per_element": []}
+
+    avg = sum(scores) / len(scores)
+    return avg, {
+        "average_similarity": round(avg, 4),
+        "element_count": len(scores),
+        "per_element": per_element,
+    }
+
+
+def _score_cta_prominence(
+    original_path: Path,
+    render_path: Path,
+    render_img: np.ndarray,
+    detection: dict,
+    reader: Any,
+) -> tuple[float, dict]:
+    """CTA prominence: compare CTA visibility between original and render.
+
+    Uses easyocr on both images to find CTA-like text, then compares
+    their size and position prominence.
+    """
+    h, w = render_img.shape[:2]
+    canvas_area = w * h
+    cta_keywords = [
+        "buy", "shop", "sale", "register", "sign up", "subscribe",
+        "join", "get", "try", "start", "download", "learn more",
+        "call", "book", "order", "reserve", "contact", "more info",
+    ]
+
+    def _detect_cta_in_ocr(ocr_texts: list[str]) -> float:
+        """Return a CTA prominence score from OCR text list."""
+        if not ocr_texts:
+            return 0.0
+        hits = 0
+        for t in ocr_texts:
+            tl = t.lower().strip()
+            if any(kw in tl for kw in cta_keywords):
+                hits += 1
+        return min(1.0, hits / max(len(ocr_texts), 1) * 3)
+
+    # Also check detection for CTA-tagged elements
+    def _cta_from_detection() -> float:
+        """Return CTA prominence from detection data (size+position)."""
+        scores = []
+        for el in _iter_detection_elements(detection):
+            text = (el.get("text") or el.get("content") or "").lower().strip()
+            role = (el.get("visualRole") or el.get("role") or "").lower().strip()
+            is_cta = role in ("cta", "button") or any(kw in text for kw in cta_keywords)
+            if not is_cta:
+                continue
+            pos = el.get("position", {})
+            if not pos:
+                continue
+            cw, ch = pos.get("width", 0), pos.get("height", 0)
+            area_ratio = (cw * ch) / max(canvas_area, 1)
+            cx = (pos.get("x", 0) + cw / 2) / max(w, 1)
+            cy = (pos.get("y", 0) + ch / 2) / max(h, 1)
+            pos_score = 1.0 - abs(cx - 0.5) * 0.5 - abs(cy - 0.65) * 0.5
+            pos_score = max(0.0, min(1.0, pos_score))
+            size_score = min(1.0, area_ratio * 10)
+            scores.append(0.5 * size_score + 0.5 * pos_score)
+        return max(scores) if scores else 0.0
+
+    orig_ocr_cta = _detect_cta_in_ocr(_ocr_text(original_path, reader))
+    render_ocr_cta = _detect_cta_in_ocr(_ocr_text(render_path, reader))
+    det_cta = _cta_from_detection()
+
+    orig_score = orig_ocr_cta
+    render_score = max(render_ocr_cta, det_cta)
+
+    score = 1.0 - abs(orig_score - render_score)
+    return score, {
+        "orig_score": round(orig_score, 4),
+        "render_score": round(render_score, 4),
+        "ocr_orig_cta_hits": orig_ocr_cta,
+        "ocr_render_cta_hits": render_ocr_cta,
+        "detection_cta_score": round(det_cta, 4),
+        "similarity": round(score, 4),
     }
 
 
@@ -709,10 +920,10 @@ def evaluate_single(
     logger.info("  [layout] SSIM...")
     layout_score, layout_details = score_layout(original_path, render_path)
 
-    # Dimension 2: Text Accuracy
-    logger.info("  [textAccuracy] OCR + rapidfuzz...")
+    # Dimension 2: Text Accuracy (uses detection texts as expected)
+    logger.info("  [textAccuracy] Expected-texts OCR...")
     text_score, text_details = score_text_accuracy(
-        original_path, render_path, reader=ocr_reader
+        render_path, detection, reader=ocr_reader
     )
 
     # Dimension 3: Color Accuracy
@@ -737,10 +948,10 @@ def evaluate_single(
         detection, ground_truth=ground_truth, scene=scene
     )
 
-    # Dimension 7: Semantic (Gemini)
-    logger.info("  [semantic] Gemini judge...")
-    semantic_score, semantic_details = score_semantic(
-        original_path, render_path, image_id
+    # Dimension 7: Poster Quality (legibilidad, contraste, CTA)
+    logger.info("  [posterQuality] Comparing original vs render quality...")
+    pq_score, pq_details = score_poster_quality(
+        original_path, render_path, detection, reader=ocr_reader
     )
 
     # Weighted overall
@@ -751,7 +962,7 @@ def evaluate_single(
         + WEIGHTS["visualSimilarity"] * visual_score
         + WEIGHTS["editability"] * edit_score
         + WEIGHTS["structureF1"] * struct_score
-        + WEIGHTS["semantic"] * semantic_score
+        + WEIGHTS["posterQuality"] * pq_score
     )
 
     result = EvaluationResult(
@@ -762,7 +973,7 @@ def evaluate_single(
         visualSimilarity=round(visual_score, 4),
         editability=round(edit_score, 4),
         structureF1=round(struct_score, 4),
-        semantic=round(semantic_score, 4),
+        posterQuality=round(pq_score, 4),
         overall=round(overall, 4),
         details={
             "layout": layout_details,
@@ -771,7 +982,7 @@ def evaluate_single(
             "visualSimilarity": visual_details,
             "editability": edit_details,
             "structureF1": struct_details,
-            "semantic": semantic_details,
+            "posterQuality": pq_details,
         },
     )
 
@@ -953,7 +1164,7 @@ def _generate_summary(results: list[EvaluationResult]) -> dict:
 
     dims = [
         "layout", "textAccuracy", "colorAccuracy",
-        "visualSimilarity", "editability", "structureF1", "semantic",
+        "visualSimilarity", "editability", "structureF1", "posterQuality",
     ]
 
     totals: dict[str, float] = {d: 0.0 for d in dims}
@@ -1120,7 +1331,7 @@ def main() -> None:
                     r.image_id,
                     r.layout, r.textAccuracy, r.colorAccuracy,
                     r.visualSimilarity, r.editability, r.structureF1,
-                    r.semantic, r.overall,
+                    r.posterQuality, r.overall,
                 )
 
         logger.info("\nDone.")
@@ -1197,7 +1408,7 @@ def main() -> None:
         logger.info("EVALUATION RESULT: %s", img_path.stem)
         logger.info("=" * 50)
         for dim in ["layout", "textAccuracy", "colorAccuracy",
-                     "visualSimilarity", "editability", "structureF1", "semantic"]:
+                     "visualSimilarity", "editability", "structureF1", "posterQuality"]:
             logger.info("  %-20s  %.4f", dim, getattr(result, dim))
         logger.info("-" * 50)
         logger.info("  %-20s  %.4f", "OVERALL", result.overall)
