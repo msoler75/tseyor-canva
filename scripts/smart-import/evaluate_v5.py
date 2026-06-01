@@ -213,22 +213,37 @@ def score_text_accuracy(
         # Normalise: lowercase, strip, collapse whitespace
         render_norm = [re.sub(r"\s+", " ", t.lower()).strip() for t in render_texts]
 
+        # Build combined token set from ALL render OCR (for subset matching)
+        all_render_tokens: set[str] = set()
+        for rn in render_norm:
+            all_render_tokens.update(rn.split())
+
         matched = 0
         details_per_text = []
         for exp in expected:
             exp_norm = re.sub(r"\s+", " ", exp.lower()).strip()
-            # Check if this text appears (fuzzy) in any render OCR result
+            # Phase 1: best fuzzy match against individual OCR results
             best = max(
                 (fuzz.ratio(exp_norm, rn) for rn in render_norm),
                 default=0,
             )
-            found = best >= 70  # 70% fuzzy threshold
+            # Phase 2: token coverage — all expected words appear across render?
+            exp_tokens = set(exp_norm.split())
+            if exp_tokens and all_render_tokens:
+                covered = len(exp_tokens & all_render_tokens) / len(exp_tokens)
+                token_score = covered * 100
+            else:
+                token_score = 0
+            final_best = max(best, token_score)
+            found = final_best >= 70  # 70% fuzzy threshold
             if found:
                 matched += 1
             details_per_text.append({
                 "text": exp,
                 "found": found,
-                "best_match_pct": best,
+                "best_match_pct": round(best, 1),
+                "token_coverage_pct": round(token_score, 1),
+                "final_score": round(final_best, 1),
             })
 
         score = matched / len(expected) if expected else 1.0
@@ -671,30 +686,51 @@ def _score_legibilidad(
             "ocr_similarity": round(similarity, 4),
         }
 
-    # Compute quality on original: what % of expected texts appear in original OCR?
+    def _best_match(exp_norm: str, candidates: list[str], all_tokens: set[str]) -> tuple[float, float]:
+        """Best fuzzy match + token coverage for a single expected text."""
+        best_fuzzy = max((fuzz.ratio(exp_norm, c) for c in candidates), default=0)
+        exp_tokens = set(exp_norm.split())
+        if exp_tokens and all_tokens:
+            covered = len(exp_tokens & all_tokens) / len(exp_tokens)
+            token_score = covered * 100
+        else:
+            token_score = 0
+        return best_fuzzy, token_score
+
+    # Compute quality on original
     orig_norm = [re.sub(r"\s+", " ", t.lower()).strip() for t in orig_ocr]
+    orig_all_tokens: set[str] = set()
+    for t in orig_norm:
+        orig_all_tokens.update(t.split())
     orig_matched = 0
     for exp in expected:
         exp_norm = re.sub(r"\s+", " ", exp.lower()).strip()
-        best = max((fuzz.ratio(exp_norm, t) for t in orig_norm), default=0)
-        if best >= 70:
+        fuzzy, tokens = _best_match(exp_norm, orig_norm, orig_all_tokens)
+        found = max(fuzzy, tokens) >= 70
+        if found:
             orig_matched += 1
-    orig_quality = orig_matched / len(expected)
+    orig_quality = orig_matched / len(expected) if expected else 1.0
 
-    # Compute quality on render: what % of expected texts appear in render OCR?
+    # Compute quality on render
     render_norm = [re.sub(r"\s+", " ", t.lower()).strip() for t in render_ocr]
+    render_all_tokens: set[str] = set()
+    for t in render_norm:
+        render_all_tokens.update(t.split())
     render_matched = 0
     render_per_text = []
     for exp in expected:
         exp_norm = re.sub(r"\s+", " ", exp.lower()).strip()
-        best = max((fuzz.ratio(exp_norm, t) for t in render_norm), default=0)
-        found = best >= 70
+        fuzzy, tokens = _best_match(exp_norm, render_norm, render_all_tokens)
+        final = max(fuzzy, tokens)
+        found = final >= 70
         if found:
             render_matched += 1
         render_per_text.append({
             "text": exp,
             "found": found,
-            "best_match_pct": best,
+            "best_match_pct": round(fuzzy, 1),
+            "token_coverage_pct": round(tokens, 1),
+            "final_score": round(final, 1),
         })
     render_quality = render_matched / len(expected) if expected else 1.0
 
