@@ -50,6 +50,7 @@ public/uploads
 
 # Smart Import pipeline — temp outputs and cache
 scripts/smart-import/output/
+/output/
 scripts/smart-import/__pycache__/
 scripts/smart-import/.pytest_cache/
 scripts/smart-import/dataset/__pycache__/
