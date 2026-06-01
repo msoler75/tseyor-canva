@@ -90,8 +90,8 @@ async function render(tcPath, outputPath) {
 
   try {
     const context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      deviceScaleFactor: 1,
+      viewport: { width: 2560, height: 1600 },
+      deviceScaleFactor: 2,
       ignoreHTTPSErrors: true,
     });
 

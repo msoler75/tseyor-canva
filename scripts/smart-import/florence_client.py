@@ -198,9 +198,10 @@ def _parse_dense_caption(raw: str) -> list[dict]:
 def _normalize_bbox(quad: list[float]) -> dict:
     """Convert quad box (x0,y0,x1,y1,x2,y2,x3,y3) to normalized (x,y,w,h)."""
     if len(quad) == 4:
-        # Already x,y,w,h
-        xs = [quad[0], quad[0] + quad[2]]
-        ys = [quad[1], quad[1] + quad[3]]
+        # Florence-2 returns (x1, y1, x2, y2) for axis-aligned boxes, not (x,y,w,h)
+        logger.info("  [DBG] _normalize_bbox raw quad=%s", quad)
+        xs = [quad[0], quad[2]]
+        ys = [quad[1], quad[3]]
     else:
         xs = quad[0::2]
         ys = quad[1::2]
